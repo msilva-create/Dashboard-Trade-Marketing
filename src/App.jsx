@@ -959,17 +959,16 @@ function parsearExcel(file, data, setData, onDone) {
       const wb = XLSX.read(e.target.result,{type:'array'})
       const leer = name => { 
         const ws=wb.Sheets[name] || wb.Sheets[wb.SheetNames.find(n=>n.toLowerCase().includes(name.toLowerCase()))]
-        return ws?XLSX.utils.sheet_to_json(ws,{defval:'',raw:false}):null 
+        return ws?XLSX.utils.sheet_to_json(ws,{defval:''}):null 
       }
-      // Also try reading first sheet as inversiones if no named sheet found
       const leerPrimera = () => {
         const ws=wb.Sheets[wb.SheetNames[0]]
-        return ws?XLSX.utils.sheet_to_json(ws,{defval:'',raw:false}):null
+        return ws?XLSX.utils.sheet_to_json(ws,{defval:''}):null
       }
       const importados = {}
 
       const inv = leer('Inversiones') || leerPrimera()
-      if(inv?.length){ const nuevas=inv.filter(r=>r['Distribuidor']||r['distribuidor']).map((r,i)=>({ id:Date.now()+i, fecha:r['Fecha']||'', anio:Number(r['Año']||r['Ano']||new Date().getFullYear()), mes:r['Mes']||'', distribuidor:r['Distribuidor']||r['distribuidor']||'', tipoPlan:r['Tipo Plan']||'', concepto:r['Concepto']||'', inversion:(()=>{ const raw=String(r['Inversión COP']||r['Inversion COP']||r['Inversión']||r['Inversion']||r['inversion']||'0'); const clean=raw.replace(/[$s]/g,'').replace(/./g,'').replace(',','.'); return Number(clean)||0 })(), galonesPlan:r['Galones Plan']||'', notas:r['Notas']||'' })); if(nuevas.length){data={...data,inversiones:[...data.inversiones,...nuevas]};importados.Inversiones=nuevas.length} }
+      if(inv?.length){ const nuevas=inv.filter(r=>r['Distribuidor']||r['distribuidor']).map((r,i)=>({ id:Date.now()+i, fecha:r['Fecha']||'', anio:Number(r['Año']||r['Ano']||new Date().getFullYear()), mes:r['Mes']||'', distribuidor:r['Distribuidor']||r['distribuidor']||'', tipoPlan:r['Tipo Plan']||'', concepto:r['Concepto']||'', inversion:(()=>{ const v=r['Inversión COP']||r['Inversion COP']||r['Inversión']||r['Inversion']||r['inversion']||0; if(typeof v==='number') return v; const clean=String(v).replace(/[$s]/g,'').replace(/./g,'').replace(',','.'); return parseFloat(clean)||0 })(), galonesPlan:r['Galones Plan']?String(r['Galones Plan']).replace(',','.')*1||'':'', notas:r['Notas']||'' })); if(nuevas.length){data={...data,inversiones:[...data.inversiones,...nuevas]};importados.Inversiones=nuevas.length} }
 
       const vent = leer('Ventas')
       if(vent?.length){ const nuevas=vent.filter(r=>r['Distribuidor']||r['distribuidor']).map((r,i)=>({ id:Date.now()+10000+i, anio:Number(r['Año']||r['Ano']||new Date().getFullYear()), mes:r['Mes']||'', distribuidor:r['Distribuidor']||r['distribuidor']||'', galones:Number(r['Galones']||0), ventaNeta:Number(r['Venta Neta COP']||r['Venta Neta']||0), notas:r['Notas']||'' })); if(nuevas.length){data={...data,ventas:[...data.ventas,...nuevas]};importados.Ventas=nuevas.length} }
