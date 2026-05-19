@@ -1140,41 +1140,139 @@ function parsearExcel(file, data, setData, onDone) {
   const reader = new FileReader()
   reader.onload = e => {
     try {
-      const wb = XLSX.read(e.target.result,{type:'array'})
-      const leer = name => { 
-        const ws=wb.Sheets[name] || wb.Sheets[wb.SheetNames.find(n=>n.toLowerCase().includes(name.toLowerCase()))]
-        return ws?XLSX.utils.sheet_to_json(ws,{defval:''}):null 
-      }
-      const leerPrimera = () => {
-        const ws=wb.Sheets[wb.SheetNames[0]]
-        return ws?XLSX.utils.sheet_to_json(ws,{defval:''}):null
-      }
+      const wb = XLSX.read(e.target.result, {type:'array', cellDates:true})
       const importados = {}
 
-      const primeraHoja = leerPrimera()
-      // Use first sheet for inversiones only if it has 'Distribuidor' column
-      const inv = leer('Inversiones') || (primeraHoja?.[0] && ('Distribuidor' in primeraHoja[0] || 'distribuidor' in primeraHoja[0]) ? primeraHoja : null)
-      if(inv?.length){ const nuevas=inv.filter(r=>r['Distribuidor']||r['distribuidor']).map((r,i)=>({ id:Date.now()+i, fecha:r['Fecha']||'', anio:Number(r['Año']||r['Ano']||new Date().getFullYear()), mes:r['Mes']||'', distribuidor:r['Distribuidor']||r['distribuidor']||'', tipoPlan:r['Tipo Plan']||'', concepto:r['Concepto']||'', inversion:(()=>{ const v=r['Inversión COP']||r['Inversion COP']||r['Inversión']||r['Inversion']||r['inversion']||0; if(typeof v==='number') return v; const clean=String(v).replace(/[$s]/g,'').replace(/./g,'').replace(',','.'); return parseFloat(clean)||0 })(), galonesPlan:r['Galones Plan']?String(r['Galones Plan']).replace(',','.')*1||'':'', notas:r['Notas']||'' })); if(nuevas.length){data={...data,inversiones:[...data.inversiones,...nuevas]};importados.Inversiones=nuevas.length} }
+      const leer = name => {
+        const ws = wb.Sheets[name] || wb.Sheets[wb.SheetNames.find(n => n.toLowerCase().includes(name.toLowerCase()))]
+        return ws ? XLSX.utils.sheet_to_json(ws, {defval:''}) : null
+      }
 
-      const vent = leer('Ventas')
-      if(vent?.length){ const nuevas=vent.filter(r=>r['Distribuidor']||r['distribuidor']).map((r,i)=>({ id:Date.now()+10000+i, anio:Number(r['Año']||r['Ano']||new Date().getFullYear()), mes:r['Mes']||'', distribuidor:r['Distribuidor']||r['distribuidor']||'', galones:Number(r['Galones']||0), ventaNeta:Number(r['Venta Neta COP']||r['Venta Neta']||0), notas:r['Notas']||'' })); if(nuevas.length){data={...data,ventas:[...data.ventas,...nuevas]};importados.Ventas=nuevas.length} }
+      const parseNum = v => {
+        if(typeof v === 'number') return Math.abs(v)
+        const s = String(v).replace(/[$s ]/g,'').replace(/./g,'').replace(',','.')
+        return parseFloat(s) || 0
+      }
 
-      const pres = leer('Presupuesto')
-      if(pres?.length){ const nuevas=pres.filter(r=>r['Mes']||r['mes']).map((r,i)=>({ id:Date.now()+20000+i, anio:Number(r['Año']||r['Ano']||new Date().getFullYear()), mes:r['Mes']||r['mes']||'', monto:Number(r['Presupuesto COP']||r['Presupuesto']||0) })); if(nuevas.length){data={...data,presupuestos:[...data.presupuestos,...nuevas]};importados.Presupuesto=nuevas.length} }
+      // Detectar tipo de hoja por sus columnas
+      const primeraHoja = wb.Sheets[wb.SheetNames[0]]
+      const primeraRows = primeraHoja ? XLSX.utils.sheet_to_json(primeraHoja, {defval:''}) : []
+      const primerasCols = primeraRows[0] ? Object.keys(primeraRows[0]) : []
 
-      const plan = leer('Planes')
-      if(plan?.length){ const nuevas=plan.filter(r=>r['Distribuidor']||r['distribuidor']).map((r,i)=>({ id:Date.now()+30000+i, distribuidor:r['Distribuidor']||r['distribuidor']||'', anio:Number(r['Año']||r['Ano']||new Date().getFullYear()), quarter:r['Quarter']||'Q1', estado:r['Estado']||'Activo', tiposPlan:(r['Tipos de Plan']||'').split(',').map(s=>s.trim()).filter(Boolean), metaGalones:Number(r['Meta Galones']||0), metaVenta:Number(r['Meta Venta COP']||0), condiciones:r['Condiciones']||'', acuerdos:r['Acuerdos']||'', notas:r['Notas']||'', historial:[] })); if(nuevas.length){data={...data,planes:[...data.planes,...nuevas]};importados.Planes=nuevas.length} }
+      const esInversiones = primerasCols.some(c => c.toLowerCase().includes('distribuidor'))
+      const esGastos = primerasCols.some(c => c.toLowerCase().includes('gasto') || c.toLowerCase().includes('nom. producto'))
 
-      const pend = leer('Pendientes')
-      if(pend?.length){ const nuevas=pend.filter(r=>r['Distribuidor']||r['distribuidor']).map((r,i)=>({ id:Date.now()+40000+i, distribuidor:r['Distribuidor']||r['distribuidor']||'', tarea:r['Tarea']||r['Tarea / Pendiente']||'', categoria:r['Categoria']||r['Categoría']||'', fechaLimite:r['Fecha Limite']||r['Fecha Límite']||'', prioridad:r['Prioridad']||'Media', estado:r['Estado']||'Pendiente', responsable:r['Responsable']||'', notas:r['Notas']||'' })); if(nuevas.length){data={...data,pendientes:[...data.pendientes,...nuevas]};importados.Pendientes=nuevas.length} }
+      // ── Inversiones ──────────────────────────────────
+      const invRows = leer('Inversiones') || (esInversiones ? primeraRows : null)
+      if(invRows?.length) {
+        const nuevas = invRows.filter(r => r['Distribuidor']||r['distribuidor']).map((r,i) => ({
+          id: Date.now()+i,
+          fecha: r['Fecha'] || '',
+          anio: Number(r['Año']||r['Ano']||r['año']||2026),
+          mes: String(r['Mes']||r['mes']||'').trim(),
+          distribuidor: String(r['Distribuidor']||r['distribuidor']||'').trim(),
+          tipoPlan: String(r['Tipo Plan']||r['tipoPlan']||'').trim(),
+          concepto: String(r['Concepto']||r['concepto']||'').trim(),
+          inversion: parseNum(r['Inversión COP']||r['Inversion COP']||r['Inversión']||r['Inversion']||r['inversion']||0),
+          galonesPlan: r['Galones Plan'] ? parseNum(r['Galones Plan']) : '',
+          notas: String(r['Notas']||r['notas']||'').trim(),
+        }))
+        if(nuevas.length) { data={...data,inversiones:[...data.inversiones,...nuevas]}; importados.Inversiones=nuevas.length }
+      }
 
-      // Presupuesto Gastos sheet - try all sheet names
-      const presGast = leer('Presupuesto Gastos') || leer('Control Presupuesto') || leer('Hoja2') || (primeraHoja?.[0] && ('Gasto (Nom. Producto, Cliente)' in primeraHoja[0] || 'Gasto' in primeraHoja[0] || 'B' in primeraHoja[0]) ? primeraHoja : null)
-      if(presGast?.length){ const nuevas=presGast.filter(r=>(r['Gasto (Nom. Producto, Cliente)']||r['Gasto']||r['B'])&&(r['Mes']||r['A'])).map((r,i)=>({ id:Date.now()+50000+i, anio:Number(r['Año']||r['Ano']||r['A']||new Date().getFullYear()), mes:String(r['Mes']||r['A']||'').trim(), gasto:String(r['Gasto (Nom. Producto, Cliente)']||r['Gasto']||r['B']||'').trim(), valorFactura:(()=>{ const v=r['Valor Factura']||r['Valor Factu']||r['C']||r['c']||0; if(typeof v==='number') return Math.abs(v); const c=String(v).replace(/[$s ]/g,'').replace(/./g,'').replace(',','.'); return parseFloat(c)||0 })(), canal:r['Canal']||r['D']||'', observacion:r['Observación (ATJ, otros)']||r['Observacion']||r['E']||'', estado:r['Estado']||r['F']||'Pendiente', centroCostos:r['Centro de Costos']||r['G']||'', notas:r['Notas']||'' })); if(nuevas.length){data={...data,gastosPresupuesto:[...(data.gastosPresupuesto||[]),...nuevas]};importados['Presupuesto Gastos']=nuevas.length} }
+      // ── Ventas ───────────────────────────────────────
+      const ventRows = leer('Ventas')
+      if(ventRows?.length) {
+        const nuevas = ventRows.filter(r => r['Distribuidor']||r['distribuidor']).map((r,i) => ({
+          id: Date.now()+10000+i,
+          anio: Number(r['Año']||r['Ano']||2026),
+          mes: String(r['Mes']||'').trim(),
+          distribuidor: String(r['Distribuidor']||r['distribuidor']||'').trim(),
+          galones: parseNum(r['Galones']||0),
+          ventaNeta: parseNum(r['Venta Neta COP']||r['Venta Neta']||0),
+          notas: '',
+        }))
+        if(nuevas.length) { data={...data,ventas:[...data.ventas,...nuevas]}; importados.Ventas=nuevas.length }
+      }
+
+      // ── Presupuesto mensual ──────────────────────────
+      const presRows = leer('Presupuesto')
+      if(presRows?.length) {
+        const nuevas = presRows.filter(r => r['Mes']||r['mes']).map((r,i) => ({
+          id: Date.now()+20000+i,
+          anio: Number(r['Año']||r['Ano']||2026),
+          mes: String(r['Mes']||r['mes']||'').trim(),
+          monto: parseNum(r['Presupuesto COP']||r['Presupuesto']||r['monto']||0),
+        }))
+        if(nuevas.length) { data={...data,presupuestos:[...data.presupuestos,...nuevas]}; importados.Presupuesto=nuevas.length }
+      }
+
+      // ── Planes ───────────────────────────────────────
+      const planRows = leer('Planes')
+      if(planRows?.length) {
+        const nuevas = planRows.filter(r => r['Distribuidor']||r['distribuidor']).map((r,i) => ({
+          id: Date.now()+30000+i,
+          distribuidor: String(r['Distribuidor']||r['distribuidor']||'').trim(),
+          anio: Number(r['Año']||r['Ano']||2026),
+          quarter: r['Quarter']||'Q1',
+          estado: r['Estado']||'Activo',
+          tiposPlan: String(r['Tipos de Plan']||'').split(',').map(s=>s.trim()).filter(Boolean),
+          metaGalones: parseNum(r['Meta Galones']||0),
+          metaVenta: parseNum(r['Meta Venta COP']||0),
+          condiciones: r['Condiciones']||'',
+          acuerdos: r['Acuerdos']||'',
+          notas: r['Notas']||'',
+          historial: [],
+        }))
+        if(nuevas.length) { data={...data,planes:[...data.planes,...nuevas]}; importados.Planes=nuevas.length }
+      }
+
+      // ── Pendientes ───────────────────────────────────
+      const pendRows = leer('Pendientes')
+      if(pendRows?.length) {
+        const nuevas = pendRows.filter(r => r['Distribuidor']||r['distribuidor']).map((r,i) => ({
+          id: Date.now()+40000+i,
+          distribuidor: String(r['Distribuidor']||r['distribuidor']||'').trim(),
+          tarea: String(r['Tarea']||r['Tarea / Pendiente']||'').trim(),
+          categoria: String(r['Categoria']||r['Categoría']||'').trim(),
+          fechaLimite: r['Fecha Limite']||r['Fecha Límite']||'',
+          prioridad: r['Prioridad']||'Media',
+          estado: r['Estado']||'Pendiente',
+          responsable: r['Responsable']||'',
+          notas: r['Notas']||'',
+        }))
+        if(nuevas.length) { data={...data,pendientes:[...data.pendientes,...nuevas]}; importados.Pendientes=nuevas.length }
+      }
+
+      // ── Gastos de presupuesto (Control Presupuesto Mercadeo) ──
+      const gastosRows = leer('Presupuesto Gastos') || leer('Control Presupuesto') || (esGastos ? primeraRows : null)
+      if(gastosRows?.length) {
+        const nuevas = gastosRows
+          .filter(r => r['Gasto (Nom. Producto, Cliente)'] || r['Gasto'] || r['B'])
+          .filter(r => r['Mes'] || r['A'])
+          .map((r,i) => ({
+            id: Date.now()+50000+i,
+            anio: Number(r['Año']||r['Ano']||2026),
+            mes: String(r['Mes']||r['A']||'').trim(),
+            gasto: String(r['Gasto (Nom. Producto, Cliente)']||r['Gasto']||r['B']||'').trim(),
+            valorFactura: parseNum(r['Valor Factura']||r['Valor Factu']||r['C']||0),
+            canal: String(r['Canal']||r['D']||'').trim(),
+            observacion: String(r['Observación (ATJ, otros)']||r['Observacion']||r['E']||'').trim(),
+            estado: String(r['Estado']||r['F']||'Pendiente').trim(),
+            centroCostos: String(r['Centro de Costos']||r['G']||'').trim(),
+            notas: '',
+          }))
+        if(nuevas.length) {
+          data = {...data, gastosPresupuesto:[...(data.gastosPresupuesto||[]),...nuevas]}
+          importados['Gastos presupuesto'] = nuevas.length
+        }
+      }
 
       setData(data); save(data)
       onDone({importados, errores:[]})
-    } catch(err){ onDone({importados:{}, errores:['Error: '+err.message]}) }
+    } catch(err) {
+      onDone({importados:{}, errores:['Error: '+err.message]})
+    }
   }
   reader.readAsArrayBuffer(file)
 }
