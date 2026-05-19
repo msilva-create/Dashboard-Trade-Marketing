@@ -1151,7 +1151,9 @@ function parsearExcel(file, data, setData, onDone) {
       }
       const importados = {}
 
-      const inv = leer('Inversiones') || leerPrimera()
+      const primeraHoja = leerPrimera()
+      // Use first sheet for inversiones only if it has 'Distribuidor' column
+      const inv = leer('Inversiones') || (primeraHoja?.[0] && ('Distribuidor' in primeraHoja[0] || 'distribuidor' in primeraHoja[0]) ? primeraHoja : null)
       if(inv?.length){ const nuevas=inv.filter(r=>r['Distribuidor']||r['distribuidor']).map((r,i)=>({ id:Date.now()+i, fecha:r['Fecha']||'', anio:Number(r['Año']||r['Ano']||new Date().getFullYear()), mes:r['Mes']||'', distribuidor:r['Distribuidor']||r['distribuidor']||'', tipoPlan:r['Tipo Plan']||'', concepto:r['Concepto']||'', inversion:(()=>{ const v=r['Inversión COP']||r['Inversion COP']||r['Inversión']||r['Inversion']||r['inversion']||0; if(typeof v==='number') return v; const clean=String(v).replace(/[$s]/g,'').replace(/./g,'').replace(',','.'); return parseFloat(clean)||0 })(), galonesPlan:r['Galones Plan']?String(r['Galones Plan']).replace(',','.')*1||'':'', notas:r['Notas']||'' })); if(nuevas.length){data={...data,inversiones:[...data.inversiones,...nuevas]};importados.Inversiones=nuevas.length} }
 
       const vent = leer('Ventas')
@@ -1166,9 +1168,9 @@ function parsearExcel(file, data, setData, onDone) {
       const pend = leer('Pendientes')
       if(pend?.length){ const nuevas=pend.filter(r=>r['Distribuidor']||r['distribuidor']).map((r,i)=>({ id:Date.now()+40000+i, distribuidor:r['Distribuidor']||r['distribuidor']||'', tarea:r['Tarea']||r['Tarea / Pendiente']||'', categoria:r['Categoria']||r['Categoría']||'', fechaLimite:r['Fecha Limite']||r['Fecha Límite']||'', prioridad:r['Prioridad']||'Media', estado:r['Estado']||'Pendiente', responsable:r['Responsable']||'', notas:r['Notas']||'' })); if(nuevas.length){data={...data,pendientes:[...data.pendientes,...nuevas]};importados.Pendientes=nuevas.length} }
 
-      // Presupuesto Gastos sheet
-      const presGast = leer('Presupuesto Gastos') || leer('Control Presupuesto') || leer('Hoja2')
-      if(presGast?.length){ const nuevas=presGast.filter(r=>r['Gasto (Nom. Producto, Cliente)']||r['Gasto']||r['B']).map((r,i)=>({ id:Date.now()+50000+i, anio:Number(r['Año']||r['Ano']||r['A']||new Date().getFullYear()), mes:r['Mes']||r['A']||'', gasto:r['Gasto (Nom. Producto, Cliente)']||r['Gasto']||r['B']||'', valorFactura:(()=>{ const v=r['Valor Factura']||r['Valor Factu']||r['C']||0; if(typeof v==='number') return v; const c=String(v).replace(/[$s]/g,'').replace(/./g,'').replace(',','.'); return parseFloat(c)||0 })(), canal:r['Canal']||r['D']||'', observacion:r['Observación (ATJ, otros)']||r['Observacion']||r['E']||'', estado:r['Estado']||r['F']||'Pendiente', centroCostos:r['Centro de Costos']||r['G']||'', notas:r['Notas']||'' })); if(nuevas.length){data={...data,gastosPresupuesto:[...(data.gastosPresupuesto||[]),...nuevas]};importados['Presupuesto Gastos']=nuevas.length} }
+      // Presupuesto Gastos sheet - try all sheet names
+      const presGast = leer('Presupuesto Gastos') || leer('Control Presupuesto') || leer('Hoja2') || (primeraHoja?.[0] && ('Gasto (Nom. Producto, Cliente)' in primeraHoja[0] || 'Gasto' in primeraHoja[0] || 'B' in primeraHoja[0]) ? primeraHoja : null)
+      if(presGast?.length){ const nuevas=presGast.filter(r=>(r['Gasto (Nom. Producto, Cliente)']||r['Gasto']||r['B'])&&(r['Mes']||r['A'])).map((r,i)=>({ id:Date.now()+50000+i, anio:Number(r['Año']||r['Ano']||r['A']||new Date().getFullYear()), mes:String(r['Mes']||r['A']||'').trim(), gasto:String(r['Gasto (Nom. Producto, Cliente)']||r['Gasto']||r['B']||'').trim(), valorFactura:(()=>{ const v=r['Valor Factura']||r['Valor Factu']||r['C']||r['c']||0; if(typeof v==='number') return Math.abs(v); const c=String(v).replace(/[$s ]/g,'').replace(/./g,'').replace(',','.'); return parseFloat(c)||0 })(), canal:r['Canal']||r['D']||'', observacion:r['Observación (ATJ, otros)']||r['Observacion']||r['E']||'', estado:r['Estado']||r['F']||'Pendiente', centroCostos:r['Centro de Costos']||r['G']||'', notas:r['Notas']||'' })); if(nuevas.length){data={...data,gastosPresupuesto:[...(data.gastosPresupuesto||[]),...nuevas]};importados['Presupuesto Gastos']=nuevas.length} }
 
       setData(data); save(data)
       onDone({importados, errores:[]})
