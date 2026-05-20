@@ -758,28 +758,75 @@ function Planes({ data, setData }) {
   const [filtroQ, setFiltroQ] = useState('')
   const [filtroAnio, setFiltroAnio] = useState('2026')
   const [editId, setEditId] = useState(null)
-  const blank = { distribuidor:'', anio:2026, quarter:'Q1', estado:'Activo', tiposPlan:[], metaGalones:'', metaVenta:'', condiciones:'', acuerdos:'', notas:'', historial:[] }
-  const [form, setForm] = useState(blank)
   const [nuevaNota, setNuevaNota] = useState('')
+
+  // Meses por quarter
+  const MESES_Q = {
+    Q1:['Enero','Febrero','Marzo'],
+    Q2:['Abril','Mayo','Junio'],
+    Q3:['Julio','Agosto','Septiembre'],
+    Q4:['Octubre','Noviembre','Diciembre'],
+  }
+
+  const blank = {
+    distribuidor:'', anio:2026, quarter:'Q1', estado:'Activo',
+    // Metas por mes
+    metaMes1:'', metaMes2:'', metaMes3:'',
+    metaGalonesMes1:'', metaGalonesMes2:'', metaGalonesMes3:'',
+    // Tipos de plan (texto libre, separados por coma)
+    tiposPlanTexto:'',
+    // CVC
+    tieneCVC:'No', montoCVC:'', detalleCVC:'',
+    // Promotora
+    tienePromotora:'No', nombrePromotora:'', montoPromotora:'',
+    // Condiciones y notas
+    condiciones:'', acuerdos:'', notas:'', historial:[],
+  }
+  const [form, setForm] = useState(blank)
 
   const anios = [...new Set([...data.planes.map(p=>p.anio),...data.inversiones.map(i=>i.anio)])].sort()
   const distribuidores = [...new Set([...data.planes.map(p=>p.distribuidor),...data.inversiones.map(i=>i.distribuidor)])].sort()
   const lista = data.planes.filter(p=>(!filtroQ||p.quarter===filtroQ)&&(!filtroAnio||p.anio===Number(filtroAnio)))
 
+  // Calcular totales del quarter desde meses
+  const totalMetaVenta = f => (Number(f.metaMes1)||0)+(Number(f.metaMes2)||0)+(Number(f.metaMes3)||0)
+  const totalMetaGalones = f => (Number(f.metaGalonesMes1)||0)+(Number(f.metaGalonesMes2)||0)+(Number(f.metaGalonesMes3)||0)
+
   const submit = () => {
     if(!form.distribuidor||!form.quarter) return
-    const entry = {...form, id:editId||Date.now(), metaGalones:Number(form.metaGalones)||0, metaVenta:Number(form.metaVenta)||0, anio:Number(form.anio), historial:form.historial||[]}
+    const entry = {
+      ...form,
+      id: editId||Date.now(),
+      anio: Number(form.anio),
+      metaVenta: totalMetaVenta(form),
+      metaGalones: totalMetaGalones(form),
+      tiposPlan: form.tiposPlanTexto.split(',').map(s=>s.trim()).filter(Boolean),
+      historial: form.historial||[],
+    }
     const planes = editId ? data.planes.map(p=>p.id===editId?entry:p) : [...data.planes,entry]
-    const nd={...data,planes}; setData(nd); save(nd); setModal(false); setEditId(null); setForm(blank)
+    const nd={...data,planes};setData(nd);save(nd);setModal(false);setEditId(null);setForm(blank)
   }
-  const del = id => { const nd={...data,planes:data.planes.filter(p=>p.id!==id)}; setData(nd); save(nd) }
-  const edit = p => { setForm({...p,metaGalones:p.metaGalones?.toString()||'',metaVenta:p.metaVenta?.toString()||''}); setEditId(p.id); setModal(true) }
+
+  const del = id => { const nd={...data,planes:data.planes.filter(p=>p.id!==id)};setData(nd);save(nd) }
+
+  const edit = p => {
+    setForm({
+      ...blank, ...p,
+      metaMes1: p.metaMes1||'', metaMes2: p.metaMes2||'', metaMes3: p.metaMes3||'',
+      metaGalonesMes1: p.metaGalonesMes1||'', metaGalonesMes2: p.metaGalonesMes2||'', metaGalonesMes3: p.metaGalonesMes3||'',
+      tiposPlanTexto: p.tiposPlanTexto || (p.tiposPlan||[]).join(', '),
+      tieneCVC: p.tieneCVC||'No', montoCVC: p.montoCVC||'', detalleCVC: p.detalleCVC||'',
+      tienePromotora: p.tienePromotora||'No', nombrePromotora: p.nombrePromotora||'', montoPromotora: p.montoPromotora||'',
+      historial: p.historial||[],
+    })
+    setEditId(p.id);setModal(true)
+  }
 
   const agregarNota = planId => {
     if(!nuevaNota.trim()) return
-    const nota = { texto:nuevaNota, fecha:new Date().toLocaleDateString('es-CO') }
-    const planes = data.planes.map(p=>p.id===planId?{...p,historial:[...(p.historial||[]),nota]}:p)
-    const nd={...data,planes}; setData(nd); save(nd)
+    const nota={texto:nuevaNota,fecha:new Date().toLocaleDateString('es-CO')}
+    const planes=data.planes.map(p=>p.id===planId?{...p,historial:[...(p.historial||[]),nota]}:p)
+    const nd={...data,planes};setData(nd);save(nd)
     setModalHoja(prev=>({...prev,historial:[...(prev.historial||[]),nota]}))
     setNuevaNota('')
   }
@@ -789,16 +836,16 @@ function Planes({ data, setData }) {
     activos:data.planes.filter(p=>p.quarter===q&&p.estado==='Activo'&&(!filtroAnio||p.anio===Number(filtroAnio))).length,
   })).filter(q=>q.total>0)
 
+  const mesesQ = (q) => MESES_Q[q]||['Mes 1','Mes 2','Mes 3']
+
   return (
     <div style={{display:'flex',flexDirection:'column',gap:18}}>
       <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center'}}>
         <select value={filtroAnio} onChange={e=>setFiltroAnio(e.target.value)} style={{width:110}}>
-          <option value="">Año</option>
-          {anios.map(a=><option key={a}>{a}</option>)}
+          <option value="">Año</option>{anios.map(a=><option key={a}>{a}</option>)}
         </select>
         <select value={filtroQ} onChange={e=>setFiltroQ(e.target.value)} style={{width:120}}>
-          <option value="">Todos los Q</option>
-          {QUARTERS.map(q=><option key={q}>{q}</option>)}
+          <option value="">Todos los Q</option>{QUARTERS.map(q=><option key={q}>{q}</option>)}
         </select>
         <button onClick={()=>{setEditId(null);setForm(blank);setModal(true)}} style={{...S.btn('var(--accent)','#fff'),marginLeft:'auto'}}>
           <PlusCircle size={15}/> Nuevo plan
@@ -809,7 +856,7 @@ function Planes({ data, setData }) {
         <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
           {qResumen.map(q=>(
             <div key={q.q} onClick={()=>setFiltroQ(filtroQ===q.q?'':q.q)}
-              style={{background:filtroQ===q.q?'var(--accent-soft)':'var(--bg2)',border:`1px solid ${filtroQ===q.q?'var(--accent)':'var(--border)'}`,borderRadius:10,padding:'12px 20px',cursor:'pointer',display:'flex',flexDirection:'column',gap:4,minWidth:110}}>
+              style={{background:filtroQ===q.q?'var(--accent-soft)':'var(--bg2)',border:'1px solid '+(filtroQ===q.q?'var(--accent)':'var(--border)'),borderRadius:10,padding:'12px 20px',cursor:'pointer',display:'flex',flexDirection:'column',gap:4,minWidth:110}}>
               <span style={{fontSize:18,fontWeight:700,color:filtroQ===q.q?'var(--accent2)':'var(--text)'}}>{q.q}</span>
               <span style={{fontSize:11,color:'var(--text3)'}}>{q.activos} activo{q.activos!==1?'s':''} / {q.total} total</span>
             </div>
@@ -817,21 +864,28 @@ function Planes({ data, setData }) {
         </div>
       )}
 
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(340px,1fr))',gap:14}}>
-        {lista.length===0&&<div style={{...S.card,padding:40,textAlign:'center',color:'var(--text3)',gridColumn:'1/-1'}}>No hay planes registrados {filtroQ&&`para ${filtroQ}`}</div>}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(360px,1fr))',gap:14}}>
+        {lista.length===0&&<div style={{...S.card,padding:40,textAlign:'center',color:'var(--text3)',gridColumn:'1/-1'}}>No hay planes {filtroQ&&'para '+filtroQ}. Crea el primero.</div>}
         {lista.map(p=>{
-          const galonesReal = data.ventas.filter(v=>v.distribuidor===p.distribuidor).reduce((s,v)=>s+(v.galones||0),0)
-          const ventaTotal = data.ventas.filter(v=>v.distribuidor===p.distribuidor).reduce((s,v)=>s+(v.ventaNeta||0),0)
-          const invTotal = data.inversiones.filter(i=>i.distribuidor===p.distribuidor).reduce((s,i)=>s+(i.inversion||0),0)
-          const cumpl = p.metaGalones>0?(galonesReal/p.metaGalones)*100:0
+          const galonesReal=data.ventas.filter(v=>v.distribuidor===p.distribuidor&&(!filtroAnio||v.anio===Number(filtroAnio))).reduce((s,v)=>s+(Number(v.galones)||0),0)
+          const ventaReal=data.ventas.filter(v=>v.distribuidor===p.distribuidor&&(!filtroAnio||v.anio===Number(filtroAnio))).reduce((s,v)=>s+(Number(v.ventaNeta)||0),0)
+          const invTotal=data.inversiones.filter(i=>i.distribuidor===p.distribuidor&&(!filtroAnio||i.anio===Number(filtroAnio))).reduce((s,i)=>s+(Number(i.inversion)||0),0)
+          const metaGal = p.metaGalones||totalMetaGalones(p)
+          const metaVta = p.metaVenta||totalMetaVenta(p)
+          const cumplGal = metaGal>0?(galonesReal/metaGal)*100:0
+          const cumplVta = metaVta>0?(ventaReal/metaVta)*100:0
+          const meses = mesesQ(p.quarter)
           return (
             <div key={p.id} style={{...S.card,display:'flex',flexDirection:'column'}}>
+              {/* Header */}
               <div style={{padding:'14px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8}}>
                 <div>
-                  <div style={{fontWeight:600,fontSize:14,marginBottom:4}}>{p.distribuidor}</div>
+                  <div style={{fontWeight:600,fontSize:14,marginBottom:5}}>{p.distribuidor}</div>
                   <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
                     <span style={{background:'var(--bg4)',color:'var(--accent2)',fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:5}}>{p.quarter} · {p.anio}</span>
                     <Badge label={p.estado}/>
+                    {p.tieneCVC==='Sí'&&<span style={{background:'rgba(6,182,212,0.15)',color:'#06b6d4',fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:5}}>CVC</span>}
+                    {p.tienePromotora==='Sí'&&<span style={{background:'rgba(168,139,250,0.15)',color:'#a78bfa',fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:5}}>Promotora</span>}
                   </div>
                 </div>
                 <div style={{display:'flex',gap:5}}>
@@ -840,79 +894,214 @@ function Planes({ data, setData }) {
                   <button onClick={()=>del(p.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'4px 8px'}}><Trash2 size={12}/></button>
                 </div>
               </div>
+
+              {/* Body */}
               <div style={{padding:'14px 18px',display:'flex',flexDirection:'column',gap:10,flex:1}}>
-                {p.tiposPlan?.length>0&&<div style={{display:'flex',gap:5,flexWrap:'wrap'}}>{p.tiposPlan.map(t=><span key={t} style={{background:'var(--accent-soft)',color:'var(--accent2)',fontSize:10,padding:'2px 7px',borderRadius:5}}>{t}</span>)}</div>}
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                  <div style={{background:'var(--bg3)',borderRadius:8,padding:'8px 12px'}}>
-                    <div style={{fontSize:10,color:'var(--text3)',marginBottom:2}}>META GALONES</div>
-                    <div style={{fontFamily:'var(--mono)',fontWeight:600,fontSize:14}}>{num(p.metaGalones)}</div>
-                    {p.metaGalones>0&&<div style={{fontSize:10,color:'var(--text2)',marginTop:2}}>Real: {num(galonesReal)} ({cumpl.toFixed(0)}%)</div>}
+                {/* Tipos de plan */}
+                {(p.tiposPlan||[]).length>0&&(
+                  <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
+                    {(p.tiposPlan||[]).map(t=><span key={t} style={{background:'var(--accent-soft)',color:'var(--accent2)',fontSize:10,padding:'2px 8px',borderRadius:5}}>{t}</span>)}
                   </div>
-                  <div style={{background:'var(--bg3)',borderRadius:8,padding:'8px 12px'}}>
-                    <div style={{fontSize:10,color:'var(--text3)',marginBottom:2}}>META VENTA</div>
-                    <div style={{fontFamily:'var(--mono)',fontWeight:600,fontSize:13}}>{cop(p.metaVenta)}</div>
-                    {p.metaVenta>0&&<div style={{fontSize:10,color:'var(--text2)',marginTop:2}}>Real: {cop(ventaTotal)}</div>}
+                )}
+
+                {/* Metas por mes */}
+                <div>
+                  <div style={{fontSize:10,color:'var(--text3)',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.05em'}}>Metas por mes</div>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6}}>
+                    {meses.map((m,i)=>{
+                      const metaV = Number(p['metaMes'+(i+1)])||0
+                      const metaG = Number(p['metaGalonesMes'+(i+1)])||0
+                      const realV = data.ventas.filter(v=>v.distribuidor===p.distribuidor&&v.mes===m&&(!filtroAnio||v.anio===Number(filtroAnio))).reduce((s,v)=>s+(Number(v.ventaNeta)||0),0)
+                      return (
+                        <div key={m} style={{background:'var(--bg3)',borderRadius:7,padding:'8px 10px'}}>
+                          <div style={{fontSize:10,color:'var(--text3)',marginBottom:3,fontWeight:600}}>{m}</div>
+                          {metaV>0&&<div style={{fontSize:11,color:'var(--text2)'}}>Meta: {cop(metaV)}</div>}
+                          {metaG>0&&<div style={{fontSize:11,color:'var(--text2)'}}>{metaG} gal</div>}
+                          {metaV>0&&<div style={{fontSize:11,color:realV>=metaV?'var(--green)':'var(--accent2)',marginTop:2}}>Real: {cop(realV)}</div>}
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
-                {p.metaGalones>0&&(
+
+                {/* Totales Q */}
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                  <div style={{background:'var(--bg3)',borderRadius:8,padding:'8px 12px'}}>
+                    <div style={{fontSize:10,color:'var(--text3)',marginBottom:2}}>META VENTA Q</div>
+                    <div style={{fontFamily:'var(--mono)',fontWeight:600,fontSize:13}}>{cop(metaVta)}</div>
+                    {metaVta>0&&<div style={{fontSize:10,color:'var(--text2)',marginTop:2}}>Real: {cop(ventaReal)} ({cumplVta.toFixed(0)}%)</div>}
+                  </div>
+                  <div style={{background:'var(--bg3)',borderRadius:8,padding:'8px 12px'}}>
+                    <div style={{fontSize:10,color:'var(--text3)',marginBottom:2}}>META GALONES Q</div>
+                    <div style={{fontFamily:'var(--mono)',fontWeight:600,fontSize:13}}>{num(metaGal)}</div>
+                    {metaGal>0&&<div style={{fontSize:10,color:'var(--text2)',marginTop:2}}>Real: {num(galonesReal)} ({cumplGal.toFixed(0)}%)</div>}
+                  </div>
+                </div>
+
+                {/* Barra cumplimiento venta */}
+                {metaVta>0&&(
                   <div>
-                    <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'var(--text3)',marginBottom:4}}>
-                      <span>Cumplimiento galones</span>
-                      <span style={{color:cumpl>=100?'var(--green)':cumpl>=70?'var(--yellow)':'var(--red)'}}>{cumpl.toFixed(1)}%</span>
+                    <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'var(--text3)',marginBottom:3}}>
+                      <span>Cumplimiento venta</span>
+                      <span style={{color:cumplVta>=100?'var(--green)':cumplVta>=70?'var(--yellow)':'var(--red)'}}>{cumplVta.toFixed(1)}%</span>
                     </div>
                     <div style={{height:5,background:'var(--bg4)',borderRadius:3}}>
-                      <div style={{width:`${Math.min(cumpl,100)}%`,height:'100%',background:cumpl>=100?'var(--green)':cumpl>=70?'var(--yellow)':'var(--red)',borderRadius:3}}/>
+                      <div style={{width:Math.min(cumplVta,100)+'%',height:'100%',background:cumplVta>=100?'var(--green)':cumplVta>=70?'var(--yellow)':'var(--red)',borderRadius:3}}/>
                     </div>
                   </div>
                 )}
+
+                {/* CVC y Promotora */}
+                {(p.tieneCVC==='Sí'||p.tienePromotora==='Sí')&&(
+                  <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                    {p.tieneCVC==='Sí'&&<div style={{background:'rgba(6,182,212,0.08)',border:'1px solid rgba(6,182,212,0.2)',borderRadius:7,padding:'6px 10px',fontSize:11}}>
+                      <span style={{color:'#06b6d4',fontWeight:600}}>CVC </span>
+                      <span style={{color:'var(--text2)'}}>{p.montoCVC?cop(Number(p.montoCVC)):''} {p.detalleCVC}</span>
+                    </div>}
+                    {p.tienePromotora==='Sí'&&<div style={{background:'rgba(168,139,250,0.08)',border:'1px solid rgba(168,139,250,0.2)',borderRadius:7,padding:'6px 10px',fontSize:11}}>
+                      <span style={{color:'#a78bfa',fontWeight:600}}>Promotora: </span>
+                      <span style={{color:'var(--text2)'}}>{p.nombrePromotora} {p.montoPromotora?'— '+cop(Number(p.montoPromotora)):''}</span>
+                    </div>}
+                  </div>
+                )}
+
+                {/* Inversión acumulada */}
                 <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:'var(--text2)'}}>
                   <span>Inversión acumulada:</span>
                   <span style={{fontFamily:'var(--mono)',color:'var(--accent2)',fontWeight:600}}>{cop(invTotal)}</span>
                 </div>
-                {p.condiciones&&<p style={{fontSize:11,color:'var(--text3)',borderLeft:'2px solid var(--border2)',paddingLeft:8,margin:0}}>{p.condiciones.slice(0,80)}{p.condiciones.length>80?'…':''}</p>}
-                {(p.historial?.length||0)>0&&<div style={{fontSize:11,color:'var(--text3)'}}>📝 {p.historial.length} nota{p.historial.length!==1?'s':''} en historial</div>}
+
+                {p.condiciones&&<p style={{fontSize:11,color:'var(--text3)',borderLeft:'2px solid var(--border2)',paddingLeft:8,margin:0}}>{p.condiciones.slice(0,90)}{p.condiciones.length>90?'…':''}</p>}
+                {(p.historial?.length||0)>0&&<div style={{fontSize:11,color:'var(--text3)'}}>📝 {p.historial.length} nota{p.historial.length!==1?'s':''}</div>}
               </div>
             </div>
           )
         })}
       </div>
 
+      {/* ── Modal nuevo/editar plan ── */}
       {modal&&(
         <Modal title={editId?'Editar plan':'Nuevo plan'} onClose={()=>{setModal(false);setEditId(null)}} wide>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
-            <Field label="Distribuidor *" span>
-              <input list="dist-plan" value={form.distribuidor} onChange={e=>setForm({...form,distribuidor:e.target.value})} placeholder="Nombre del distribuidor"/>
-              <datalist id="dist-plan">{distribuidores.map(d=><option key={d} value={d}/>)}</datalist>
+          <div style={{display:'flex',flexDirection:'column',gap:18}}>
+
+            {/* Básicos */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+              <Field label="Distribuidor *" span>
+                <input list="dist-plan" value={form.distribuidor} onChange={e=>setForm({...form,distribuidor:e.target.value})} placeholder="Nombre del distribuidor"/>
+                <datalist id="dist-plan">{distribuidores.map(d=><option key={d} value={d}/>)}</datalist>
+              </Field>
+              <Field label="Año">
+                <input type="number" value={form.anio} onChange={e=>setForm({...form,anio:e.target.value})} placeholder="2026"/>
+              </Field>
+              <Field label="Quarter *">
+                <select value={form.quarter} onChange={e=>setForm({...form,quarter:e.target.value})}>
+                  {QUARTERS.map(q=><option key={q}>{q}</option>)}
+                </select>
+              </Field>
+              <Field label="Estado">
+                <select value={form.estado} onChange={e=>setForm({...form,estado:e.target.value})}>
+                  {ESTADOS_PLAN.map(s=><option key={s}>{s}</option>)}
+                </select>
+              </Field>
+            </div>
+
+            {/* Tipos de plan — texto libre */}
+            <Field label="Tipos de plan (separados por coma)">
+              <input value={form.tiposPlanTexto} onChange={e=>setForm({...form,tiposPlanTexto:e.target.value})}
+                placeholder="Ej: Prolub respalda, Sell out, CVC's producto"/>
+              <span style={{fontSize:11,color:'var(--text3)',marginTop:4}}>Escribe los nombres como los usas tú, separados por coma</span>
             </Field>
-            <Field label="Año"><input type="number" value={form.anio} onChange={e=>setForm({...form,anio:e.target.value})} placeholder="2026"/></Field>
-            <Field label="Quarter *">
-              <select value={form.quarter} onChange={e=>setForm({...form,quarter:e.target.value})}>
-                {QUARTERS.map(q=><option key={q}>{q}</option>)}
-              </select>
-            </Field>
-            <Field label="Estado">
-              <select value={form.estado} onChange={e=>setForm({...form,estado:e.target.value})}>
-                {ESTADOS_PLAN.map(s=><option key={s}>{s}</option>)}
-              </select>
-            </Field>
-            <Field label="Meta galones"><input type="number" value={form.metaGalones} onChange={e=>setForm({...form,metaGalones:e.target.value})} placeholder="0"/></Field>
-            <Field label="Meta venta neta (COP)"><input type="number" value={form.metaVenta} onChange={e=>setForm({...form,metaVenta:e.target.value})} placeholder="0"/></Field>
-            <Field label="Tipos de plan" span>
-              <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
-                {TIPOS_PLAN.map(t=>(
-                  <label key={t} style={{display:'flex',alignItems:'center',gap:5,fontSize:13,cursor:'pointer',color:'var(--text2)'}}>
-                    <input type="checkbox" checked={form.tiposPlan?.includes(t)} onChange={e=>{
-                      const arr=e.target.checked?[...(form.tiposPlan||[]),t]:(form.tiposPlan||[]).filter(x=>x!==t)
-                      setForm({...form,tiposPlan:arr})
-                    }}/>{t}
-                  </label>
+
+            {/* Metas por mes */}
+            <div>
+              <div style={{fontSize:12,fontWeight:600,color:'var(--text2)',marginBottom:10,textTransform:'uppercase',letterSpacing:'0.05em'}}>
+                Metas por mes — {form.quarter} ({(mesesQ(form.quarter)).join(' · ')})
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}>
+                {mesesQ(form.quarter).map((mes,i)=>(
+                  <div key={mes} style={{background:'var(--bg3)',borderRadius:10,padding:'12px 14px',display:'flex',flexDirection:'column',gap:8}}>
+                    <div style={{fontSize:12,fontWeight:600,color:'var(--accent2)'}}>{mes}</div>
+                    <Field label="Meta Venta (COP)">
+                      <input type="number" value={form['metaMes'+(i+1)]} onChange={e=>setForm({...form,['metaMes'+(i+1)]:e.target.value})} placeholder="0"/>
+                    </Field>
+                    <Field label="Meta Galones">
+                      <input type="number" value={form['metaGalonesMes'+(i+1)]} onChange={e=>setForm({...form,['metaGalonesMes'+(i+1)]:e.target.value})} placeholder="0"/>
+                    </Field>
+                  </div>
                 ))}
               </div>
+              {/* Totales Q */}
+              <div style={{display:'flex',gap:20,marginTop:10,padding:'10px 14px',background:'var(--accent-soft)',borderRadius:8,border:'1px solid rgba(108,99,255,0.2)'}}>
+                <span style={{fontSize:13,color:'var(--text2)'}}>Total Q — Venta: <strong style={{color:'var(--accent2)',fontFamily:'var(--mono)'}}>{cop(totalMetaVenta(form))}</strong></span>
+                <span style={{fontSize:13,color:'var(--text2)'}}>Galones: <strong style={{color:'var(--accent2)',fontFamily:'var(--mono)'}}>{num(totalMetaGalones(form))}</strong></span>
+              </div>
+            </div>
+
+            {/* CVC */}
+            <div style={{background:'var(--bg3)',borderRadius:10,padding:'14px 16px',display:'flex',flexDirection:'column',gap:10}}>
+              <div style={{display:'flex',alignItems:'center',gap:12}}>
+                <span style={{fontSize:13,fontWeight:600,color:'#06b6d4'}}>¿Tiene CVC?</span>
+                <div style={{display:'flex',gap:8}}>
+                  {['Sí','No'].map(v=>(
+                    <button key={v} onClick={()=>setForm({...form,tieneCVC:v})}
+                      style={{...S.btn(form.tieneCVC===v?'rgba(6,182,212,0.2)':'var(--bg4)',form.tieneCVC===v?'#06b6d4':'var(--text2)'),padding:'5px 16px',fontSize:13,border:form.tieneCVC===v?'1px solid rgba(6,182,212,0.4)':'1px solid var(--border2)'}}>
+                      {v}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {form.tieneCVC==='Sí'&&(
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                  <Field label="Monto CVC (COP)">
+                    <input type="number" value={form.montoCVC} onChange={e=>setForm({...form,montoCVC:e.target.value})} placeholder="0"/>
+                  </Field>
+                  <Field label="Detalle CVC">
+                    <input value={form.detalleCVC} onChange={e=>setForm({...form,detalleCVC:e.target.value})} placeholder="Descripción del CVC..."/>
+                  </Field>
+                </div>
+              )}
+            </div>
+
+            {/* Promotora */}
+            <div style={{background:'var(--bg3)',borderRadius:10,padding:'14px 16px',display:'flex',flexDirection:'column',gap:10}}>
+              <div style={{display:'flex',alignItems:'center',gap:12}}>
+                <span style={{fontSize:13,fontWeight:600,color:'#a78bfa'}}>¿Tiene Promotora?</span>
+                <div style={{display:'flex',gap:8}}>
+                  {['Sí','No'].map(v=>(
+                    <button key={v} onClick={()=>setForm({...form,tienePromotora:v})}
+                      style={{...S.btn(form.tienePromotora===v?'rgba(168,139,250,0.2)':'var(--bg4)',form.tienePromotora===v?'#a78bfa':'var(--text2)'),padding:'5px 16px',fontSize:13,border:form.tienePromotora===v?'1px solid rgba(168,139,250,0.4)':'1px solid var(--border2)'}}>
+                      {v}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {form.tienePromotora==='Sí'&&(
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                  <Field label="Nombre de la promotora">
+                    <input value={form.nombrePromotora} onChange={e=>setForm({...form,nombrePromotora:e.target.value})} placeholder="Nombre completo..."/>
+                  </Field>
+                  <Field label="Monto mensual (COP)">
+                    <input type="number" value={form.montoPromotora} onChange={e=>setForm({...form,montoPromotora:e.target.value})} placeholder="0"/>
+                  </Field>
+                </div>
+              )}
+            </div>
+
+            {/* Condiciones y notas */}
+            <Field label="Condiciones del plan">
+              <textarea value={form.condiciones} onChange={e=>setForm({...form,condiciones:e.target.value})} rows={3} style={{resize:'vertical'}}
+                placeholder="Condiciones, montos, requisitos mínimos..."/>
             </Field>
-            <Field label="Condiciones del plan" span><textarea value={form.condiciones} onChange={e=>setForm({...form,condiciones:e.target.value})} rows={3} style={{resize:'vertical'}} placeholder="Ej: Apoyo nomina mensual $X condicionado a compra mínima de Y galones/mes..."/></Field>
-            <Field label="Acuerdos especiales" span><textarea value={form.acuerdos} onChange={e=>setForm({...form,acuerdos:e.target.value})} rows={2} style={{resize:'vertical'}} placeholder="Ej: Bonificación en producto al 110% de meta..."/></Field>
-            <Field label="Notas internas" span><textarea value={form.notas} onChange={e=>setForm({...form,notas:e.target.value})} rows={2} style={{resize:'vertical'}} placeholder="Observaciones, alertas, oportunidades..."/></Field>
+            <Field label="Acuerdos especiales">
+              <textarea value={form.acuerdos} onChange={e=>setForm({...form,acuerdos:e.target.value})} rows={2} style={{resize:'vertical'}}
+                placeholder="Bonificaciones, descuentos adicionales..."/>
+            </Field>
+            <Field label="Notas internas">
+              <textarea value={form.notas} onChange={e=>setForm({...form,notas:e.target.value})} rows={2} style={{resize:'vertical'}}
+                placeholder="Alertas, oportunidades, observaciones..."/>
+            </Field>
           </div>
+
           <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:20}}>
             <button onClick={()=>{setModal(false);setEditId(null)}} style={S.btn('var(--bg3)','var(--text2)')}>Cancelar</button>
             <button onClick={submit} style={S.btn('var(--accent)','#fff')}><Check size={15}/> Guardar plan</button>
@@ -920,31 +1109,96 @@ function Planes({ data, setData }) {
         </Modal>
       )}
 
+      {/* ── Modal hoja de vida ── */}
       {modalHoja&&(
-        <Modal title={`Hoja de vida — ${modalHoja.distribuidor}`} onClose={()=>{setModalHoja(null);setNuevaNota('')}} wide>
-          <div style={{display:'flex',flexDirection:'column',gap:18}}>
-            <div style={{display:'flex',gap:8}}><span style={{background:'var(--bg4)',color:'var(--accent2)',fontSize:12,fontWeight:600,padding:'3px 10px',borderRadius:6}}>{modalHoja.quarter} · {modalHoja.anio}</span><Badge label={modalHoja.estado}/></div>
-            {modalHoja.tiposPlan?.length>0&&<div><div style={{fontSize:11,color:'var(--text3)',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.05em'}}>Tipos de plan</div><div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{modalHoja.tiposPlan.map(t=><span key={t} style={{background:'var(--accent-soft)',color:'var(--accent2)',fontSize:12,padding:'3px 10px',borderRadius:6}}>{t}</span>)}</div></div>}
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-              <div style={{background:'var(--bg3)',borderRadius:10,padding:'14px 18px'}}><div style={{fontSize:11,color:'var(--text3)',marginBottom:4}}>META GALONES</div><div style={{fontFamily:'var(--mono)',fontSize:20,fontWeight:700}}>{num(modalHoja.metaGalones)}</div></div>
-              <div style={{background:'var(--bg3)',borderRadius:10,padding:'14px 18px'}}><div style={{fontSize:11,color:'var(--text3)',marginBottom:4}}>META VENTA NETA</div><div style={{fontFamily:'var(--mono)',fontSize:18,fontWeight:700}}>{cop(modalHoja.metaVenta)}</div></div>
+        <Modal title={'Hoja de vida — '+modalHoja.distribuidor} onClose={()=>{setModalHoja(null);setNuevaNota('')}} wide>
+          <div style={{display:'flex',flexDirection:'column',gap:16}}>
+            <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+              <span style={{background:'var(--bg4)',color:'var(--accent2)',fontSize:12,fontWeight:600,padding:'3px 10px',borderRadius:6}}>{modalHoja.quarter} · {modalHoja.anio}</span>
+              <Badge label={modalHoja.estado}/>
+              {modalHoja.tieneCVC==='Sí'&&<span style={{background:'rgba(6,182,212,0.15)',color:'#06b6d4',fontSize:11,fontWeight:600,padding:'3px 10px',borderRadius:6}}>CVC</span>}
+              {modalHoja.tienePromotora==='Sí'&&<span style={{background:'rgba(168,139,250,0.15)',color:'#a78bfa',fontSize:11,fontWeight:600,padding:'3px 10px',borderRadius:6}}>Promotora</span>}
             </div>
-            {modalHoja.condiciones&&<div><div style={{fontSize:11,color:'var(--text3)',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.05em'}}>Condiciones del plan</div><div style={{background:'var(--bg3)',borderRadius:10,padding:'12px 16px',fontSize:13,lineHeight:1.6}}>{modalHoja.condiciones}</div></div>}
-            {modalHoja.acuerdos&&<div><div style={{fontSize:11,color:'var(--text3)',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.05em'}}>Acuerdos especiales</div><div style={{background:'var(--green-soft)',border:'1px solid rgba(61,214,140,0.2)',borderRadius:10,padding:'12px 16px',fontSize:13,lineHeight:1.6}}>{modalHoja.acuerdos}</div></div>}
-            {modalHoja.notas&&<div><div style={{fontSize:11,color:'var(--text3)',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.05em'}}>Notas internas</div><div style={{background:'var(--yellow-soft)',border:'1px solid rgba(255,209,102,0.2)',borderRadius:10,padding:'12px 16px',fontSize:13,lineHeight:1.6}}>{modalHoja.notas}</div></div>}
+
+            {/* Tipos de plan */}
+            {(modalHoja.tiposPlan||[]).length>0&&(
+              <div>
+                <div style={{fontSize:11,color:'var(--text3)',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.05em'}}>Tipos de plan</div>
+                <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                  {(modalHoja.tiposPlan||[]).map(t=><span key={t} style={{background:'var(--accent-soft)',color:'var(--accent2)',fontSize:12,padding:'3px 10px',borderRadius:6}}>{t}</span>)}
+                </div>
+              </div>
+            )}
+
+            {/* Metas por mes */}
+            <div>
+              <div style={{fontSize:11,color:'var(--text3)',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.05em'}}>Metas por mes</div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
+                {mesesQ(modalHoja.quarter).map((mes,i)=>{
+                  const metaV = Number(modalHoja['metaMes'+(i+1)])||0
+                  const metaG = Number(modalHoja['metaGalonesMes'+(i+1)])||0
+                  return (
+                    <div key={mes} style={{background:'var(--bg3)',borderRadius:8,padding:'10px 12px'}}>
+                      <div style={{fontSize:11,fontWeight:600,color:'var(--accent2)',marginBottom:5}}>{mes}</div>
+                      <div style={{fontSize:12,color:'var(--text2)'}}>Venta: {cop(metaV)}</div>
+                      <div style={{fontSize:12,color:'var(--text2)'}}>Galones: {num(metaG)}</div>
+                    </div>
+                  )
+                })}
+              </div>
+              <div style={{display:'flex',gap:20,marginTop:8,padding:'8px 12px',background:'var(--accent-soft)',borderRadius:8}}>
+                <span style={{fontSize:12,color:'var(--text2)'}}>Total Q Venta: <strong style={{color:'var(--accent2)',fontFamily:'var(--mono)'}}>{cop(modalHoja.metaVenta)}</strong></span>
+                <span style={{fontSize:12,color:'var(--text2)'}}>Galones: <strong style={{color:'var(--accent2)',fontFamily:'var(--mono)'}}>{num(modalHoja.metaGalones)}</strong></span>
+              </div>
+            </div>
+
+            {/* CVC */}
+            {modalHoja.tieneCVC==='Sí'&&(
+              <div style={{background:'rgba(6,182,212,0.08)',border:'1px solid rgba(6,182,212,0.2)',borderRadius:10,padding:'12px 16px'}}>
+                <div style={{fontSize:12,fontWeight:600,color:'#06b6d4',marginBottom:5}}>CVC</div>
+                <div style={{fontSize:13,color:'var(--text)'}}>{modalHoja.montoCVC?cop(Number(modalHoja.montoCVC)):''} {modalHoja.detalleCVC}</div>
+              </div>
+            )}
+
+            {/* Promotora */}
+            {modalHoja.tienePromotora==='Sí'&&(
+              <div style={{background:'rgba(168,139,250,0.08)',border:'1px solid rgba(168,139,250,0.2)',borderRadius:10,padding:'12px 16px'}}>
+                <div style={{fontSize:12,fontWeight:600,color:'#a78bfa',marginBottom:5}}>Promotora</div>
+                <div style={{fontSize:13,color:'var(--text)'}}>
+                  {modalHoja.nombrePromotora}
+                  {modalHoja.montoPromotora&&<span style={{marginLeft:10,color:'var(--text2)'}}>— {cop(Number(modalHoja.montoPromotora))}/mes</span>}
+                </div>
+              </div>
+            )}
+
+            {modalHoja.condiciones&&<div>
+              <div style={{fontSize:11,color:'var(--text3)',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.05em'}}>Condiciones</div>
+              <div style={{background:'var(--bg3)',borderRadius:10,padding:'12px 16px',fontSize:13,lineHeight:1.6}}>{modalHoja.condiciones}</div>
+            </div>}
+            {modalHoja.acuerdos&&<div>
+              <div style={{fontSize:11,color:'var(--text3)',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.05em'}}>Acuerdos especiales</div>
+              <div style={{background:'var(--green-soft)',border:'1px solid rgba(61,214,140,0.2)',borderRadius:10,padding:'12px 16px',fontSize:13,lineHeight:1.6}}>{modalHoja.acuerdos}</div>
+            </div>}
+            {modalHoja.notas&&<div>
+              <div style={{fontSize:11,color:'var(--text3)',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.05em'}}>Notas internas</div>
+              <div style={{background:'var(--yellow-soft)',border:'1px solid rgba(255,209,102,0.2)',borderRadius:10,padding:'12px 16px',fontSize:13,lineHeight:1.6}}>{modalHoja.notas}</div>
+            </div>}
+
+            {/* Historial */}
             <div>
               <div style={{fontSize:11,color:'var(--text3)',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.05em'}}>Historial de seguimiento</div>
-              <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:12}}>
+              <div style={{display:'flex',flexDirection:'column',gap:7,marginBottom:10}}>
                 {(modalHoja.historial||[]).length===0&&<div style={{fontSize:12,color:'var(--text3)',fontStyle:'italic'}}>Sin notas aún</div>}
                 {(modalHoja.historial||[]).map((n,i)=>(
-                  <div key={i} style={{display:'flex',gap:10,padding:'10px 14px',background:'var(--bg3)',borderRadius:8}}>
-                    <span style={{fontSize:11,color:'var(--text3)',whiteSpace:'nowrap',marginTop:1}}>{n.fecha}</span>
+                  <div key={i} style={{display:'flex',gap:10,padding:'9px 12px',background:'var(--bg3)',borderRadius:8}}>
+                    <span style={{fontSize:11,color:'var(--text3)',whiteSpace:'nowrap'}}>{n.fecha}</span>
                     <span style={{fontSize:13}}>{n.texto}</span>
                   </div>
                 ))}
               </div>
               <div style={{display:'flex',gap:10}}>
-                <input value={nuevaNota} onChange={e=>setNuevaNota(e.target.value)} onKeyDown={e=>e.key==='Enter'&&agregarNota(modalHoja.id)} placeholder="Agregar nota de seguimiento..." style={{flex:1}}/>
+                <input value={nuevaNota} onChange={e=>setNuevaNota(e.target.value)} onKeyDown={e=>e.key==='Enter'&&agregarNota(modalHoja.id)}
+                  placeholder="Agregar nota de seguimiento..." style={{flex:1}}/>
                 <button onClick={()=>agregarNota(modalHoja.id)} style={S.btn('var(--accent)','#fff')}>Agregar</button>
               </div>
             </div>
