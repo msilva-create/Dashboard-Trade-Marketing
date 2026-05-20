@@ -1943,64 +1943,372 @@ const TABS = [
   {id:'pendientes', label:'Pendientes',  icon:ListTodo},
 ]
 
+
+// ═══════════════════════════════════════════════════════
+// SISTEMA DE USUARIOS
+// ═══════════════════════════════════════════════════════
+const USUARIOS = [
+  { id:'industria',    nombre:'Industria',          pass:'ind2026',   color:'#06b6d4', rol:'normal' },
+  { id:'distribucion', nombre:'Distribución',        pass:'dis2026',   color:'#3dd68c', rol:'normal' },
+  { id:'zonas',        nombre:'Zonas Directas',      pass:'zon2026',   color:'#ff9f43', rol:'normal' },
+  { id:'presupuesto',  nombre:'Presupuesto (Juan)',  pass:'pres2026',  color:'#a78bfa', rol:'presupuesto' },
+  { id:'lider',        nombre:'Líder de Mercadeo',   pass:'lider2026', color:'#f59e0b', rol:'lider' },
+  { id:'diseno',       nombre:'Diseño',              pass:'dis2026x',  color:'#ec4899', rol:'normal' },
+]
+const AUTH_KEY = 'prolub_auth'
+const getStorageKey = uid => 'tracker_v3_'+uid
+
+function getSessionUser() {
+  try { const s=localStorage.getItem(AUTH_KEY); return s?JSON.parse(s):null } catch { return null }
+}
+
+function LoginScreen({ onLogin }) {
+  const [selUser, setSelUser] = useState(null)
+  const [pass, setPass] = useState('')
+  const [error, setError] = useState('')
+
+  const intentar = () => {
+    if(!selUser) return
+    const u = USUARIOS.find(u=>u.id===selUser)
+    if(u.pass===pass) { localStorage.setItem(AUTH_KEY,JSON.stringify({id:u.id,nombre:u.nombre,rol:u.rol,color:u.color})); onLogin({id:u.id,nombre:u.nombre,rol:u.rol,color:u.color}) }
+    else { setError('Contraseña incorrecta'); setTimeout(()=>setError(''),2000) }
+  }
+
+  return (
+    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'var(--bg)',padding:20}}>
+      <div style={{width:'100%',maxWidth:420}}>
+        <div style={{textAlign:'center',marginBottom:32}}>
+          <div style={{width:52,height:52,borderRadius:14,background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px'}}>
+            <BarChart2 size={26} color="#fff"/>
+          </div>
+          <h1 style={{fontSize:22,fontWeight:700,letterSpacing:'-0.02em',marginBottom:6}}>Prolub Trade Marketing</h1>
+          <p style={{fontSize:13,color:'var(--text3)'}}>Selecciona tu unidad y accede</p>
+        </div>
+
+        <div style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:16,padding:28,display:'flex',flexDirection:'column',gap:16}}>
+          <div>
+            <label style={{fontSize:11,color:'var(--text2)',fontWeight:500,textTransform:'uppercase',letterSpacing:'0.05em',display:'block',marginBottom:10}}>Unidad de negocio</label>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+              {USUARIOS.map(u=>(
+                <button key={u.id} onClick={()=>{setSelUser(u.id);setPass('');setError('')}}
+                  style={{padding:'10px 14px',borderRadius:10,border:'2px solid '+(selUser===u.id?u.color:'var(--border2)'),background:selUser===u.id?'rgba('+hexToRgb(u.color)+',0.1)':'var(--bg3)',color:selUser===u.id?u.color:'var(--text2)',cursor:'pointer',fontSize:13,fontWeight:selUser===u.id?600:400,fontFamily:'var(--font)',textAlign:'left',transition:'all 0.15s'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:7}}>
+                    <div style={{width:8,height:8,borderRadius:'50%',background:u.color,flexShrink:0}}/>
+                    {u.nombre}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {selUser&&(
+            <div style={{display:'flex',flexDirection:'column',gap:10}}>
+              <div>
+                <label style={{fontSize:11,color:'var(--text2)',fontWeight:500,textTransform:'uppercase',letterSpacing:'0.05em',display:'block',marginBottom:6}}>Contraseña</label>
+                <input type="password" value={pass} onChange={e=>setPass(e.target.value)}
+                  onKeyDown={e=>e.key==='Enter'&&intentar()}
+                  placeholder="Ingresa tu contraseña" autoFocus
+                  style={{width:'100%',padding:'10px 14px',fontSize:14,borderRadius:10}}/>
+              </div>
+              {error&&<div style={{fontSize:12,color:'var(--red)',textAlign:'center'}}>{error}</div>}
+              <button onClick={intentar}
+                style={{background:'var(--accent)',color:'#fff',border:'none',borderRadius:10,padding:'11px',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>
+                Entrar →
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Helper para convertir hex a rgb
+function hexToRgb(hex) {
+  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16)
+  return r+','+g+','+b
+}
+
+// Dashboard consolidado para Líder
+function DashboardLider() {
+  const allData = USUARIOS.filter(u=>u.rol==='normal'||u.rol==='presupuesto').map(u=>{
+    try { const d=localStorage.getItem(getStorageKey(u.id)); return d?{...JSON.parse(d),_unidad:u.nombre,_color:u.color}:null } catch { return null }
+  }).filter(Boolean)
+
+  const totalInv = allData.reduce((s,d)=>s+d.inversiones.reduce((ss,i)=>ss+(Number(i.inversion)||0),0),0)
+  const totalVenta = allData.reduce((s,d)=>s+d.ventas.reduce((ss,v)=>ss+(Number(v.ventaNeta)||0),0),0)
+  const totalPres = allData.reduce((s,d)=>s+d.presupuestos.reduce((ss,p)=>ss+(Number(p.monto)||0),0),0)
+  const totalGastos = allData.reduce((s,d)=>s+(d.gastosPresupuesto||[]).reduce((ss,g)=>ss+(Number(g.valorFactura)||0),0),0)
+
+  const porUnidad = allData.map(d=>({
+    unidad: d._unidad, color: d._color,
+    inv: d.inversiones.reduce((s,i)=>s+(Number(i.inversion)||0),0),
+    venta: d.ventas.reduce((s,v)=>s+(Number(v.ventaNeta)||0),0),
+    pres: d.presupuestos.reduce((s,p)=>s+(Number(p.monto)||0),0),
+    gastos: (d.gastosPresupuesto||[]).reduce((s,g)=>s+(Number(g.valorFactura)||0),0),
+    pendientes: d.pendientes.filter(p=>p.estado!=='Listo'&&p.estado!=='Cancelado').length,
+  }))
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:20}}>
+      <div style={{padding:'12px 18px',background:'var(--accent-soft)',borderRadius:12,border:'1px solid rgba(108,99,255,0.2)',fontSize:13,color:'var(--accent2)'}}>
+        👑 Vista consolidada de todas las unidades de negocio
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(175px,1fr))',gap:13}}>
+        <KpiCard icon={TrendingUp} label="Inversión total" value={cop(totalInv)} sub="Todas las unidades" accent="var(--accent2)"/>
+        <KpiCard icon={ShoppingCart} label="Venta neta total" value={cop(totalVenta)} accent="var(--green)"/>
+        <KpiCard icon={DollarSign} label="Presupuesto total" value={cop(totalPres)} sub={totalPres>0?((totalGastos/totalPres)*100).toFixed(1)+'% ejecutado':''}/>
+        <KpiCard icon={BarChart2} label="Gastos presup." value={cop(totalGastos)} accent={totalGastos>totalPres?'var(--red)':'var(--green)'}/>
+      </div>
+
+      <div style={{...S.card}}>
+        <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}><h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Resumen por unidad de negocio</h4></div>
+        <table style={{width:'100%',borderCollapse:'collapse'}}>
+          <thead><tr>{['Unidad','Inversión','Venta Neta','% Inv/Venta','Presupuesto','Gastado','% Ejec.','Pendientes'].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {porUnidad.length===0&&<tr><td colSpan={8} style={{...S.td,textAlign:'center',color:'var(--text3)',padding:32}}>Ninguna unidad tiene datos aún</td></tr>}
+            {porUnidad.map((u,i)=>{
+              const pctInv = u.venta>0?(u.inv/u.venta)*100:0
+              const pctEjec = u.pres>0?(u.gastos/u.pres)*100:0
+              return (
+                <tr key={i}>
+                  <td style={{...S.td,fontWeight:600}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+                      <div style={{width:10,height:10,borderRadius:'50%',background:u.color,flexShrink:0}}/>
+                      {u.unidad}
+                    </div>
+                  </td>
+                  <td style={{...S.td,fontFamily:'var(--mono)'}}>{cop(u.inv)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--green)'}}>{cop(u.venta)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:600,color:pctInv>15?'var(--red)':pctInv>10?'var(--yellow)':'var(--green)'}}>{pctInv.toFixed(1)}%</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--text2)'}}>{cop(u.pres)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)'}}>{cop(u.gastos)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:600,color:pctEjec>100?'var(--red)':pctEjec>80?'var(--yellow)':'var(--green)'}}>{u.pres>0?pctEjec.toFixed(1)+'%':'—'}</td>
+                  <td style={{...S.td,textAlign:'center'}}>{u.pendientes>0?<span style={{background:'var(--yellow-soft)',color:'var(--yellow)',padding:'2px 8px',borderRadius:6,fontSize:12,fontWeight:600}}>{u.pendientes}</span>:'—'}</td>
+                </tr>
+              )
+            })}
+            {porUnidad.length>0&&(
+              <tr style={{borderTop:'2px solid var(--border2)',background:'var(--bg3)'}}>
+                <td style={{...S.td,fontWeight:700}}>TOTAL CONSOLIDADO</td>
+                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--accent2)'}}>{cop(totalInv)}</td>
+                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--green)'}}>{cop(totalVenta)}</td>
+                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700}}>{totalVenta>0?((totalInv/totalVenta)*100).toFixed(1)+'%':'—'}</td>
+                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700}}>{cop(totalPres)}</td>
+                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:totalGastos>totalPres?'var(--red)':'var(--accent2)'}}>{cop(totalGastos)}</td>
+                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:totalGastos>totalPres?'var(--red)':'var(--green)'}}>{totalPres>0?((totalGastos/totalPres)*100).toFixed(1)+'%':'—'}</td>
+                <td style={S.td}/>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// Vista presupuesto consolidado para Juan
+function PresupuestoConsolidado() {
+  const allData = USUARIOS.filter(u=>u.rol==='normal').map(u=>{
+    try { const d=localStorage.getItem(getStorageKey(u.id)); return d?{...JSON.parse(d),_unidad:u.nombre,_color:u.color}:null } catch { return null }
+  }).filter(Boolean)
+
+  const MESES_LISTA = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+
+  const porMes = MESES_LISTA.map(m=>{
+    const pres = allData.reduce((s,d)=>s+d.presupuestos.filter(p=>p.mes===m).reduce((ss,p)=>ss+(Number(p.monto)||0),0),0)
+    const gastado = allData.reduce((s,d)=>s+(d.gastosPresupuesto||[]).filter(g=>g.mes===m).reduce((ss,g)=>ss+(Number(g.valorFactura)||0),0),0)
+    return {mes:m,pres,gastado,ejec:pres>0?(gastado/pres)*100:0}
+  }).filter(r=>r.pres>0||r.gastado>0)
+
+  const totalPres = porMes.reduce((s,r)=>s+r.pres,0)
+  const totalGastado = porMes.reduce((s,r)=>s+r.gastado,0)
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:20}}>
+      <div style={{padding:'12px 18px',background:'rgba(167,139,250,0.1)',borderRadius:12,border:'1px solid rgba(167,139,250,0.2)',fontSize:13,color:'#a78bfa'}}>
+        💰 Presupuesto consolidado de todas las unidades de negocio
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:13}}>
+        <KpiCard icon={DollarSign} label="Presupuesto total asignado" value={cop(totalPres)} accent="var(--text)"/>
+        <KpiCard icon={TrendingUp} label="Total ejecutado" value={cop(totalGastado)} accent="var(--accent2)"/>
+        <KpiCard icon={BarChart2} label="% Ejecutado global" value={totalPres>0?((totalGastado/totalPres)*100).toFixed(1)+'%':'—'} accent={totalGastado>totalPres?'var(--red)':'var(--green)'}/>
+      </div>
+
+      <div style={{...S.card}}>
+        <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}><h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Ejecutado vs Presupuesto por mes — Consolidado</h4></div>
+        <table style={{width:'100%',borderCollapse:'collapse'}}>
+          <thead><tr>{['Mes','Presupuesto','Ejecutado','Disponible','% Ejec.','Barra'].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {porMes.map((r,i)=>(
+              <tr key={i}>
+                <td style={{...S.td,fontWeight:600}}>{r.mes}</td>
+                <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--text2)'}}>{cop(r.pres)}</td>
+                <td style={{...S.td,fontFamily:'var(--mono)'}}>{cop(r.gastado)}</td>
+                <td style={{...S.td,fontFamily:'var(--mono)',color:r.pres-r.gastado>=0?'var(--green)':'var(--red)'}}>{cop(r.pres-r.gastado)}</td>
+                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:600,color:r.ejec>100?'var(--red)':r.ejec>80?'var(--yellow)':'var(--green)'}}>{r.ejec.toFixed(1)}%</td>
+                <td style={{...S.td,minWidth:120}}>
+                  <div style={{height:6,background:'var(--bg4)',borderRadius:3}}>
+                    <div style={{width:Math.min(r.ejec,100)+'%',height:'100%',background:r.ejec>100?'var(--red)':r.ejec>80?'var(--yellow)':'var(--green)',borderRadius:3}}/>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            <tr style={{borderTop:'2px solid var(--border2)',background:'var(--bg3)'}}>
+              <td style={{...S.td,fontWeight:700}}>TOTAL</td>
+              <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700}}>{cop(totalPres)}</td>
+              <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--accent2)'}}>{cop(totalGastado)}</td>
+              <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:totalPres-totalGastado>=0?'var(--green)':'var(--red)'}}>{cop(totalPres-totalGastado)}</td>
+              <td colSpan={2} style={S.td}/>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* Por unidad */}
+      <div style={S.card}>
+        <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}><h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Por unidad de negocio</h4></div>
+        <table style={{width:'100%',borderCollapse:'collapse'}}>
+          <thead><tr>{['Unidad','Presupuesto','Ejecutado','Disponible','% Ejec.'].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {allData.map((d,i)=>{
+              const pres=d.presupuestos.reduce((s,p)=>s+(Number(p.monto)||0),0)
+              const gastado=(d.gastosPresupuesto||[]).reduce((s,g)=>s+(Number(g.valorFactura)||0),0)
+              const ejec=pres>0?(gastado/pres)*100:0
+              return (
+                <tr key={i}>
+                  <td style={{...S.td,fontWeight:600}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+                      <div style={{width:10,height:10,borderRadius:'50%',background:d._color}}/>
+                      {d._unidad}
+                    </div>
+                  </td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--text2)'}}>{cop(pres)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)'}}>{cop(gastado)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',color:pres-gastado>=0?'var(--green)':'var(--red)'}}>{cop(pres-gastado)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:600,color:ejec>100?'var(--red)':ejec>80?'var(--yellow)':'var(--green)'}}>{pres>0?ejec.toFixed(1)+'%':'—'}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
+  const [usuario, setUsuario] = useState(getSessionUser)
   const [tab, setTab] = useState('dashboard')
-  const [data, setData] = useState(load)
   const [importResult, setImportResult] = useState(null)
   const [importando, setImportando] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
 
+  // Cargar datos del usuario actual
+  const loadUser = () => {
+    if(!usuario) return load()
+    try { const d=localStorage.getItem(getStorageKey(usuario.id)); return d?JSON.parse(d):load() } catch { return load() }
+  }
+  const [data, setData] = useState(loadUser)
+
+  // Al cambiar usuario recargar sus datos
+  useEffect(()=>{ if(usuario) setData(loadUser()) },[usuario?.id])
+
+  const saveUser = d => {
+    if(!usuario) return
+    localStorage.setItem(getStorageKey(usuario.id), JSON.stringify(d))
+  }
+
+  const setDataUser = d => { setData(d); saveUser(d) }
+
+  const cerrarSesion = () => { localStorage.removeItem(AUTH_KEY); setUsuario(null); setTab('dashboard') }
+
   const handleFile = e => {
     const file=e.target.files[0]; if(!file) return
     setImportando(true); setImportResult(null)
-    parsearExcel(file,data,setData,result=>{setImportResult(result);setImportando(false)})
+    parsearExcel(file,data,setDataUser,result=>{setImportResult(result);setImportando(false)})
     e.target.value=''
   }
   const totalImp = importResult?Object.values(importResult.importados).reduce((s,n)=>s+n,0):0
 
+  if(!usuario) return <LoginScreen onLogin={u=>{setUsuario(u);setTab('dashboard')}}/>
+
+  const esLider = usuario.rol==='lider'
+  const esPresupuesto = usuario.rol==='presupuesto'
+
+  const TABS_LIDER = [
+    {id:'dashboard',label:'Dashboard Consolidado',icon:LayoutDashboard},
+  ]
+  const TABS_PRES = [
+    {id:'dashboard',label:'Presupuesto Consolidado',icon:DollarSign},
+  ]
+  const TABS_NORMAL = [
+    {id:'dashboard',  label:'Dashboard',   icon:LayoutDashboard},
+    {id:'inversiones',label:'Inversiones', icon:TrendingUp},
+    {id:'ventas',     label:'Ventas',      icon:ShoppingCart},
+    {id:'planes',     label:'Planes Q',    icon:BookOpen},
+    {id:'presupuesto',label:'Presupuesto', icon:DollarSign},
+    {id:'pendientes', label:'Pendientes',  icon:ListTodo},
+  ]
+
+  const tabs = esLider?TABS_LIDER:esPresupuesto?TABS_PRES:TABS_NORMAL
+
   return (
     <div style={{minHeight:'100vh',display:'flex',flexDirection:'column'}}>
-      <header style={{background:'var(--bg2)',borderBottom:'1px solid var(--border)',padding:'0 28px',display:'flex',alignItems:'center',height:56,gap:24,position:'sticky',top:0,zIndex:10}}>
+      <header style={{background:'var(--bg2)',borderBottom:'1px solid var(--border)',padding:'0 20px',display:'flex',alignItems:'center',height:56,gap:16,position:'sticky',top:0,zIndex:10}}>
         <div style={{display:'flex',alignItems:'center',gap:9}}>
           <div style={{width:30,height:30,borderRadius:8,background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center'}}><BarChart2 size={16} color="#fff"/></div>
-          <span style={{fontWeight:600,fontSize:14,letterSpacing:'-0.01em'}}>Prolub</span>
-          <span style={{color:'var(--text3)',fontSize:14}}>/ Trade Marketing</span>
+          <span style={{fontWeight:600,fontSize:14}}>Prolub</span>
+          <span style={{color:'var(--text3)',fontSize:13}}>/ Trade Marketing</span>
         </div>
         <nav style={{display:'flex',gap:2,marginLeft:'auto',overflowX:'auto'}}>
-          {TABS.map(t=>{ const Icon=t.icon; const active=tab===t.id; return (
-            <button key={t.id} onClick={()=>setTab(t.id)} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 13px',borderRadius:8,fontSize:12,fontWeight:active?500:400,background:active?'var(--accent-soft)':'transparent',color:active?'var(--accent2)':'var(--text2)',border:'none',cursor:'pointer',fontFamily:'var(--font)',whiteSpace:'nowrap'}}>
+          {tabs.map(t=>{ const Icon=t.icon; const active=tab===t.id; return (
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 12px',borderRadius:8,fontSize:12,fontWeight:active?500:400,background:active?'var(--accent-soft)':'transparent',color:active?'var(--accent2)':'var(--text2)',border:'none',cursor:'pointer',fontFamily:'var(--font)',whiteSpace:'nowrap'}}>
               <Icon size={14}/>{t.label}
             </button>
           )})}
         </nav>
+        {/* Usuario badge */}
+        <div style={{display:'flex',alignItems:'center',gap:10,marginLeft:8,flexShrink:0}}>
+          <div style={{display:'flex',alignItems:'center',gap:7,background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:20,padding:'4px 12px'}}>
+            <div style={{width:8,height:8,borderRadius:'50%',background:usuario.color}}/>
+            <span style={{fontSize:12,fontWeight:500,color:'var(--text)'}}>{usuario.nombre}</span>
+          </div>
+          <button onClick={cerrarSesion} style={{fontSize:11,color:'var(--text3)',background:'none',border:'none',cursor:'pointer',padding:'4px 8px',fontFamily:'var(--font)'}}>Salir</button>
+        </div>
       </header>
 
-      <main style={{flex:1,padding:'24px 28px',maxWidth:1280,width:'100%',margin:'0 auto'}}>
-        <div key={tab}>
-          {tab==='dashboard'   &&<Dashboard    data={data}/>}
-          {tab==='inversiones' &&<Inversiones  data={data} setData={setData}/>}
-          {tab==='ventas'      &&<Ventas       data={data} setData={setData}/>}
-          {tab==='planes'      &&<Planes       data={data} setData={setData}/>}
-          {tab==='presupuesto' &&<Presupuesto  data={data} setData={setData}/>}
-          {tab==='pendientes'  &&<Pendientes   data={data} setData={setData}/>}
+      <main style={{flex:1,padding:'24px 28px',maxWidth:1400,width:'100%',margin:'0 auto'}}>
+        <div key={tab+usuario.id}>
+          {esLider && <DashboardLider/>}
+          {esPresupuesto && <PresupuestoConsolidado/>}
+          {!esLider&&!esPresupuesto&&(
+            <>
+              {tab==='dashboard'   &&<Dashboard    data={data}/>}
+              {tab==='inversiones' &&<Inversiones  data={data} setData={setDataUser}/>}
+              {tab==='ventas'      &&<Ventas       data={data} setData={setDataUser}/>}
+              {tab==='planes'      &&<Planes       data={data} setData={setDataUser}/>}
+              {tab==='presupuesto' &&<Presupuesto  data={data} setData={setDataUser}/>}
+              {tab==='pendientes'  &&<Pendientes   data={data} setData={setDataUser}/>}
+            </>
+          )}
         </div>
       </main>
 
-      <footer style={{padding:'12px 28px',borderTop:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
-        <span style={{fontSize:11,color:'var(--text3)'}}>Datos guardados en tu navegador</span>
-        <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
-          <label style={{...S.btn('var(--accent-soft)','var(--accent2)'),fontSize:12,padding:'5px 14px',border:'1px solid rgba(108,99,255,0.25)',cursor:'pointer'}}>
-            ↑ Importar Excel
-            <input type="file" accept=".xlsx,.xls" onChange={handleFile} style={{display:'none'}}/>
-          </label>
-          <button onClick={()=>exportarExcel(data)} style={{...S.btn('var(--green-soft)','var(--green)'),fontSize:12,padding:'5px 14px',border:'1px solid rgba(61,214,140,0.2)'}}>
-            <Download size={13}/> Exportar Excel
-          </button>
-          <button onClick={()=>{if(confirm('¿Borrar todos los datos?')){localStorage.removeItem(STORAGE_KEY);window.location.reload()}}} style={{fontSize:11,color:'var(--text3)',background:'none',border:'none',cursor:'pointer',padding:'4px 8px',fontFamily:'var(--font)'}}>
-            Resetear
-          </button>
-        </div>
-      </footer>
+      {!esLider&&!esPresupuesto&&(
+        <footer style={{padding:'12px 28px',borderTop:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
+          <span style={{fontSize:11,color:'var(--text3)'}}>Datos de <strong style={{color:usuario.color}}>{usuario.nombre}</strong> — guardados en tu navegador</span>
+          <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
+            <label style={{...S.btn('var(--accent-soft)','var(--accent2)'),fontSize:12,padding:'5px 14px',border:'1px solid rgba(108,99,255,0.25)',cursor:'pointer'}}>
+              ↑ Importar Excel<input type="file" accept=".xlsx,.xls" onChange={handleFile} style={{display:'none'}}/>
+            </label>
+            <button onClick={()=>exportarExcel(data)} style={{...S.btn('var(--green-soft)','var(--green)'),fontSize:12,padding:'5px 14px',border:'1px solid rgba(61,214,140,0.2)'}}>
+              <Download size={13}/> Exportar Excel
+            </button>
+            <button onClick={()=>{if(confirm('¿Borrar tus datos?')){localStorage.removeItem(getStorageKey(usuario.id));window.location.reload()}}} style={{fontSize:11,color:'var(--text3)',background:'none',border:'none',cursor:'pointer',padding:'4px 8px',fontFamily:'var(--font)'}}>Resetear</button>
+          </div>
+        </footer>
+      )}
 
       {importando&&<div style={{position:'fixed',bottom:80,right:28,background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:12,padding:'14px 20px',zIndex:200,fontSize:13,color:'var(--accent2)'}}>⏳ Importando datos...</div>}
       {importResult&&(
@@ -2011,15 +2319,17 @@ export default function App() {
           </div>
           {Object.entries(importResult.importados).map(([k,v])=><div key={k} style={{fontSize:12,color:'var(--text2)',marginBottom:3}}>✓ <strong>{k}</strong>: {v} filas</div>)}
           {importResult.errores?.map((e,i)=><div key={i} style={{fontSize:12,color:'var(--red)',marginTop:4}}>{e}</div>)}
-          <div style={{fontSize:11,color:'var(--text3)',marginTop:8,borderTop:'1px solid var(--border)',paddingTop:8}}>Los datos se agregaron a los existentes</div>
         </div>
       )}
 
-      <button onClick={()=>setChatOpen(o=>!o)}
-        style={{position:'fixed',bottom:24,right:24,width:52,height:52,borderRadius:'50%',background:chatOpen?'var(--bg3)':'var(--accent)',color:'#fff',border:chatOpen?'1px solid var(--border2)':'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 20px rgba(108,99,255,0.4)',zIndex:250,transition:'all 0.2s'}}>
-        {chatOpen?<X size={20}/>:<MessageCircle size={22}/>}
-      </button>
-      {chatOpen&&<Asistente data={data} setData={setData} onClose={()=>setChatOpen(false)}/>}
+      {!esLider&&!esPresupuesto&&(
+        <>
+          <button onClick={()=>setChatOpen(o=>!o)} style={{position:'fixed',bottom:24,right:24,width:52,height:52,borderRadius:'50%',background:chatOpen?'var(--bg3)':'var(--accent)',color:'#fff',border:chatOpen?'1px solid var(--border2)':'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 20px rgba(108,99,255,0.4)',zIndex:250,transition:'all 0.2s'}}>
+            {chatOpen?<X size={20}/>:<MessageCircle size={22}/>}
+          </button>
+          {chatOpen&&<Asistente data={data} setData={setDataUser} onClose={()=>setChatOpen(false)}/>}
+        </>
+      )}
     </div>
   )
 }
