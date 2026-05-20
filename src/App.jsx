@@ -53,6 +53,7 @@ function load() {
 }
 function save(d) { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)) } catch {} }
 
+const parseN = v => { if(typeof v==='number') return Math.abs(v); const c=String(v).replace(/[$\s ]/g,'').replace(/\./g,'').replace(',','.'); return parseFloat(c)||0 }
 const cop = n => new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',minimumFractionDigits:0}).format(n||0)
 const num = n => new Intl.NumberFormat('es-CO').format(n||0)
 
