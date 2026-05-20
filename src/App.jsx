@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { LayoutDashboard, TrendingUp, DollarSign, ListTodo, PlusCircle, Trash2, Edit2, X, Download, BarChart2, ShoppingCart, BookOpen, Check, MessageCircle, Bot, Send } from 'lucide-react'
+import { LayoutDashboard, TrendingUp, DollarSign, ListTodo, PlusCircle, Trash2, Edit2, X, Download, BarChart2, ShoppingCart, BookOpen, Check, MessageCircle, Bot, Send, Search } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts'
 import * as XLSX from 'xlsx'
 
@@ -311,134 +311,213 @@ function Dashboard({ data }) {
 }
 
 // ═══════════════════════════════════════════════════════
-// INVERSIONES
+// INVERSIONES — Tabla tipo Excel
 // ═══════════════════════════════════════════════════════
 function Inversiones({ data, setData }) {
-  const [modal, setModal] = useState(false)
   const [filtroMes, setFiltroMes] = useState('')
   const [filtroAnio, setFiltroAnio] = useState('')
   const [filtroDist, setFiltroDist] = useState('')
-  const [editId, setEditId] = useState(null)
-  const blank = { fecha:'', anio:2026, mes:'', distribuidor:'', tipoPlan:'Prolub respalda', concepto:'Apoyo a la nomina', inversion:'', galonesPlan:'', notas:'' }
-  const [form, setForm] = useState(blank)
+  const [busqueda, setBusqueda] = useState('')
+  const [seleccionados, setSeleccionados] = useState(new Set())
+  const [editCell, setEditCell] = useState(null)
+  const [editVal, setEditVal] = useState('')
+  const inputRef = useRef(null)
+
+  const COLS = [
+    {key:'fecha',        label:'Fecha',        w:100},
+    {key:'anio',         label:'Año',          w:55},
+    {key:'mes',          label:'Mes',          w:90},
+    {key:'distribuidor', label:'Distribuidor', w:200},
+    {key:'tipoPlan',     label:'Tipo Plan',    w:150},
+    {key:'concepto',     label:'Concepto',     w:130},
+    {key:'inversion',    label:'Inversión',    w:130},
+    {key:'galonesPlan',  label:'Gal. Plan',    w:75},
+    {key:'notas',        label:'Notas',        w:150},
+  ]
 
   const anios = [...new Set(data.inversiones.map(i=>i.anio))].sort()
   const distribuidores = [...new Set(data.inversiones.map(i=>i.distribuidor))].sort()
 
   const lista = data.inversiones.filter(i=>
-    (!filtroMes||i.mes===filtroMes)&&(!filtroAnio||i.anio===Number(filtroAnio))&&(!filtroDist||i.distribuidor===filtroDist)
-  ).sort((a,b)=>b.id-a.id)
+    (!filtroMes||i.mes===filtroMes) &&
+    (!filtroAnio||i.anio===Number(filtroAnio)) &&
+    (!filtroDist||i.distribuidor===filtroDist) &&
+    (!busqueda||Object.values(i).some(v=>String(v||'').toLowerCase().includes(busqueda.toLowerCase())))
+  ).sort((a,b)=>{
+    const mi=MESES.indexOf(a.mes), mj=MESES.indexOf(b.mes)
+    return mi!==mj ? mi-mj : String(a.distribuidor||'').localeCompare(String(b.distribuidor||''))
+  })
 
-  const totalFiltrado = lista.reduce((s,i)=>s+(i.inversion||0),0)
-  const presMes = filtroMes ? data.presupuestos.filter(p=>p.mes===filtroMes&&(!filtroAnio||p.anio===Number(filtroAnio))).reduce((s,p)=>s+(p.monto||0),0) : 0
+  const totalFiltrado = lista.reduce((s,i)=>s+(Number(i.inversion)||0),0)
+  const presMes = filtroMes ? data.presupuestos.filter(p=>p.mes===filtroMes&&(!filtroAnio||p.anio===Number(filtroAnio))).reduce((s,p)=>s+(Number(p.monto)||0),0) : 0
 
-  const submit = () => {
-    if(!form.distribuidor||!form.mes) return
-    const entry = {...form, id:editId||Date.now(), inversion:Number(form.inversion)||0, galonesPlan:form.galonesPlan?Number(form.galonesPlan):'', anio:Number(form.anio)}
-    const inversiones = editId ? data.inversiones.map(i=>i.id===editId?entry:i) : [...data.inversiones,entry]
-    const nd = {...data,inversiones}; setData(nd); save(nd); setModal(false); setEditId(null); setForm(blank)
+  const toggleSel = id => setSeleccionados(prev=>{const n=new Set(prev);n.has(id)?n.delete(id):n.add(id);return n})
+  const toggleTodos = () => setSeleccionados(prev=>prev.size===lista.length&&lista.length>0?new Set():new Set(lista.map(i=>i.id)))
+  const eliminarSel = () => {
+    if(!seleccionados.size||!confirm('¿Eliminar '+seleccionados.size+' registros?')) return
+    const nd={...data,inversiones:data.inversiones.filter(i=>!seleccionados.has(i.id))}
+    setData(nd);save(nd);setSeleccionados(new Set())
   }
-  const del = id => { const nd={...data,inversiones:data.inversiones.filter(i=>i.id!==id)}; setData(nd); save(nd) }
-  const edit = inv => { setForm({...inv,inversion:inv.inversion.toString(),galonesPlan:inv.galonesPlan?.toString()||''}); setEditId(inv.id); setModal(true) }
+
+  const startEdit = (id,field,val) => {
+    setEditCell({id,field});setEditVal(String(val||''))
+    setTimeout(()=>inputRef.current?.focus(),20)
+  }
+  const commitEdit = () => {
+    if(!editCell) return
+    const {id,field}=editCell
+    const inversiones=data.inversiones.map(i=>{
+      if(i.id!==id) return i
+      const val=(field==='inversion'||field==='galonesPlan'||field==='anio')?(Number(editVal)||0):editVal
+      return {...i,[field]:val}
+    })
+    const nd={...data,inversiones};setData(nd);save(nd);setEditCell(null)
+  }
+  const onKD = e => {
+    if(e.key==='Enter'){commitEdit();e.preventDefault()}
+    if(e.key==='Escape') setEditCell(null)
+    if(e.key==='Tab'){commitEdit();e.preventDefault()}
+  }
+
+  const addFila = () => {
+    const n={id:Date.now(),fecha:'',anio:2026,mes:'',distribuidor:'',tipoPlan:'',concepto:'',inversion:0,galonesPlan:'',notas:''}
+    const nd={...data,inversiones:[...data.inversiones,n]};setData(nd);save(nd)
+    setTimeout(()=>startEdit(n.id,'distribuidor',''),60)
+  }
+
+  const handlePaste = e => {
+    const text=e.clipboardData.getData('text')
+    if(!text.includes('\t')&&!text.includes('\n')) return
+    e.preventDefault()
+    const rows=text.trim().split('\n').map(r=>r.split('\t'))
+    const nuevas=rows.filter(r=>r.length>=2&&(r[0]||r[3])).map((r,i)=>({
+      id:Date.now()+i, fecha:r[0]||'', anio:Number(r[1])||2026, mes:r[2]||'',
+      distribuidor:r[3]||'', tipoPlan:r[4]||'', concepto:r[5]||'',
+      inversion:parseN(r[6]||0), galonesPlan:r[7]?parseN(r[7]):'', notas:r[8]||''
+    })).filter(r=>r.distribuidor||r.mes)
+    if(nuevas.length){
+      const nd={...data,inversiones:[...data.inversiones,...nuevas]};setData(nd);save(nd)
+      alert('✅ '+nuevas.length+' filas pegadas')
+    }
+  }
+
+  const celda = (id,field) => ({
+    padding:'6px 10px', fontSize:12,
+    borderTop:'1px solid var(--border)', borderRight:'1px solid var(--border)',
+    cursor:'cell', whiteSpace:'nowrap', overflow:'hidden', maxWidth:220,
+    background: editCell?.id===id&&editCell?.field===field ? 'rgba(108,99,255,0.18)' : seleccionados.has(id) ? 'rgba(108,99,255,0.07)' : 'transparent',
+    outline: editCell?.id===id&&editCell?.field===field ? '2px solid var(--accent)' : 'none',
+    outlineOffset:'-1px',
+  })
 
   return (
-    <div style={{display:'flex',flexDirection:'column',gap:18}}>
-      <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center'}}>
-        <select value={filtroAnio} onChange={e=>setFiltroAnio(e.target.value)} style={{width:110}}>
-          <option value="">Año</option>
-          {anios.map(a=><option key={a}>{a}</option>)}
+    <div style={{display:'flex',flexDirection:'column',gap:14}}>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+        <div style={{position:'relative',display:'flex',alignItems:'center'}}>
+          <Search size={14} style={{position:'absolute',left:10,color:'var(--text3)',pointerEvents:'none'}}/>
+          <input value={busqueda} onChange={e=>setBusqueda(e.target.value)} placeholder="Buscar..." style={{paddingLeft:32,width:190,fontSize:13}}/>
+        </div>
+        <select value={filtroAnio} onChange={e=>setFiltroAnio(e.target.value)} style={{width:95}}>
+          <option value="">Año</option>{anios.map(a=><option key={a}>{a}</option>)}
         </select>
-        <select value={filtroMes} onChange={e=>setFiltroMes(e.target.value)} style={{width:150}}>
-          <option value="">Todos los meses</option>
-          {MESES.map(m=><option key={m}>{m}</option>)}
+        <select value={filtroMes} onChange={e=>setFiltroMes(e.target.value)} style={{width:130}}>
+          <option value="">Todos los meses</option>{MESES.map(m=><option key={m}>{m}</option>)}
         </select>
-        <select value={filtroDist} onChange={e=>setFiltroDist(e.target.value)} style={{width:220}}>
-          <option value="">Todos los distribuidores</option>
-          {distribuidores.map(d=><option key={d}>{d}</option>)}
+        <select value={filtroDist} onChange={e=>setFiltroDist(e.target.value)} style={{width:200}}>
+          <option value="">Todos los distribuidores</option>{distribuidores.map(d=><option key={d}>{d}</option>)}
         </select>
-        <button onClick={()=>{setEditId(null);setForm(blank);setModal(true)}} style={{...S.btn('var(--accent)','#fff'),marginLeft:'auto'}}>
-          <PlusCircle size={15}/> Nueva inversión
-        </button>
+        {(filtroMes||filtroAnio||filtroDist||busqueda)&&
+          <button onClick={()=>{setFiltroMes('');setFiltroAnio('');setFiltroDist('');setBusqueda('')}} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:12}}>✕ Limpiar</button>}
+        <div style={{marginLeft:'auto',display:'flex',gap:8}}>
+          {seleccionados.size>0&&(
+            <button onClick={eliminarSel} style={{...S.btn('var(--red-soft)','var(--red)'),fontSize:12}}>
+              <Trash2 size={13}/> Eliminar {seleccionados.size}
+            </button>
+          )}
+          <button onClick={addFila} style={{...S.btn('var(--green-soft)','var(--green)'),fontSize:12,border:'1px solid rgba(61,214,140,0.2)'}}>
+            <PlusCircle size={14}/> Añadir fila
+          </button>
+        </div>
       </div>
 
       {filtroMes&&(
-        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
-          <KpiCard icon={TrendingUp} label={`Invertido — ${filtroMes}`} value={cop(totalFiltrado)} sub={`${lista.length} registros`} accent="var(--accent2)"/>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10}}>
+          <KpiCard icon={TrendingUp} label={'Invertido — '+filtroMes} value={cop(totalFiltrado)} sub={lista.length+' registros'} accent="var(--accent2)"/>
           <KpiCard icon={DollarSign} label="Presupuesto del mes" value={cop(presMes)}/>
-          <KpiCard icon={BarChart2} label="% Ejecutado" value={presMes>0?`${((totalFiltrado/presMes)*100).toFixed(1)}%`:'—'} accent={presMes>0&&totalFiltrado/presMes>=1?'var(--red)':'var(--green)'}/>
+          <KpiCard icon={BarChart2} label="% Ejecutado" value={presMes>0?((totalFiltrado/presMes)*100).toFixed(1)+'%':'—'} accent={presMes>0&&totalFiltrado/presMes>=1?'var(--red)':'var(--green)'}/>
           <KpiCard icon={DollarSign} label={presMes-totalFiltrado>=0?'Disponible':'Excedido'} value={cop(Math.abs(presMes-totalFiltrado))} accent={presMes-totalFiltrado>=0?'var(--green)':'var(--red)'}/>
         </div>
       )}
 
-      <div style={S.card}>
-        <table style={{width:'100%',borderCollapse:'collapse'}}>
-          <thead><tr>{['Fecha','Año','Mes','Distribuidor','Tipo Plan','Concepto','Inversión','Galones Plan',''].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+      <div style={{fontSize:11,color:'var(--text3)',display:'flex',gap:20,flexWrap:'wrap'}}>
+        <span>💡 Clic en celda para editar · Enter confirma · Tab siguiente</span>
+        <span>📋 Ctrl+V para pegar desde Excel (mismo orden de columnas)</span>
+        <span>☑️ Checkbox para seleccionar y eliminar en bloque</span>
+      </div>
+
+      <div style={{...S.card,overflowX:'auto'}} onPaste={handlePaste}>
+        <table style={{borderCollapse:'collapse',tableLayout:'fixed',minWidth:'100%'}}>
+          <thead>
+            <tr style={{background:'var(--bg3)'}}>
+              <th style={{...S.th,width:36,textAlign:'center',padding:'8px 6px'}}>
+                <input type="checkbox" checked={seleccionados.size===lista.length&&lista.length>0} onChange={toggleTodos} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
+              </th>
+              <th style={{...S.th,width:36,padding:'8px 4px',textAlign:'center',fontSize:10}}>#</th>
+              {COLS.map(c=><th key={c.key} style={{...S.th,width:c.w}}>{c.label}</th>)}
+            </tr>
+          </thead>
           <tbody>
-            {lista.length===0&&<tr><td colSpan={9} style={{...S.td,textAlign:'center',color:'var(--text3)',padding:40}}>No hay inversiones registradas</td></tr>}
-            {lista.map(inv=>(
-              <tr key={inv.id}>
-                <td style={{...S.td,color:'var(--text2)',whiteSpace:'nowrap'}}>{inv.fecha||'—'}</td>
-                <td style={{...S.td,color:'var(--text2)'}}>{inv.anio}</td>
-                <td style={{...S.td,color:'var(--text2)'}}>{inv.mes}</td>
-                <td style={{...S.td,fontWeight:500}}>{inv.distribuidor}</td>
-                <td style={{...S.td,color:'var(--text2)',fontSize:12}}>{inv.tipoPlan}</td>
-                <td style={{...S.td}}><Badge label={inv.concepto}/></td>
-                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:500}}>{cop(inv.inversion)}</td>
-                <td style={{...S.td,color:'var(--text2)',textAlign:'center'}}>{inv.galonesPlan||'—'}</td>
-                <td style={S.td}>
-                  <div style={{display:'flex',gap:6}}>
-                    <button onClick={()=>edit(inv)} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'4px 8px'}}><Edit2 size={13}/></button>
-                    <button onClick={()=>del(inv.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'4px 8px'}}><Trash2 size={13}/></button>
-                  </div>
+            {lista.length===0&&(
+              <tr><td colSpan={COLS.length+2} style={{padding:48,textAlign:'center',color:'var(--text3)',fontSize:13}}>
+                No hay inversiones. Usa <strong>Añadir fila</strong>, importa tu Excel, o pega con <strong>Ctrl+V</strong>.
+              </td></tr>
+            )}
+            {lista.map((inv,idx)=>(
+              <tr key={inv.id} style={{background:seleccionados.has(inv.id)?'rgba(108,99,255,0.06)':'transparent'}}>
+                <td style={{padding:'6px',textAlign:'center',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>
+                  <input type="checkbox" checked={seleccionados.has(inv.id)} onChange={()=>toggleSel(inv.id)} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
                 </td>
+                <td style={{padding:'6px 4px',textAlign:'center',fontSize:10,color:'var(--text3)',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>{idx+1}</td>
+                {COLS.map(col=>(
+                  <td key={col.key} style={celda(inv.id,col.key)} onClick={()=>startEdit(inv.id,col.key,inv[col.key])}>
+                    {editCell?.id===inv.id&&editCell?.field===col.key ? (
+                      col.key==='mes'?(
+                        <select value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={commitEdit} onKeyDown={onKD} ref={inputRef}
+                          style={{background:'transparent',color:'var(--text)',border:'none',outline:'none',fontSize:12,width:'100%',fontFamily:'var(--font)'}}>
+                          <option value="">—</option>{MESES.map(m=><option key={m}>{m}</option>)}
+                        </select>
+                      ):col.key==='concepto'?(
+                        <select value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={commitEdit} onKeyDown={onKD} ref={inputRef}
+                          style={{background:'transparent',color:'var(--text)',border:'none',outline:'none',fontSize:12,width:'100%',fontFamily:'var(--font)'}}>
+                          {CONCEPTOS.map(c=><option key={c}>{c}</option>)}
+                        </select>
+                      ):(
+                        <input ref={inputRef} value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={commitEdit} onKeyDown={onKD}
+                          type={col.key==='inversion'||col.key==='galonesPlan'||col.key==='anio'?'number':'text'}
+                          style={{background:'transparent',color:'var(--text)',border:'none',outline:'none',fontSize:12,width:'100%',fontFamily:col.key==='inversion'?'var(--mono)':'var(--font)'}}/>
+                      )
+                    ):(
+                      <span style={{color:col.key==='distribuidor'?'var(--text)':'var(--text2)',fontFamily:col.key==='inversion'?'var(--mono)':'inherit'}}>
+                        {col.key==='inversion'?cop(Number(inv[col.key])||0):(inv[col.key]||'')}
+                      </span>
+                    )}
+                  </td>
+                ))}
               </tr>
             ))}
             {lista.length>0&&(
-              <tr style={{borderTop:'2px solid var(--border2)'}}>
-                <td colSpan={6} style={{...S.td,fontWeight:700,color:'var(--text2)'}}>TOTAL {filtroMes&&`— ${filtroMes}`}</td>
-                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--accent2)'}}>{cop(totalFiltrado)}</td>
-                <td colSpan={2} style={S.td}/>
+              <tr style={{background:'var(--bg3)',borderTop:'2px solid var(--border2)'}}>
+                <td colSpan={2} style={{padding:'8px 10px'}}/>
+                <td colSpan={5} style={{padding:'8px 12px',fontWeight:700,fontSize:12,color:'var(--text2)'}}>
+                  TOTAL {filtroMes&&'— '+filtroMes} · {lista.length} registros {seleccionados.size>0&&'· '+seleccionados.size+' seleccionados'}
+                </td>
+                <td style={{padding:'8px 12px',fontFamily:'var(--mono)',fontWeight:700,fontSize:13,color:'var(--accent2)'}}>{cop(totalFiltrado)}</td>
+                <td colSpan={2} style={{padding:'8px 10px'}}/>
               </tr>
             )}
           </tbody>
         </table>
       </div>
-
-      {modal&&(
-        <Modal title={editId?'Editar inversión':'Nueva inversión'} onClose={()=>{setModal(false);setEditId(null)}} wide>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
-            <Field label="Fecha"><input type="date" value={form.fecha} onChange={e=>setForm({...form,fecha:e.target.value})}/></Field>
-            <Field label="Año"><input type="number" value={form.anio} onChange={e=>setForm({...form,anio:e.target.value})} placeholder="2026"/></Field>
-            <Field label="Mes *">
-              <select value={form.mes} onChange={e=>setForm({...form,mes:e.target.value})}>
-                <option value="">Selecciona...</option>
-                {MESES.map(m=><option key={m}>{m}</option>)}
-              </select>
-            </Field>
-            <Field label="Distribuidor *">
-              <input list="dist-inv" value={form.distribuidor} onChange={e=>setForm({...form,distribuidor:e.target.value})} placeholder="Nombre del distribuidor"/>
-              <datalist id="dist-inv">{distribuidores.map(d=><option key={d} value={d}/>)}</datalist>
-            </Field>
-            <Field label="Tipo Plan">
-              <select value={form.tipoPlan} onChange={e=>setForm({...form,tipoPlan:e.target.value})}>
-                {TIPOS_PLAN.map(t=><option key={t}>{t}</option>)}
-              </select>
-            </Field>
-            <Field label="Concepto">
-              <select value={form.concepto} onChange={e=>setForm({...form,concepto:e.target.value})}>
-                {CONCEPTOS.map(c=><option key={c}>{c}</option>)}
-              </select>
-            </Field>
-            <Field label="Inversión (COP) *"><input type="number" value={form.inversion} onChange={e=>setForm({...form,inversion:e.target.value})} placeholder="0"/></Field>
-            <Field label="Galones Plan"><input type="number" value={form.galonesPlan} onChange={e=>setForm({...form,galonesPlan:e.target.value})} placeholder="Opcional"/></Field>
-            <Field label="Notas" span><textarea value={form.notas} onChange={e=>setForm({...form,notas:e.target.value})} rows={2} style={{resize:'vertical'}} placeholder="Observaciones..."/></Field>
-          </div>
-          <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:20}}>
-            <button onClick={()=>{setModal(false);setEditId(null)}} style={S.btn('var(--bg3)','var(--text2)')}>Cancelar</button>
-            <button onClick={submit} style={S.btn('var(--accent)','#fff')}><Check size={15}/> Guardar</button>
-          </div>
-        </Modal>
-      )}
     </div>
   )
 }
