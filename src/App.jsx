@@ -530,6 +530,8 @@ function Ventas({ data, setData }) {
   const [modal, setModal] = useState(false)
   const [filtroMes, setFiltroMes] = useState('')
   const [filtroAnio, setFiltroAnio] = useState('')
+  const [filtroDist, setFiltroDist] = useState('')
+  const [busqueda, setBusqueda] = useState('')
   const [editId, setEditId] = useState(null)
   const blank = { anio:2026, mes:'', distribuidor:'', galones:'', ventaNeta:'', notas:'' }
   const [form, setForm] = useState(blank)
@@ -537,89 +539,196 @@ function Ventas({ data, setData }) {
   const anios = [...new Set([...data.ventas.map(v=>v.anio),...data.inversiones.map(i=>i.anio)])].sort()
   const distribuidores = [...new Set([...data.ventas.map(v=>v.distribuidor),...data.inversiones.map(i=>i.distribuidor)])].sort()
 
-  const lista = data.ventas.filter(v=>(!filtroMes||v.mes===filtroMes)&&(!filtroAnio||v.anio===Number(filtroAnio))).sort((a,b)=>b.id-a.id)
+  const lista = data.ventas.filter(v=>
+    (!filtroMes||v.mes===filtroMes) &&
+    (!filtroAnio||v.anio===Number(filtroAnio)) &&
+    (!filtroDist||v.distribuidor===filtroDist) &&
+    (!busqueda||String(v.distribuidor||'').toLowerCase().includes(busqueda.toLowerCase()))
+  ).sort((a,b)=>{
+    const mi=MESES.indexOf(a.mes), mj=MESES.indexOf(b.mes)
+    return mi!==mj ? mi-mj : String(a.distribuidor||'').localeCompare(String(b.distribuidor||''))
+  })
+
+  // Inversión desde pestaña inversiones por distribuidor+mes+anio
+  const getInv = (dist,mes,anio) =>
+    data.inversiones.filter(i=>i.distribuidor===dist&&i.mes===mes&&i.anio===anio)
+      .reduce((s,i)=>s+(Number(i.inversion)||0),0)
+
+  // Promedio acumulado por distribuidor (todos los meses filtrados)
+  const promAcum = (dist) => {
+    const rows = data.ventas.filter(v=>v.distribuidor===dist&&(!filtroAnio||v.anio===Number(filtroAnio)))
+    const totalGal = rows.reduce((s,v)=>s+(Number(v.galones)||0),0)
+    const totalVta = rows.reduce((s,v)=>s+(Number(v.ventaNeta)||0),0)
+    return totalGal>0 ? totalVta/totalGal : 0
+  }
+
+  const totalGalones = lista.reduce((s,v)=>s+(Number(v.galones)||0),0)
+  const totalVenta   = lista.reduce((s,v)=>s+(Number(v.ventaNeta)||0),0)
+  const totalInv     = lista.reduce((s,v)=>s+getInv(v.distribuidor,v.mes,v.anio),0)
+  const precioPromedio = totalGalones>0 ? totalVenta/totalGalones : 0
 
   const submit = () => {
     if(!form.distribuidor||!form.mes) return
-    const entry = {...form, id:editId||Date.now(), galones:Number(form.galones)||0, ventaNeta:Number(form.ventaNeta)||0, anio:Number(form.anio)}
-    const ventas = editId ? data.ventas.map(v=>v.id===editId?entry:v) : [...data.ventas,entry]
-    const nd = {...data,ventas}; setData(nd); save(nd); setModal(false); setEditId(null); setForm(blank)
+    const entry={...form, id:editId||Date.now(), galones:Number(form.galones)||0, ventaNeta:Number(form.ventaNeta)||0, anio:Number(form.anio)}
+    const ventas=editId?data.ventas.map(v=>v.id===editId?entry:v):[...data.ventas,entry]
+    const nd={...data,ventas};setData(nd);save(nd);setModal(false);setEditId(null);setForm(blank)
   }
-  const del = id => { const nd={...data,ventas:data.ventas.filter(v=>v.id!==id)}; setData(nd); save(nd) }
-  const edit = v => { setForm({...v,galones:v.galones.toString(),ventaNeta:v.ventaNeta.toString()}); setEditId(v.id); setModal(true) }
-  const getInv = (dist,mes,anio) => data.inversiones.filter(i=>i.distribuidor===dist&&i.mes===mes&&i.anio===anio).reduce((s,i)=>s+(i.inversion||0),0)
+  const del = id => { const nd={...data,ventas:data.ventas.filter(v=>v.id!==id)};setData(nd);save(nd) }
+  const edit = v => { setForm({...v,galones:String(v.galones),ventaNeta:String(v.ventaNeta)});setEditId(v.id);setModal(true) }
 
-  const totalGalones = lista.reduce((s,v)=>s+(v.galones||0),0)
-  const totalVenta = lista.reduce((s,v)=>s+(v.ventaNeta||0),0)
+  // Resumen acumulado por distribuidor
+  const resumenDist = [...new Set(lista.map(v=>v.distribuidor))].map(d=>{
+    const rows = lista.filter(v=>v.distribuidor===d)
+    const gal = rows.reduce((s,v)=>s+(Number(v.galones)||0),0)
+    const vta = rows.reduce((s,v)=>s+(Number(v.ventaNeta)||0),0)
+    const inv = rows.reduce((s,v)=>s+getInv(v.distribuidor,v.mes,v.anio),0)
+    return { dist:d, gal, vta, inv, precioMes: gal>0?vta/gal:0, precioAcum: promAcum(d), pctInv: vta>0?(inv/vta)*100:0 }
+  }).sort((a,b)=>b.vta-a.vta)
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:18}}>
-      <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center'}}>
-        <select value={filtroAnio} onChange={e=>setFiltroAnio(e.target.value)} style={{width:110}}>
-          <option value="">Año</option>
-          {anios.map(a=><option key={a}>{a}</option>)}
+      {/* Filtros */}
+      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+        <div style={{position:'relative',display:'flex',alignItems:'center'}}>
+          <Search size={13} style={{position:'absolute',left:9,color:'var(--text3)',pointerEvents:'none'}}/>
+          <input value={busqueda} onChange={e=>setBusqueda(e.target.value)} placeholder="Buscar distribuidor..." style={{paddingLeft:30,width:200,fontSize:13}}/>
+        </div>
+        <select value={filtroAnio} onChange={e=>setFiltroAnio(e.target.value)} style={{width:100}}>
+          <option value="">Año</option>{anios.map(a=><option key={a}>{a}</option>)}
         </select>
-        <select value={filtroMes} onChange={e=>setFiltroMes(e.target.value)} style={{width:160}}>
-          <option value="">Todos los meses</option>
-          {MESES.map(m=><option key={m}>{m}</option>)}
+        <select value={filtroMes} onChange={e=>setFiltroMes(e.target.value)} style={{width:140}}>
+          <option value="">Todos los meses</option>{MESES.map(m=><option key={m}>{m}</option>)}
         </select>
+        <select value={filtroDist} onChange={e=>setFiltroDist(e.target.value)} style={{width:220}}>
+          <option value="">Todos los distribuidores</option>{distribuidores.map(d=><option key={d}>{d}</option>)}
+        </select>
+        {(filtroMes||filtroAnio||filtroDist||busqueda)&&
+          <button onClick={()=>{setFiltroMes('');setFiltroAnio('');setFiltroDist('');setBusqueda('')}} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:12}}>✕</button>}
         <button onClick={()=>{setEditId(null);setForm(blank);setModal(true)}} style={{...S.btn('var(--accent)','#fff'),marginLeft:'auto'}}>
           <PlusCircle size={15}/> Registrar venta
         </button>
       </div>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}>
-        <KpiCard icon={ShoppingCart} label="Venta neta total" value={cop(totalVenta)} sub={`${lista.length} registros`} accent="var(--green)"/>
-        <KpiCard icon={BarChart2} label="Total galones" value={num(totalGalones)} accent="var(--accent2)"/>
-        <KpiCard icon={DollarSign} label="Precio prom./galón" value={totalGalones>0?cop(totalVenta/totalGalones):'—'} accent="var(--orange)"/>
+
+      {/* KPIs */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:12}}>
+        <KpiCard icon={ShoppingCart} label="Venta neta total" value={cop(totalVenta)} sub={lista.length+' registros'} accent="var(--green)"/>
+        <KpiCard icon={BarChart2} label="Total galones" value={num(Math.round(totalGalones))} accent="var(--accent2)"/>
+        <KpiCard icon={DollarSign} label="Precio prom. período" value={cop(Math.round(precioPromedio))} sub="Venta Neta ÷ Galones" accent="var(--orange)"/>
+        <KpiCard icon={TrendingUp} label="Inversión total" value={cop(totalInv)} sub="Desde pestaña Inversiones"/>
+        <KpiCard icon={BarChart2} label="% Inv / Venta" value={totalVenta>0?((totalInv/totalVenta)*100).toFixed(1)+'%':'—'} accent={totalVenta>0&&totalInv/totalVenta>0.15?'var(--red)':'var(--green)'}/>
       </div>
+
+      {/* Tabla detalle por registro */}
       <div style={S.card}>
-        <table style={{width:'100%',borderCollapse:'collapse'}}>
-          <thead><tr>{['Año','Mes','Distribuidor','Galones','Venta Neta','Precio/Galón','Inversión','% Inv/Venta',''].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
-          <tbody>
-            {lista.length===0&&<tr><td colSpan={9} style={{...S.td,textAlign:'center',color:'var(--text3)',padding:40}}>No hay ventas registradas</td></tr>}
-            {lista.map(v=>{
-              const inv=getInv(v.distribuidor,v.mes,v.anio)
-              const peso=v.ventaNeta>0?(inv/v.ventaNeta)*100:0
-              return (
-                <tr key={v.id}>
-                  <td style={{...S.td,color:'var(--text2)'}}>{v.anio}</td>
-                  <td style={{...S.td,color:'var(--text2)'}}>{v.mes}</td>
-                  <td style={{...S.td,fontWeight:500}}>{v.distribuidor}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)'}}>{num(v.galones)}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--green)'}}>{cop(v.ventaNeta)}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--text2)'}}>{v.galones>0?cop(v.ventaNeta/v.galones):'—'}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)'}}>{cop(inv)}</td>
-                  <td style={{...S.td}}><span style={{fontFamily:'var(--mono)',fontWeight:600,color:peso>15?'var(--red)':peso>10?'var(--yellow)':'var(--green)'}}>{peso.toFixed(1)}%</span></td>
-                  <td style={S.td}>
-                    <div style={{display:'flex',gap:6}}>
-                      <button onClick={()=>edit(v)} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'4px 8px'}}><Edit2 size={13}/></button>
-                      <button onClick={()=>del(v.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'4px 8px'}}><Trash2 size={13}/></button>
-                    </div>
-                  </td>
-                </tr>
-              )
-            })}
-            {lista.length>0&&(
-              <tr style={{borderTop:'2px solid var(--border2)'}}>
-                <td colSpan={3} style={{...S.td,fontWeight:700,color:'var(--text2)'}}>TOTAL</td>
-                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700}}>{num(totalGalones)}</td>
-                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--green)'}}>{cop(totalVenta)}</td>
-                <td colSpan={4} style={S.td}/>
+        <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}>
+          <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Detalle por registro</h4>
+        </div>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',minWidth:900}}>
+            <thead>
+              <tr style={{background:'var(--bg3)'}}>
+                {['Año','Mes','Distribuidor','Galones','Venta Neta','Precio/Galón','Precio Acum./Galón','Inversión','% Inv/Venta',''].map(h=><th key={h} style={S.th}>{h}</th>)}
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {lista.length===0&&<tr><td colSpan={10} style={{...S.td,textAlign:'center',color:'var(--text3)',padding:40}}>No hay ventas registradas. Importa tu Excel de ventas.</td></tr>}
+              {lista.map(v=>{
+                const inv = getInv(v.distribuidor,v.mes,v.anio)
+                const gal = Number(v.galones)||0
+                const vta = Number(v.ventaNeta)||0
+                const precio = gal>0 ? vta/gal : 0
+                const acum  = promAcum(v.distribuidor)
+                const pct   = vta>0 ? (inv/vta)*100 : 0
+                return (
+                  <tr key={v.id}>
+                    <td style={{...S.td,color:'var(--text2)'}}>{v.anio||'—'}</td>
+                    <td style={{...S.td,color:'var(--text2)'}}>{v.mes}</td>
+                    <td style={{...S.td,fontWeight:500}}>{v.distribuidor}</td>
+                    <td style={{...S.td,fontFamily:'var(--mono)'}}>{num(Math.round(gal))}</td>
+                    <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--green)',fontWeight:500}}>{cop(vta)}</td>
+                    <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--orange)'}}>{cop(Math.round(precio))}</td>
+                    <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--yellow)',fontWeight:500}}>{acum>0?cop(Math.round(acum)):'—'}</td>
+                    <td style={{...S.td,fontFamily:'var(--mono)'}}>{inv>0?cop(inv):<span style={{color:'var(--text3)'}}>—</span>}</td>
+                    <td style={{...S.td}}>
+                      {inv>0?<span style={{fontFamily:'var(--mono)',fontWeight:600,color:pct>15?'var(--red)':pct>10?'var(--yellow)':'var(--green)'}}>{pct.toFixed(1)}%</span>:<span style={{color:'var(--text3)'}}>—</span>}
+                    </td>
+                    <td style={S.td}>
+                      <div style={{display:'flex',gap:5}}>
+                        <button onClick={()=>edit(v)} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'4px 7px'}}><Edit2 size={13}/></button>
+                        <button onClick={()=>del(v.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'4px 7px'}}><Trash2 size={13}/></button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+              {lista.length>0&&(
+                <tr style={{background:'var(--bg3)',borderTop:'2px solid var(--border2)'}}>
+                  <td colSpan={3} style={{...S.td,fontWeight:700,color:'var(--text2)'}}>TOTAL {filtroMes&&'— '+filtroMes}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700}}>{num(Math.round(totalGalones))}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--green)'}}>{cop(totalVenta)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:600,color:'var(--orange)'}}>{cop(Math.round(precioPromedio))}</td>
+                  <td style={S.td}/>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700}}>{cop(totalInv)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:totalVenta>0&&totalInv/totalVenta>0.15?'var(--red)':'var(--green)'}}>{totalVenta>0?((totalInv/totalVenta)*100).toFixed(1)+'%':'—'}</td>
+                  <td style={S.td}/>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
+
+      {/* Resumen acumulado por distribuidor */}
+      {resumenDist.length>0&&(
+        <div style={S.card}>
+          <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+            <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Resumen acumulado por distribuidor</h4>
+            <span style={{fontSize:11,color:'var(--text3)'}}>Precio Acum. = Total Venta Neta ÷ Total Galones (todos los meses)</span>
+          </div>
+          <div style={{overflowX:'auto'}}>
+            <table style={{width:'100%',borderCollapse:'collapse'}}>
+              <thead>
+                <tr style={{background:'var(--bg3)'}}>
+                  {['Distribuidor','Galones','Venta Neta','Precio/Galón período','Precio Acum./Galón','Inversión','% Inv/Venta'].map(h=><th key={h} style={S.th}>{h}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {resumenDist.map((d,i)=>(
+                  <tr key={i} onClick={()=>setFiltroDist(filtroDist===d.dist?'':d.dist)} style={{cursor:'pointer',background:filtroDist===d.dist?'rgba(108,99,255,0.06)':'transparent'}}>
+                    <td style={{...S.td,fontWeight:600,color:filtroDist===d.dist?'var(--accent2)':'var(--text)'}}>{d.dist}</td>
+                    <td style={{...S.td,fontFamily:'var(--mono)'}}>{num(Math.round(d.gal))}</td>
+                    <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--green)',fontWeight:500}}>{cop(d.vta)}</td>
+                    <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--orange)'}}>{cop(Math.round(d.precioMes))}</td>
+                    <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--yellow)',fontWeight:600}}>{cop(Math.round(d.precioAcum))}</td>
+                    <td style={{...S.td,fontFamily:'var(--mono)'}}>{d.inv>0?cop(d.inv):<span style={{color:'var(--text3)'}}>—</span>}</td>
+                    <td style={{...S.td}}>
+                      {d.inv>0?<span style={{fontFamily:'var(--mono)',fontWeight:600,color:d.pctInv>15?'var(--red)':d.pctInv>10?'var(--yellow)':'var(--green)'}}>{d.pctInv.toFixed(1)}%</span>:<span style={{color:'var(--text3)'}}>—</span>}
+                    </td>
+                  </tr>
+                ))}
+                <tr style={{borderTop:'2px solid var(--border2)',background:'var(--bg3)'}}>
+                  <td style={{...S.td,fontWeight:700}}>TOTAL</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700}}>{num(Math.round(totalGalones))}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--green)'}}>{cop(totalVenta)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:600,color:'var(--orange)'}}>{cop(Math.round(precioPromedio))}</td>
+                  <td style={S.td}/>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700}}>{cop(totalInv)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700}}>{totalVenta>0?((totalInv/totalVenta)*100).toFixed(1)+'%':'—'}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div style={{padding:'8px 18px',fontSize:11,color:'var(--text3)',borderTop:'1px solid var(--border)'}}>
+            💡 Clic en una fila para filtrar el detalle arriba · <span style={{color:'var(--orange)'}}>●</span> Precio período &nbsp; <span style={{color:'var(--yellow)'}}>●</span> Precio acumulado
+          </div>
+        </div>
+      )}
+
       {modal&&(
         <Modal title={editId?'Editar venta':'Registrar venta'} onClose={()=>{setModal(false);setEditId(null)}}>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
             <Field label="Año"><input type="number" value={form.anio} onChange={e=>setForm({...form,anio:e.target.value})} placeholder="2026"/></Field>
-            <Field label="Mes *">
-              <select value={form.mes} onChange={e=>setForm({...form,mes:e.target.value})}>
-                <option value="">Selecciona...</option>
-                {MESES.map(m=><option key={m}>{m}</option>)}
-              </select>
-            </Field>
+            <Field label="Mes *"><select value={form.mes} onChange={e=>setForm({...form,mes:e.target.value})}><option value="">Selecciona...</option>{MESES.map(m=><option key={m}>{m}</option>)}</select></Field>
             <Field label="Distribuidor *" span>
               <input list="dist-venta" value={form.distribuidor} onChange={e=>setForm({...form,distribuidor:e.target.value})} placeholder="Nombre del distribuidor"/>
               <datalist id="dist-venta">{distribuidores.map(d=><option key={d} value={d}/>)}</datalist>
@@ -859,13 +968,18 @@ function Presupuesto({ data, setData }) {
   const inputRef = useRef(null)
 
   const COLS_G = [
-    {key:'mes',         label:'Mes',                    w:90},
-    {key:'gasto',       label:'Gasto (Nom. Producto, Cliente)', w:280},
-    {key:'valorFactura',label:'Valor Factura',           w:130},
-    {key:'canal',       label:'Canal',                   w:80},
-    {key:'observacion', label:'Observación (ATJ, otros)',w:200},
-    {key:'estado',      label:'Estado',                  w:100},
-    {key:'centroCostos',label:'Centro de Costos',        w:140},
+    {key:'mes',          label:'Mes',                    w:85},
+    {key:'gasto',        label:'Gasto (Nom. Producto, Cliente)', w:260},
+    {key:'valorFactura', label:'Valor Factura',           w:125},
+    {key:'canal',        label:'Canal',                   w:80},
+    {key:'observacion',  label:'Observación (ATJ)',       w:180},
+    {key:'estado',       label:'Estado',                  w:100},
+    {key:'centroCostos', label:'Centro de Costos',        w:120},
+    {key:'ordenCompra',  label:'Orden de Compra',         w:110},
+    {key:'nitProveedor', label:'NIT Proveedor',           w:110},
+    {key:'nomProveedor', label:'Nom. Proveedor',          w:140},
+    {key:'docCargado',   label:'Doc. Cargado',            w:90},
+    {key:'obsKatherine', label:'Obs. Katherine',          w:160},
   ]
   const ESTADOS_G = ['Pendiente','Ingresado','Aprobado','Pagado','Rechazado']
   const anios = [...new Set([...(data.gastosPresupuesto||[]).map(g=>g.anio),...data.presupuestos.map(p=>p.anio)])].sort()
@@ -1297,13 +1411,16 @@ function parsearExcel(file, data, setData, onDone) {
         if(nuevas.length){data={...data,inversiones:[...data.inversiones,...nuevas]};importados.Inversiones=nuevas.length}
       }
       // Ventas
-      const ventRows = leer('Ventas')
+      const ventRows = leer('Ventas') || leer('Hoja2')
       if(ventRows?.length) {
         const nuevas=ventRows.filter(r=>r['Distribuidor']||r['distribuidor']).map((r,i)=>({
-          id:Date.now()+10000+i, anio:Number(r['Año']||r['Ano']||2026),
-          mes:String(r['Mes']||'').trim(),
+          id:Date.now()+10000+i,
+          anio:Number(r['Año']||r['Ano']||r['año']||2026),
+          mes:String(r['Mes']||r['mes']||'').trim(),
           distribuidor:String(r['Distribuidor']||r['distribuidor']||'').trim(),
-          galones:parseN(r['Galones']||0), ventaNeta:parseN(r['Venta Neta COP']||r['Venta Neta']||0), notas:'',
+          galones:parseN(r['Galones']||r['galones']||0),
+          ventaNeta:parseN(r['Venta Neta']||r['Venta Neta COP']||r['ventaNeta']||0),
+          notas:'',
         }))
         if(nuevas.length){data={...data,ventas:[...data.ventas,...nuevas]};importados.Ventas=nuevas.length}
       }
@@ -1342,23 +1459,42 @@ function parsearExcel(file, data, setData, onDone) {
         }))
         if(nuevas.length){data={...data,pendientes:[...data.pendientes,...nuevas]};importados.Pendientes=nuevas.length}
       }
-      // Gastos de presupuesto — detecta Hoja1 si tiene columna Gasto/Valor Factura
-      const gastosRows = leer('Presupuesto Gastos') || leer('Control Presupuesto') || (esGasto ? primeraRows : null)
+      // Gastos de presupuesto
+      const gastosRows = leer('Presupuesto Mercadeo') || leer('Presupuesto Gastos') || leer('Control Presupuesto') || (esGasto ? primeraRows : null)
       if(gastosRows?.length) {
         const nuevas=gastosRows
-          .filter(r=>(r['Gasto (Nom. Producto, Cliente)']||r['Gasto']||r['B'])&&(r['Mes']||r['A']))
-          .map((r,i)=>({
-            id:Date.now()+50000+i,
-            anio:Number(r['Año']||r['Ano']||2026),
-            mes:String(r['Mes']||r['A']||'').trim(),
-            gasto:String(r['Gasto (Nom. Producto, Cliente)']||r['Gasto']||r['B']||'').trim(),
-            valorFactura:parseN(r['Valor Factura']||r['C']||0),
-            canal:String(r['Canal']||r['D']||'').trim(),
-            observacion:String(r['Observación (ATJ, otros)']||r['Observacion']||r['E']||'').trim(),
-            estado:String(r['Estado']||r['F']||'Pendiente').trim(),
-            centroCostos:String(r['Centro de Costos']||r['G']||'').trim(),
-            notas:'',
-          }))
+          .filter(r=>(r['Gasto (Nom. Producto, Cliente)']||r['Gasto'])&&r['Gasto (Nom. Producto, Cliente)']!=='Gasto (Nom. Producto, Cliente)')
+          .map((r,i)=>{
+            const docCargado = r['\u00bfDocumento Cargado a la Carpeta?']||r['Documento Cargado']
+            const estadoRaw = String(r['Estado']||'')
+            let estado = 'Pendiente'
+            if(estadoRaw && !estadoRaw.startsWith('=IF') && !estadoRaw.startsWith('=if')) {
+              estado = estadoRaw.trim()
+            } else {
+              estado = (docCargado===true||docCargado==='TRUE'||docCargado==='true'||docCargado==='Sí') ? 'Ingresado' : 'Pendiente'
+            }
+            const rawVal = r['Valor Factura']
+            let valorFactura = 0
+            if(typeof rawVal==='number') valorFactura = Math.abs(rawVal)
+            else if(rawVal && !String(rawVal).startsWith('=')) valorFactura = parseN(rawVal)
+            return {
+              id: Date.now()+50000+i,
+              anio: Number(r['Año']||r['Ano']||2026),
+              mes: String(r['Mes']||'Sin mes').trim(),
+              gasto: String(r['Gasto (Nom. Producto, Cliente)']||r['Gasto']||'').trim(),
+              valorFactura,
+              canal: String(r['Canal']||'').trim(),
+              observacion: String(r['Observación (ATJ, otros)']||r['Observacion']||'').trim(),
+              estado,
+              centroCostos: String(r['Centro de Costos']||'').trim(),
+              ordenCompra: String(r['Orden de Compra']||'').trim(),
+              nitProveedor: String(r['Nit Proveedor']||'').trim(),
+              nomProveedor: String(r['Nom. Proveedor']||'').trim(),
+              docCargado: (docCargado===true||docCargado==='TRUE'||docCargado==='Sí') ? 'Sí' : 'No',
+              obsKatherine: String(r['Observación Katherine']||r['Observacion Katherine']||'').trim(),
+              notas: '',
+            }
+          }).filter(r=>r.gasto)
         if(nuevas.length){
           data={...data,gastosPresupuesto:[...(data.gastosPresupuesto||[]),...nuevas]}
           importados['Presupuesto gastos']=nuevas.length
