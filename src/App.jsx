@@ -760,7 +760,6 @@ function Planes({ data, setData }) {
   const [editId, setEditId] = useState(null)
   const [nuevaNota, setNuevaNota] = useState('')
 
-  // Meses por quarter
   const MESES_Q = {
     Q1:['Enero','Febrero','Marzo'],
     Q2:['Abril','Mayo','Junio'],
@@ -768,19 +767,17 @@ function Planes({ data, setData }) {
     Q4:['Octubre','Noviembre','Diciembre'],
   }
 
+  // Cada plan dentro del quarter tiene: nombre, tienePago, descripcionPago, condiciones
+  const blankPlanItem = () => ({ id: Date.now()+Math.random(), nombre:'', tienePago:'No', descripcionPago:'', condiciones:'' })
+
   const blank = {
     distribuidor:'', anio:2026, quarter:'Q1', estado:'Activo',
-    // Metas por mes
+    planesItems: [blankPlanItem()],  // lista de planes con detalle
     metaMes1:'', metaMes2:'', metaMes3:'',
     metaGalonesMes1:'', metaGalonesMes2:'', metaGalonesMes3:'',
-    // Tipos de plan (texto libre, separados por coma)
-    tiposPlanTexto:'',
-    // CVC
     tieneCVC:'No', montoCVC:'', detalleCVC:'',
-    // Promotora
     tienePromotora:'No', nombrePromotora:'', montoPromotora:'',
-    // Condiciones y notas
-    condiciones:'', acuerdos:'', notas:'', historial:[],
+    condicionesGenerales:'', acuerdos:'', notas:'', historial:[],
   }
   const [form, setForm] = useState(blank)
 
@@ -788,9 +785,20 @@ function Planes({ data, setData }) {
   const distribuidores = [...new Set([...data.planes.map(p=>p.distribuidor),...data.inversiones.map(i=>i.distribuidor)])].sort()
   const lista = data.planes.filter(p=>(!filtroQ||p.quarter===filtroQ)&&(!filtroAnio||p.anio===Number(filtroAnio)))
 
-  // Calcular totales del quarter desde meses
   const totalMetaVenta = f => (Number(f.metaMes1)||0)+(Number(f.metaMes2)||0)+(Number(f.metaMes3)||0)
   const totalMetaGalones = f => (Number(f.metaGalonesMes1)||0)+(Number(f.metaGalonesMes2)||0)+(Number(f.metaGalonesMes3)||0)
+  const mesesQ = q => MESES_Q[q]||['Mes 1','Mes 2','Mes 3']
+
+  // Actualizar un plan item
+  const updatePlanItem = (idx, field, val) => {
+    const items = form.planesItems.map((p,i)=>i===idx?{...p,[field]:val}:p)
+    setForm({...form, planesItems:items})
+  }
+  const addPlanItem = () => setForm({...form, planesItems:[...form.planesItems, blankPlanItem()]})
+  const removePlanItem = idx => {
+    if(form.planesItems.length===1) return
+    setForm({...form, planesItems:form.planesItems.filter((_,i)=>i!==idx)})
+  }
 
   const submit = () => {
     if(!form.distribuidor||!form.quarter) return
@@ -800,7 +808,7 @@ function Planes({ data, setData }) {
       anio: Number(form.anio),
       metaVenta: totalMetaVenta(form),
       metaGalones: totalMetaGalones(form),
-      tiposPlan: form.tiposPlanTexto.split(',').map(s=>s.trim()).filter(Boolean),
+      tiposPlan: form.planesItems.filter(p=>p.nombre).map(p=>p.nombre),
       historial: form.historial||[],
     }
     const planes = editId ? data.planes.map(p=>p.id===editId?entry:p) : [...data.planes,entry]
@@ -810,14 +818,15 @@ function Planes({ data, setData }) {
   const del = id => { const nd={...data,planes:data.planes.filter(p=>p.id!==id)};setData(nd);save(nd) }
 
   const edit = p => {
-    setForm({
-      ...blank, ...p,
-      metaMes1: p.metaMes1||'', metaMes2: p.metaMes2||'', metaMes3: p.metaMes3||'',
-      metaGalonesMes1: p.metaGalonesMes1||'', metaGalonesMes2: p.metaGalonesMes2||'', metaGalonesMes3: p.metaGalonesMes3||'',
-      tiposPlanTexto: p.tiposPlanTexto || (p.tiposPlan||[]).join(', '),
-      tieneCVC: p.tieneCVC||'No', montoCVC: p.montoCVC||'', detalleCVC: p.detalleCVC||'',
-      tienePromotora: p.tienePromotora||'No', nombrePromotora: p.nombrePromotora||'', montoPromotora: p.montoPromotora||'',
-      historial: p.historial||[],
+    const items = p.planesItems?.length>0 ? p.planesItems :
+      (p.tiposPlan||[]).map(n=>({id:Date.now()+Math.random(),nombre:n,tienePago:'No',descripcionPago:'',condiciones:''}))
+    if(items.length===0) items.push(blankPlanItem())
+    setForm({...blank,...p, planesItems:items,
+      metaMes1:p.metaMes1||'', metaMes2:p.metaMes2||'', metaMes3:p.metaMes3||'',
+      metaGalonesMes1:p.metaGalonesMes1||'', metaGalonesMes2:p.metaGalonesMes2||'', metaGalonesMes3:p.metaGalonesMes3||'',
+      tieneCVC:p.tieneCVC||'No', montoCVC:p.montoCVC||'', detalleCVC:p.detalleCVC||'',
+      tienePromotora:p.tienePromotora||'No', nombrePromotora:p.nombrePromotora||'', montoPromotora:p.montoPromotora||'',
+      historial:p.historial||[],
     })
     setEditId(p.id);setModal(true)
   }
@@ -835,8 +844,6 @@ function Planes({ data, setData }) {
     q, total:data.planes.filter(p=>p.quarter===q&&(!filtroAnio||p.anio===Number(filtroAnio))).length,
     activos:data.planes.filter(p=>p.quarter===q&&p.estado==='Activo'&&(!filtroAnio||p.anio===Number(filtroAnio))).length,
   })).filter(q=>q.total>0)
-
-  const mesesQ = (q) => MESES_Q[q]||['Mes 1','Mes 2','Mes 3']
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:18}}>
@@ -865,19 +872,18 @@ function Planes({ data, setData }) {
       )}
 
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(360px,1fr))',gap:14}}>
-        {lista.length===0&&<div style={{...S.card,padding:40,textAlign:'center',color:'var(--text3)',gridColumn:'1/-1'}}>No hay planes {filtroQ&&'para '+filtroQ}. Crea el primero.</div>}
+        {lista.length===0&&<div style={{...S.card,padding:40,textAlign:'center',color:'var(--text3)',gridColumn:'1/-1'}}>No hay planes. Crea el primero.</div>}
         {lista.map(p=>{
           const galonesReal=data.ventas.filter(v=>v.distribuidor===p.distribuidor&&(!filtroAnio||v.anio===Number(filtroAnio))).reduce((s,v)=>s+(Number(v.galones)||0),0)
           const ventaReal=data.ventas.filter(v=>v.distribuidor===p.distribuidor&&(!filtroAnio||v.anio===Number(filtroAnio))).reduce((s,v)=>s+(Number(v.ventaNeta)||0),0)
           const invTotal=data.inversiones.filter(i=>i.distribuidor===p.distribuidor&&(!filtroAnio||i.anio===Number(filtroAnio))).reduce((s,i)=>s+(Number(i.inversion)||0),0)
-          const metaGal = p.metaGalones||totalMetaGalones(p)
           const metaVta = p.metaVenta||totalMetaVenta(p)
-          const cumplGal = metaGal>0?(galonesReal/metaGal)*100:0
+          const metaGal = p.metaGalones||totalMetaGalones(p)
           const cumplVta = metaVta>0?(ventaReal/metaVta)*100:0
-          const meses = mesesQ(p.quarter)
+          const cumplGal = metaGal>0?(galonesReal/metaGal)*100:0
+          const items = p.planesItems||[]
           return (
             <div key={p.id} style={{...S.card,display:'flex',flexDirection:'column'}}>
-              {/* Header */}
               <div style={{padding:'14px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8}}>
                 <div>
                   <div style={{fontWeight:600,fontSize:14,marginBottom:5}}>{p.distribuidor}</div>
@@ -894,37 +900,24 @@ function Planes({ data, setData }) {
                   <button onClick={()=>del(p.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'4px 8px'}}><Trash2 size={12}/></button>
                 </div>
               </div>
-
-              {/* Body */}
               <div style={{padding:'14px 18px',display:'flex',flexDirection:'column',gap:10,flex:1}}>
-                {/* Tipos de plan */}
-                {(p.tiposPlan||[]).length>0&&(
-                  <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
-                    {(p.tiposPlan||[]).map(t=><span key={t} style={{background:'var(--accent-soft)',color:'var(--accent2)',fontSize:10,padding:'2px 8px',borderRadius:5}}>{t}</span>)}
+                {/* Planes items */}
+                {items.filter(i=>i.nombre).length>0&&(
+                  <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                    {items.filter(i=>i.nombre).map((item,i)=>(
+                      <div key={i} style={{background:'var(--bg3)',borderRadius:8,padding:'8px 12px'}}>
+                        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:item.descripcionPago||item.condiciones?4:0}}>
+                          <span style={{fontSize:12,fontWeight:600,color:'var(--accent2)'}}>{item.nombre}</span>
+                          {item.tienePago==='Sí'&&<span style={{fontSize:10,background:'var(--green-soft)',color:'var(--green)',padding:'1px 6px',borderRadius:4,fontWeight:600}}>Con pago</span>}
+                        </div>
+                        {item.descripcionPago&&<div style={{fontSize:11,color:'var(--text2)'}}>{item.descripcionPago}</div>}
+                        {item.condiciones&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2,borderLeft:'2px solid var(--border2)',paddingLeft:6}}>{item.condiciones.slice(0,60)}{item.condiciones.length>60?'…':''}</div>}
+                      </div>
+                    ))}
                   </div>
                 )}
 
-                {/* Metas por mes */}
-                <div>
-                  <div style={{fontSize:10,color:'var(--text3)',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.05em'}}>Metas por mes</div>
-                  <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6}}>
-                    {meses.map((m,i)=>{
-                      const metaV = Number(p['metaMes'+(i+1)])||0
-                      const metaG = Number(p['metaGalonesMes'+(i+1)])||0
-                      const realV = data.ventas.filter(v=>v.distribuidor===p.distribuidor&&v.mes===m&&(!filtroAnio||v.anio===Number(filtroAnio))).reduce((s,v)=>s+(Number(v.ventaNeta)||0),0)
-                      return (
-                        <div key={m} style={{background:'var(--bg3)',borderRadius:7,padding:'8px 10px'}}>
-                          <div style={{fontSize:10,color:'var(--text3)',marginBottom:3,fontWeight:600}}>{m}</div>
-                          {metaV>0&&<div style={{fontSize:11,color:'var(--text2)'}}>Meta: {cop(metaV)}</div>}
-                          {metaG>0&&<div style={{fontSize:11,color:'var(--text2)'}}>{metaG} gal</div>}
-                          {metaV>0&&<div style={{fontSize:11,color:realV>=metaV?'var(--green)':'var(--accent2)',marginTop:2}}>Real: {cop(realV)}</div>}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                {/* Totales Q */}
+                {/* Metas Q */}
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
                   <div style={{background:'var(--bg3)',borderRadius:8,padding:'8px 12px'}}>
                     <div style={{fontSize:10,color:'var(--text3)',marginBottom:2}}>META VENTA Q</div>
@@ -938,11 +931,10 @@ function Planes({ data, setData }) {
                   </div>
                 </div>
 
-                {/* Barra cumplimiento venta */}
                 {metaVta>0&&(
                   <div>
                     <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'var(--text3)',marginBottom:3}}>
-                      <span>Cumplimiento venta</span>
+                      <span>Cumplimiento venta Q</span>
                       <span style={{color:cumplVta>=100?'var(--green)':cumplVta>=70?'var(--yellow)':'var(--red)'}}>{cumplVta.toFixed(1)}%</span>
                     </div>
                     <div style={{height:5,background:'var(--bg4)',borderRadius:3}}>
@@ -951,27 +943,23 @@ function Planes({ data, setData }) {
                   </div>
                 )}
 
-                {/* CVC y Promotora */}
                 {(p.tieneCVC==='Sí'||p.tienePromotora==='Sí')&&(
-                  <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-                    {p.tieneCVC==='Sí'&&<div style={{background:'rgba(6,182,212,0.08)',border:'1px solid rgba(6,182,212,0.2)',borderRadius:7,padding:'6px 10px',fontSize:11}}>
+                  <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>
+                    {p.tieneCVC==='Sí'&&<div style={{background:'rgba(6,182,212,0.08)',border:'1px solid rgba(6,182,212,0.2)',borderRadius:6,padding:'5px 10px',fontSize:11}}>
                       <span style={{color:'#06b6d4',fontWeight:600}}>CVC </span>
-                      <span style={{color:'var(--text2)'}}>{p.montoCVC?cop(Number(p.montoCVC)):''} {p.detalleCVC}</span>
+                      <span style={{color:'var(--text2)'}}>{p.montoCVC?cop(Number(p.montoCVC)):''}  {p.detalleCVC}</span>
                     </div>}
-                    {p.tienePromotora==='Sí'&&<div style={{background:'rgba(168,139,250,0.08)',border:'1px solid rgba(168,139,250,0.2)',borderRadius:7,padding:'6px 10px',fontSize:11}}>
+                    {p.tienePromotora==='Sí'&&<div style={{background:'rgba(168,139,250,0.08)',border:'1px solid rgba(168,139,250,0.2)',borderRadius:6,padding:'5px 10px',fontSize:11}}>
                       <span style={{color:'#a78bfa',fontWeight:600}}>Promotora: </span>
-                      <span style={{color:'var(--text2)'}}>{p.nombrePromotora} {p.montoPromotora?'— '+cop(Number(p.montoPromotora)):''}</span>
+                      <span style={{color:'var(--text2)'}}>{p.nombrePromotora}{p.montoPromotora?' — '+cop(Number(p.montoPromotora)):''}</span>
                     </div>}
                   </div>
                 )}
 
-                {/* Inversión acumulada */}
                 <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:'var(--text2)'}}>
                   <span>Inversión acumulada:</span>
                   <span style={{fontFamily:'var(--mono)',color:'var(--accent2)',fontWeight:600}}>{cop(invTotal)}</span>
                 </div>
-
-                {p.condiciones&&<p style={{fontSize:11,color:'var(--text3)',borderLeft:'2px solid var(--border2)',paddingLeft:8,margin:0}}>{p.condiciones.slice(0,90)}{p.condiciones.length>90?'…':''}</p>}
                 {(p.historial?.length||0)>0&&<div style={{fontSize:11,color:'var(--text3)'}}>📝 {p.historial.length} nota{p.historial.length!==1?'s':''}</div>}
               </div>
             </div>
@@ -979,19 +967,18 @@ function Planes({ data, setData }) {
         })}
       </div>
 
-      {/* ── Modal nuevo/editar plan ── */}
+      {/* ── Modal nuevo/editar ── */}
       {modal&&(
         <Modal title={editId?'Editar plan':'Nuevo plan'} onClose={()=>{setModal(false);setEditId(null)}} wide>
           <div style={{display:'flex',flexDirection:'column',gap:18}}>
 
-            {/* Básicos */}
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
               <Field label="Distribuidor *" span>
                 <input list="dist-plan" value={form.distribuidor} onChange={e=>setForm({...form,distribuidor:e.target.value})} placeholder="Nombre del distribuidor"/>
                 <datalist id="dist-plan">{distribuidores.map(d=><option key={d} value={d}/>)}</datalist>
               </Field>
               <Field label="Año">
-                <input type="number" value={form.anio} onChange={e=>setForm({...form,anio:e.target.value})} placeholder="2026"/>
+                <input type="number" value={form.anio} onChange={e=>setForm({...form,anio:e.target.value})}/>
               </Field>
               <Field label="Quarter *">
                 <select value={form.quarter} onChange={e=>setForm({...form,quarter:e.target.value})}>
@@ -1005,17 +992,69 @@ function Planes({ data, setData }) {
               </Field>
             </div>
 
-            {/* Tipos de plan — texto libre */}
-            <Field label="Tipos de plan (separados por coma)">
-              <input value={form.tiposPlanTexto} onChange={e=>setForm({...form,tiposPlanTexto:e.target.value})}
-                placeholder="Ej: Prolub respalda, Sell out, CVC's producto"/>
-              <span style={{fontSize:11,color:'var(--text3)',marginTop:4}}>Escribe los nombres como los usas tú, separados por coma</span>
-            </Field>
+            {/* ── Planes del quarter ── */}
+            <div>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+                <span style={{fontSize:12,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Planes del {form.quarter}</span>
+                <button onClick={addPlanItem} style={{...S.btn('var(--accent-soft)','var(--accent2)'),fontSize:12,padding:'4px 12px',border:'1px solid rgba(108,99,255,0.25)'}}>
+                  <PlusCircle size={13}/> Agregar plan
+                </button>
+              </div>
 
-            {/* Metas por mes */}
+              <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                {form.planesItems.map((item,idx)=>(
+                  <div key={item.id||idx} style={{background:'var(--bg3)',borderRadius:12,padding:'14px 16px',border:'1px solid var(--border2)',position:'relative'}}>
+                    {form.planesItems.length>1&&(
+                      <button onClick={()=>removePlanItem(idx)}
+                        style={{position:'absolute',top:10,right:10,...S.btn('var(--red-soft)','var(--red)'),padding:'3px 7px',fontSize:11}}>
+                        <X size={12}/>
+                      </button>
+                    )}
+                    <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                      {/* Nombre del plan */}
+                      <Field label={'Plan '+(idx+1)+' — Nombre *'}>
+                        <input value={item.nombre} onChange={e=>updatePlanItem(idx,'nombre',e.target.value)}
+                          placeholder="Ej: Prolub acelera tu crecimiento, Sell out Q2..."/>
+                      </Field>
+
+                      {/* ¿Tiene pago? */}
+                      <div style={{display:'flex',alignItems:'center',gap:12}}>
+                        <span style={{fontSize:12,color:'var(--text2)',fontWeight:500}}>¿Tiene pago?</span>
+                        <div style={{display:'flex',gap:7}}>
+                          {['Sí','No'].map(v=>(
+                            <button key={v} onClick={()=>updatePlanItem(idx,'tienePago',v)}
+                              style={{...S.btn(item.tienePago===v?'var(--green-soft)':'var(--bg4)',item.tienePago===v?'var(--green)':'var(--text2)'),padding:'4px 14px',fontSize:12,border:item.tienePago===v?'1px solid rgba(61,214,140,0.3)':'1px solid var(--border2)'}}>
+                              {v}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Descripción del pago */}
+                      {item.tienePago==='Sí'&&(
+                        <Field label="¿Qué incluye el pago? (promotoras, productos, promociones...)">
+                          <textarea value={item.descripcionPago} onChange={e=>updatePlanItem(idx,'descripcionPago',e.target.value)}
+                            rows={2} style={{resize:'vertical'}}
+                            placeholder="Ej: Promotora $1.5M/mes + Producto plan expreso + Bono cumplimiento $500k..."/>
+                        </Field>
+                      )}
+
+                      {/* Condiciones del plan */}
+                      <Field label="Condiciones del plan">
+                        <textarea value={item.condiciones} onChange={e=>updatePlanItem(idx,'condiciones',e.target.value)}
+                          rows={2} style={{resize:'vertical'}}
+                          placeholder="Ej: Condicionado a compra mínima 400 gal/mes, meta de sell out..."/>
+                      </Field>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ── Metas por mes ── */}
             <div>
               <div style={{fontSize:12,fontWeight:600,color:'var(--text2)',marginBottom:10,textTransform:'uppercase',letterSpacing:'0.05em'}}>
-                Metas por mes — {form.quarter} ({(mesesQ(form.quarter)).join(' · ')})
+                Metas por mes — {form.quarter} ({mesesQ(form.quarter).join(' · ')})
               </div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}>
                 {mesesQ(form.quarter).map((mes,i)=>(
@@ -1030,14 +1069,13 @@ function Planes({ data, setData }) {
                   </div>
                 ))}
               </div>
-              {/* Totales Q */}
               <div style={{display:'flex',gap:20,marginTop:10,padding:'10px 14px',background:'var(--accent-soft)',borderRadius:8,border:'1px solid rgba(108,99,255,0.2)'}}>
                 <span style={{fontSize:13,color:'var(--text2)'}}>Total Q — Venta: <strong style={{color:'var(--accent2)',fontFamily:'var(--mono)'}}>{cop(totalMetaVenta(form))}</strong></span>
                 <span style={{fontSize:13,color:'var(--text2)'}}>Galones: <strong style={{color:'var(--accent2)',fontFamily:'var(--mono)'}}>{num(totalMetaGalones(form))}</strong></span>
               </div>
             </div>
 
-            {/* CVC */}
+            {/* ── CVC ── */}
             <div style={{background:'var(--bg3)',borderRadius:10,padding:'14px 16px',display:'flex',flexDirection:'column',gap:10}}>
               <div style={{display:'flex',alignItems:'center',gap:12}}>
                 <span style={{fontSize:13,fontWeight:600,color:'#06b6d4'}}>¿Tiene CVC?</span>
@@ -1055,14 +1093,14 @@ function Planes({ data, setData }) {
                   <Field label="Monto CVC (COP)">
                     <input type="number" value={form.montoCVC} onChange={e=>setForm({...form,montoCVC:e.target.value})} placeholder="0"/>
                   </Field>
-                  <Field label="Detalle CVC">
+                  <Field label="Detalle">
                     <input value={form.detalleCVC} onChange={e=>setForm({...form,detalleCVC:e.target.value})} placeholder="Descripción del CVC..."/>
                   </Field>
                 </div>
               )}
             </div>
 
-            {/* Promotora */}
+            {/* ── Promotora ── */}
             <div style={{background:'var(--bg3)',borderRadius:10,padding:'14px 16px',display:'flex',flexDirection:'column',gap:10}}>
               <div style={{display:'flex',alignItems:'center',gap:12}}>
                 <span style={{fontSize:13,fontWeight:600,color:'#a78bfa'}}>¿Tiene Promotora?</span>
@@ -1087,10 +1125,10 @@ function Planes({ data, setData }) {
               )}
             </div>
 
-            {/* Condiciones y notas */}
-            <Field label="Condiciones del plan">
-              <textarea value={form.condiciones} onChange={e=>setForm({...form,condiciones:e.target.value})} rows={3} style={{resize:'vertical'}}
-                placeholder="Condiciones, montos, requisitos mínimos..."/>
+            {/* Condiciones generales y notas */}
+            <Field label="Condiciones generales del acuerdo">
+              <textarea value={form.condicionesGenerales||form.condiciones||''} onChange={e=>setForm({...form,condicionesGenerales:e.target.value})} rows={2} style={{resize:'vertical'}}
+                placeholder="Condiciones generales que aplican a todos los planes..."/>
             </Field>
             <Field label="Acuerdos especiales">
               <textarea value={form.acuerdos} onChange={e=>setForm({...form,acuerdos:e.target.value})} rows={2} style={{resize:'vertical'}}
@@ -1098,7 +1136,7 @@ function Planes({ data, setData }) {
             </Field>
             <Field label="Notas internas">
               <textarea value={form.notas} onChange={e=>setForm({...form,notas:e.target.value})} rows={2} style={{resize:'vertical'}}
-                placeholder="Alertas, oportunidades, observaciones..."/>
+                placeholder="Alertas, oportunidades, observaciones privadas..."/>
             </Field>
           </div>
 
@@ -1120,31 +1158,46 @@ function Planes({ data, setData }) {
               {modalHoja.tienePromotora==='Sí'&&<span style={{background:'rgba(168,139,250,0.15)',color:'#a78bfa',fontSize:11,fontWeight:600,padding:'3px 10px',borderRadius:6}}>Promotora</span>}
             </div>
 
-            {/* Tipos de plan */}
-            {(modalHoja.tiposPlan||[]).length>0&&(
+            {/* Planes detalle */}
+            {(modalHoja.planesItems||[]).filter(i=>i.nombre).length>0&&(
               <div>
-                <div style={{fontSize:11,color:'var(--text3)',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.05em'}}>Tipos de plan</div>
-                <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                  {(modalHoja.tiposPlan||[]).map(t=><span key={t} style={{background:'var(--accent-soft)',color:'var(--accent2)',fontSize:12,padding:'3px 10px',borderRadius:6}}>{t}</span>)}
+                <div style={{fontSize:11,color:'var(--text3)',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.05em'}}>Planes del {modalHoja.quarter}</div>
+                <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                  {(modalHoja.planesItems||[]).filter(i=>i.nombre).map((item,i)=>(
+                    <div key={i} style={{background:'var(--bg3)',borderRadius:10,padding:'12px 16px',border:'1px solid var(--border2)'}}>
+                      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+                        <span style={{fontWeight:600,fontSize:13,color:'var(--accent2)'}}>{item.nombre}</span>
+                        {item.tienePago==='Sí'&&<span style={{fontSize:11,background:'var(--green-soft)',color:'var(--green)',padding:'2px 8px',borderRadius:5,fontWeight:600}}>✓ Con pago</span>}
+                      </div>
+                      {item.descripcionPago&&(
+                        <div style={{marginBottom:item.condiciones?8:0}}>
+                          <span style={{fontSize:11,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.04em'}}>Pago incluye: </span>
+                          <span style={{fontSize:12,color:'var(--text)'}}>{item.descripcionPago}</span>
+                        </div>
+                      )}
+                      {item.condiciones&&(
+                        <div>
+                          <span style={{fontSize:11,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.04em'}}>Condiciones: </span>
+                          <span style={{fontSize:12,color:'var(--text2)'}}>{item.condiciones}</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
 
-            {/* Metas por mes */}
+            {/* Metas */}
             <div>
               <div style={{fontSize:11,color:'var(--text3)',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.05em'}}>Metas por mes</div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
-                {mesesQ(modalHoja.quarter).map((mes,i)=>{
-                  const metaV = Number(modalHoja['metaMes'+(i+1)])||0
-                  const metaG = Number(modalHoja['metaGalonesMes'+(i+1)])||0
-                  return (
-                    <div key={mes} style={{background:'var(--bg3)',borderRadius:8,padding:'10px 12px'}}>
-                      <div style={{fontSize:11,fontWeight:600,color:'var(--accent2)',marginBottom:5}}>{mes}</div>
-                      <div style={{fontSize:12,color:'var(--text2)'}}>Venta: {cop(metaV)}</div>
-                      <div style={{fontSize:12,color:'var(--text2)'}}>Galones: {num(metaG)}</div>
-                    </div>
-                  )
-                })}
+                {mesesQ(modalHoja.quarter).map((mes,i)=>(
+                  <div key={mes} style={{background:'var(--bg3)',borderRadius:8,padding:'10px 12px'}}>
+                    <div style={{fontSize:11,fontWeight:600,color:'var(--accent2)',marginBottom:4}}>{mes}</div>
+                    <div style={{fontSize:12,color:'var(--text2)'}}>Venta: {cop(Number(modalHoja['metaMes'+(i+1)])||0)}</div>
+                    <div style={{fontSize:12,color:'var(--text2)'}}>Galones: {num(Number(modalHoja['metaGalonesMes'+(i+1)])||0)}</div>
+                  </div>
+                ))}
               </div>
               <div style={{display:'flex',gap:20,marginTop:8,padding:'8px 12px',background:'var(--accent-soft)',borderRadius:8}}>
                 <span style={{fontSize:12,color:'var(--text2)'}}>Total Q Venta: <strong style={{color:'var(--accent2)',fontFamily:'var(--mono)'}}>{cop(modalHoja.metaVenta)}</strong></span>
@@ -1152,37 +1205,36 @@ function Planes({ data, setData }) {
               </div>
             </div>
 
-            {/* CVC */}
             {modalHoja.tieneCVC==='Sí'&&(
               <div style={{background:'rgba(6,182,212,0.08)',border:'1px solid rgba(6,182,212,0.2)',borderRadius:10,padding:'12px 16px'}}>
-                <div style={{fontSize:12,fontWeight:600,color:'#06b6d4',marginBottom:5}}>CVC</div>
-                <div style={{fontSize:13,color:'var(--text)'}}>{modalHoja.montoCVC?cop(Number(modalHoja.montoCVC)):''} {modalHoja.detalleCVC}</div>
+                <div style={{fontSize:12,fontWeight:600,color:'#06b6d4',marginBottom:4}}>CVC</div>
+                <div style={{fontSize:13}}>{modalHoja.montoCVC?cop(Number(modalHoja.montoCVC)):''} {modalHoja.detalleCVC}</div>
               </div>
             )}
-
-            {/* Promotora */}
             {modalHoja.tienePromotora==='Sí'&&(
               <div style={{background:'rgba(168,139,250,0.08)',border:'1px solid rgba(168,139,250,0.2)',borderRadius:10,padding:'12px 16px'}}>
-                <div style={{fontSize:12,fontWeight:600,color:'#a78bfa',marginBottom:5}}>Promotora</div>
-                <div style={{fontSize:13,color:'var(--text)'}}>
-                  {modalHoja.nombrePromotora}
-                  {modalHoja.montoPromotora&&<span style={{marginLeft:10,color:'var(--text2)'}}>— {cop(Number(modalHoja.montoPromotora))}/mes</span>}
-                </div>
+                <div style={{fontSize:12,fontWeight:600,color:'#a78bfa',marginBottom:4}}>Promotora</div>
+                <div style={{fontSize:13}}>{modalHoja.nombrePromotora}{modalHoja.montoPromotora&&' — '+cop(Number(modalHoja.montoPromotora))+'/mes'}</div>
               </div>
             )}
-
-            {modalHoja.condiciones&&<div>
-              <div style={{fontSize:11,color:'var(--text3)',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.05em'}}>Condiciones</div>
-              <div style={{background:'var(--bg3)',borderRadius:10,padding:'12px 16px',fontSize:13,lineHeight:1.6}}>{modalHoja.condiciones}</div>
-            </div>}
-            {modalHoja.acuerdos&&<div>
-              <div style={{fontSize:11,color:'var(--text3)',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.05em'}}>Acuerdos especiales</div>
-              <div style={{background:'var(--green-soft)',border:'1px solid rgba(61,214,140,0.2)',borderRadius:10,padding:'12px 16px',fontSize:13,lineHeight:1.6}}>{modalHoja.acuerdos}</div>
-            </div>}
-            {modalHoja.notas&&<div>
-              <div style={{fontSize:11,color:'var(--text3)',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.05em'}}>Notas internas</div>
-              <div style={{background:'var(--yellow-soft)',border:'1px solid rgba(255,209,102,0.2)',borderRadius:10,padding:'12px 16px',fontSize:13,lineHeight:1.6}}>{modalHoja.notas}</div>
-            </div>}
+            {(modalHoja.condicionesGenerales||modalHoja.condiciones)&&(
+              <div>
+                <div style={{fontSize:11,color:'var(--text3)',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.05em'}}>Condiciones generales</div>
+                <div style={{background:'var(--bg3)',borderRadius:10,padding:'12px 16px',fontSize:13,lineHeight:1.6}}>{modalHoja.condicionesGenerales||modalHoja.condiciones}</div>
+              </div>
+            )}
+            {modalHoja.acuerdos&&(
+              <div>
+                <div style={{fontSize:11,color:'var(--text3)',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.05em'}}>Acuerdos especiales</div>
+                <div style={{background:'var(--green-soft)',border:'1px solid rgba(61,214,140,0.2)',borderRadius:10,padding:'12px 16px',fontSize:13,lineHeight:1.6}}>{modalHoja.acuerdos}</div>
+              </div>
+            )}
+            {modalHoja.notas&&(
+              <div>
+                <div style={{fontSize:11,color:'var(--text3)',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.05em'}}>Notas internas</div>
+                <div style={{background:'var(--yellow-soft)',border:'1px solid rgba(255,209,102,0.2)',borderRadius:10,padding:'12px 16px',fontSize:13,lineHeight:1.6}}>{modalHoja.notas}</div>
+              </div>
+            )}
 
             {/* Historial */}
             <div>
@@ -1197,7 +1249,8 @@ function Planes({ data, setData }) {
                 ))}
               </div>
               <div style={{display:'flex',gap:10}}>
-                <input value={nuevaNota} onChange={e=>setNuevaNota(e.target.value)} onKeyDown={e=>e.key==='Enter'&&agregarNota(modalHoja.id)}
+                <input value={nuevaNota} onChange={e=>setNuevaNota(e.target.value)}
+                  onKeyDown={e=>e.key==='Enter'&&agregarNota(modalHoja.id)}
                   placeholder="Agregar nota de seguimiento..." style={{flex:1}}/>
                 <button onClick={()=>agregarNota(modalHoja.id)} style={S.btn('var(--accent)','#fff')}>Agregar</button>
               </div>
