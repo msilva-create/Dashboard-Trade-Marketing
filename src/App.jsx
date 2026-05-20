@@ -2031,83 +2031,381 @@ function hexToRgb(hex) {
 
 // Dashboard consolidado para Líder
 function DashboardLider() {
-  const allData = USUARIOS.filter(u=>u.rol==='normal'||u.rol==='presupuesto').map(u=>{
-    try { const d=localStorage.getItem(getStorageKey(u.id)); return d?{...JSON.parse(d),_unidad:u.nombre,_color:u.color}:null } catch { return null }
-  }).filter(Boolean)
+  const [tabLider, setTabLider] = useState('dashboard')
+  const [filtroUnidad, setFiltroUnidad] = useState('')
+  const [filtroMes, setFiltroMes] = useState('')
+  const [modalPendiente, setModalPendiente] = useState(false)
+  const [formPend, setFormPend] = useState({unidad:'', distribuidor:'', tarea:'', categoria:'', fechaLimite:'', prioridad:'Media', estado:'Pendiente', responsable:'', notas:''})
 
-  const totalInv = allData.reduce((s,d)=>s+d.inversiones.reduce((ss,i)=>ss+(Number(i.inversion)||0),0),0)
-  const totalVenta = allData.reduce((s,d)=>s+d.ventas.reduce((ss,v)=>ss+(Number(v.ventaNeta)||0),0),0)
-  const totalPres = allData.reduce((s,d)=>s+d.presupuestos.reduce((ss,p)=>ss+(Number(p.monto)||0),0),0)
-  const totalGastos = allData.reduce((s,d)=>s+(d.gastosPresupuesto||[]).reduce((ss,g)=>ss+(Number(g.valorFactura)||0),0),0)
+  // Cargar datos de todas las unidades normales
+  const unidades = USUARIOS.filter(u=>u.rol==='normal')
+  const allData = unidades.map(u=>{
+    try { const d=localStorage.getItem(getStorageKey(u.id)); return d?{...JSON.parse(d),_id:u.id,_unidad:u.nombre,_color:u.color}:{inversiones:[],ventas:[],planes:[],presupuestos:[],pendientes:[],gastosPresupuesto:[],_id:u.id,_unidad:u.nombre,_color:u.color} } catch { return {inversiones:[],ventas:[],planes:[],presupuestos:[],pendientes:[],gastosPresupuesto:[],_id:u.id,_unidad:u.nombre,_color:u.color} }
+  })
 
-  const porUnidad = allData.map(d=>({
-    unidad: d._unidad, color: d._color,
-    inv: d.inversiones.reduce((s,i)=>s+(Number(i.inversion)||0),0),
-    venta: d.ventas.reduce((s,v)=>s+(Number(v.ventaNeta)||0),0),
-    pres: d.presupuestos.reduce((s,p)=>s+(Number(p.monto)||0),0),
-    gastos: (d.gastosPresupuesto||[]).reduce((s,g)=>s+(Number(g.valorFactura)||0),0),
-    pendientes: d.pendientes.filter(p=>p.estado!=='Listo'&&p.estado!=='Cancelado').length,
-  }))
+  const filtered = filtroUnidad ? allData.filter(d=>d._id===filtroUnidad) : allData
+
+  // KPIs globales
+  const totalInv = filtered.reduce((s,d)=>s+d.inversiones.filter(i=>!filtroMes||i.mes===filtroMes).reduce((ss,i)=>ss+(Number(i.inversion)||0),0),0)
+  const totalVenta = filtered.reduce((s,d)=>s+d.ventas.filter(v=>!filtroMes||v.mes===filtroMes).reduce((ss,v)=>ss+(Number(v.ventaNeta)||0),0),0)
+  const totalPres = filtered.reduce((s,d)=>s+d.presupuestos.filter(p=>!filtroMes||p.mes===filtroMes).reduce((ss,p)=>ss+(Number(p.monto)||0),0),0)
+  const totalGastos = filtered.reduce((s,d)=>s+(d.gastosPresupuesto||[]).filter(g=>!filtroMes||g.mes===filtroMes).reduce((ss,g)=>ss+(Number(g.valorFactura)||0),0),0)
+  const roiPct = totalVenta>0?(totalInv/totalVenta)*100:0
+
+  // Por unidad
+  const porUnidad = filtered.map(d=>{
+    const inv=d.inversiones.filter(i=>!filtroMes||i.mes===filtroMes).reduce((s,i)=>s+(Number(i.inversion)||0),0)
+    const venta=d.ventas.filter(v=>!filtroMes||v.mes===filtroMes).reduce((s,v)=>s+(Number(v.ventaNeta)||0),0)
+    const pres=d.presupuestos.filter(p=>!filtroMes||p.mes===filtroMes).reduce((s,p)=>s+(Number(p.monto)||0),0)
+    const gastos=(d.gastosPresupuesto||[]).filter(g=>!filtroMes||g.mes===filtroMes).reduce((s,g)=>s+(Number(g.valorFactura)||0),0)
+    return {unidad:d._unidad,color:d._color,id:d._id,inv,venta,pres,gastos,pctInv:venta>0?(inv/venta)*100:0,pctEjec:pres>0?(gastos/pres)*100:0,pendientes:d.pendientes.filter(p=>p.estado!=='Listo'&&p.estado!=='Cancelado').length}
+  })
+
+  // Por mes (para gráfica)
+  const porMesChart = MESES.map(m=>({
+    name:m.slice(0,3),
+    inv: filtered.reduce((s,d)=>s+d.inversiones.filter(i=>i.mes===m).reduce((ss,i)=>ss+(Number(i.inversion)||0),0),0),
+    venta: filtered.reduce((s,d)=>s+d.ventas.filter(v=>v.mes===m).reduce((ss,v)=>ss+(Number(v.ventaNeta)||0),0),0),
+    gastos: filtered.reduce((s,d)=>s+(d.gastosPresupuesto||[]).filter(g=>g.mes===m).reduce((ss,g)=>ss+(Number(g.valorFactura)||0),0),0),
+  })).filter(m=>m.inv>0||m.venta>0||m.gastos>0)
+
+  // Top clientes/distribuidores por inversión
+  const clientesMap = {}
+  filtered.forEach(d=>{
+    d.inversiones.filter(i=>!filtroMes||i.mes===filtroMes).forEach(i=>{
+      const k = i.distribuidor
+      if(!k) return
+      if(!clientesMap[k]) clientesMap[k]={nombre:k,inv:0,venta:0,unidad:d._unidad,color:d._color}
+      clientesMap[k].inv += Number(i.inversion)||0
+    })
+    d.ventas.filter(v=>!filtroMes||v.mes===filtroMes).forEach(v=>{
+      const k = v.distribuidor
+      if(!k) return
+      if(!clientesMap[k]) clientesMap[k]={nombre:k,inv:0,venta:0,unidad:d._unidad,color:d._color}
+      clientesMap[k].venta += Number(v.ventaNeta)||0
+    })
+  })
+  const topClientes = Object.values(clientesMap).sort((a,b)=>b.inv-a.inv).slice(0,15)
+
+  // Todas las actividades/pendientes
+  const todasActividades = filtered.flatMap(d=>
+    d.pendientes.map(p=>({...p,_unidad:d._unidad,_color:d._color,_uid:d._id}))
+  ).sort((a,b)=>['Alta','Media','Baja'].indexOf(a.prioridad)-['Alta','Media','Baja'].indexOf(b.prioridad))
+
+  const actFiltradas = todasActividades.filter(a=>!filtroUnidad||a._uid===filtroUnidad)
+
+  // Guardar pendiente en unidad destino
+  const crearPendiente = () => {
+    if(!formPend.unidad||!formPend.tarea) return
+    const u = USUARIOS.find(u=>u.id===formPend.unidad)
+    if(!u) return
+    try {
+      const key = getStorageKey(u.id)
+      const raw = localStorage.getItem(key)
+      const ud = raw ? JSON.parse(raw) : {inversiones:[],ventas:[],planes:[],presupuestos:[],pendientes:[],gastosPresupuesto:[]}
+      const nuevo = {...formPend, id:Date.now(), distribuidor:formPend.distribuidor||'', asignadoPor:'Líder de Mercadeo'}
+      delete nuevo.unidad
+      ud.pendientes = [...(ud.pendientes||[]), nuevo]
+      localStorage.setItem(key, JSON.stringify(ud))
+      setModalPendiente(false)
+      setFormPend({unidad:'',distribuidor:'',tarea:'',categoria:'',fechaLimite:'',prioridad:'Media',estado:'Pendiente',responsable:'',notas:''})
+      alert('✅ Actividad asignada a '+u.nombre)
+    } catch(e) { alert('Error: '+e.message) }
+  }
+
+  const CT = ({active,payload,label}) => {
+    if(!active||!payload?.length) return null
+    return <div style={{background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:10,padding:'10px 14px',fontSize:12}}>
+      <p style={{fontWeight:600,marginBottom:4}}>{label}</p>
+      {payload.map((p,i)=><p key={i} style={{color:p.color}}>{p.name}: {cop(p.value)}</p>)}
+    </div>
+  }
+
+  const TABS_L = [{id:'dashboard',label:'Dashboard'},{id:'actividades',label:'Actividades'},{id:'clientes',label:'Por Cliente'},{id:'presupuesto',label:'Presupuesto'}]
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:20}}>
-      <div style={{padding:'12px 18px',background:'var(--accent-soft)',borderRadius:12,border:'1px solid rgba(108,99,255,0.2)',fontSize:13,color:'var(--accent2)'}}>
-        👑 Vista consolidada de todas las unidades de negocio
-      </div>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(175px,1fr))',gap:13}}>
-        <KpiCard icon={TrendingUp} label="Inversión total" value={cop(totalInv)} sub="Todas las unidades" accent="var(--accent2)"/>
-        <KpiCard icon={ShoppingCart} label="Venta neta total" value={cop(totalVenta)} accent="var(--green)"/>
-        <KpiCard icon={DollarSign} label="Presupuesto total" value={cop(totalPres)} sub={totalPres>0?((totalGastos/totalPres)*100).toFixed(1)+'% ejecutado':''}/>
-        <KpiCard icon={BarChart2} label="Gastos presup." value={cop(totalGastos)} accent={totalGastos>totalPres?'var(--red)':'var(--green)'}/>
+      {/* Sub-navegación */}
+      <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+        <div style={{display:'flex',gap:4,background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,padding:4}}>
+          {TABS_L.map(t=>(
+            <button key={t.id} onClick={()=>setTabLider(t.id)}
+              style={{...S.btn(tabLider===t.id?'var(--accent)':'transparent',tabLider===t.id?'#fff':'var(--text2)'),padding:'6px 16px',fontSize:12,borderRadius:7}}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <select value={filtroUnidad} onChange={e=>setFiltroUnidad(e.target.value)} style={{width:190}}>
+          <option value="">Todas las unidades</option>
+          {unidades.map(u=><option key={u.id} value={u.id}>{u.nombre}</option>)}
+        </select>
+        <select value={filtroMes} onChange={e=>setFiltroMes(e.target.value)} style={{width:140}}>
+          <option value="">Todos los meses</option>
+          {MESES.map(m=><option key={m}>{m}</option>)}
+        </select>
+        {(filtroUnidad||filtroMes)&&<button onClick={()=>{setFiltroUnidad('');setFiltroMes('')}} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:12}}>✕</button>}
+        {tabLider==='actividades'&&(
+          <button onClick={()=>setModalPendiente(true)} style={{...S.btn('var(--accent)','#fff'),marginLeft:'auto'}}>
+            <PlusCircle size={14}/> Asignar actividad
+          </button>
+        )}
       </div>
 
-      <div style={{...S.card}}>
-        <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}><h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Resumen por unidad de negocio</h4></div>
-        <table style={{width:'100%',borderCollapse:'collapse'}}>
-          <thead><tr>{['Unidad','Inversión','Venta Neta','% Inv/Venta','Presupuesto','Gastado','% Ejec.','Pendientes'].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
-          <tbody>
-            {porUnidad.length===0&&<tr><td colSpan={8} style={{...S.td,textAlign:'center',color:'var(--text3)',padding:32}}>Ninguna unidad tiene datos aún</td></tr>}
-            {porUnidad.map((u,i)=>{
-              const pctInv = u.venta>0?(u.inv/u.venta)*100:0
-              const pctEjec = u.pres>0?(u.gastos/u.pres)*100:0
-              return (
-                <tr key={i}>
-                  <td style={{...S.td,fontWeight:600}}>
-                    <div style={{display:'flex',alignItems:'center',gap:8}}>
-                      <div style={{width:10,height:10,borderRadius:'50%',background:u.color,flexShrink:0}}/>
-                      {u.unidad}
-                    </div>
-                  </td>
-                  <td style={{...S.td,fontFamily:'var(--mono)'}}>{cop(u.inv)}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--green)'}}>{cop(u.venta)}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:600,color:pctInv>15?'var(--red)':pctInv>10?'var(--yellow)':'var(--green)'}}>{pctInv.toFixed(1)}%</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--text2)'}}>{cop(u.pres)}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)'}}>{cop(u.gastos)}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:600,color:pctEjec>100?'var(--red)':pctEjec>80?'var(--yellow)':'var(--green)'}}>{u.pres>0?pctEjec.toFixed(1)+'%':'—'}</td>
-                  <td style={{...S.td,textAlign:'center'}}>{u.pendientes>0?<span style={{background:'var(--yellow-soft)',color:'var(--yellow)',padding:'2px 8px',borderRadius:6,fontSize:12,fontWeight:600}}>{u.pendientes}</span>:'—'}</td>
-                </tr>
-              )
-            })}
-            {porUnidad.length>0&&(
-              <tr style={{borderTop:'2px solid var(--border2)',background:'var(--bg3)'}}>
-                <td style={{...S.td,fontWeight:700}}>TOTAL CONSOLIDADO</td>
-                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--accent2)'}}>{cop(totalInv)}</td>
-                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--green)'}}>{cop(totalVenta)}</td>
-                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700}}>{totalVenta>0?((totalInv/totalVenta)*100).toFixed(1)+'%':'—'}</td>
-                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700}}>{cop(totalPres)}</td>
-                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:totalGastos>totalPres?'var(--red)':'var(--accent2)'}}>{cop(totalGastos)}</td>
-                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:totalGastos>totalPres?'var(--red)':'var(--green)'}}>{totalPres>0?((totalGastos/totalPres)*100).toFixed(1)+'%':'—'}</td>
-                <td style={S.td}/>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      {/* KPIs siempre visibles */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:12}}>
+        <KpiCard icon={TrendingUp} label="Inversión total" value={cop(totalInv)} sub={filtroMes||'Acumulado'} accent="var(--accent2)"/>
+        <KpiCard icon={ShoppingCart} label="Venta neta" value={cop(totalVenta)} accent="var(--green)"/>
+        <KpiCard icon={BarChart2} label="% Inv/Venta" value={roiPct.toFixed(1)+'%'} accent={roiPct>15?'var(--red)':roiPct>10?'var(--yellow)':'var(--green)'}/>
+        <KpiCard icon={DollarSign} label="Presupuesto" value={cop(totalPres)} sub={totalPres>0?((totalGastos/totalPres)*100).toFixed(1)+'% ejec.':''}/>
+        <KpiCard icon={DollarSign} label="Gastado presup." value={cop(totalGastos)} accent={totalGastos>totalPres?'var(--red)':'var(--text)'}/>
+        <KpiCard icon={ListTodo} label="Actividades abiertas" value={actFiltradas.filter(a=>a.estado!=='Listo'&&a.estado!=='Cancelado').length} accent="var(--yellow)"/>
       </div>
+
+      {/* ── DASHBOARD ── */}
+      {tabLider==='dashboard'&&(
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          {/* Gráficas */}
+          <div style={{display:'grid',gridTemplateColumns:'1.4fr 1fr',gap:16}}>
+            <div style={{...S.card,padding:20}}>
+              <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:14}}>Inversión vs Venta por mes</h4>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={porMesChart} barGap={3}>
+                  <XAxis dataKey="name" tick={{fill:'var(--text3)',fontSize:11}} axisLine={false} tickLine={false}/>
+                  <YAxis tickFormatter={v=>(v/1000000).toFixed(0)+'M'} tick={{fill:'var(--text3)',fontSize:10}} axisLine={false} tickLine={false}/>
+                  <Tooltip content={<CT/>}/>
+                  <Bar dataKey="venta" name="Venta neta" fill="var(--green)" radius={[4,4,0,0]} opacity={0.7}/>
+                  <Bar dataKey="inv" name="Inversión" fill="var(--accent)" radius={[4,4,0,0]}/>
+                  <Bar dataKey="gastos" name="Gastos presup." fill="var(--orange)" radius={[4,4,0,0]}/>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div style={{...S.card,padding:20}}>
+              <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:14}}>Inversión por unidad</h4>
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie data={porUnidad.filter(u=>u.inv>0)} cx="50%" cy="50%" innerRadius={45} outerRadius={75} dataKey="inv" nameKey="unidad" paddingAngle={3}>
+                    {porUnidad.filter(u=>u.inv>0).map((u,i)=><Cell key={i} fill={u.color}/>)}
+                  </Pie>
+                  <Tooltip formatter={v=>cop(v)} contentStyle={{background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:10,fontSize:11}}/>
+                  <Legend iconSize={7} iconType="circle" wrapperStyle={{fontSize:10,color:'var(--text2)'}}/>
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Tabla por unidad */}
+          <div style={S.card}>
+            <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}><h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Resumen por unidad de negocio</h4></div>
+            <table style={{width:'100%',borderCollapse:'collapse'}}>
+              <thead><tr>{['Unidad','Inversión','Venta Neta','% Inv/Venta','Presupuesto','Gastado','% Ejec.','Pendientes'].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {porUnidad.map((u,i)=>(
+                  <tr key={i} onClick={()=>setFiltroUnidad(filtroUnidad===u.id?'':u.id)} style={{cursor:'pointer',background:filtroUnidad===u.id?'rgba(108,99,255,0.06)':'transparent'}}>
+                    <td style={{...S.td,fontWeight:600}}><div style={{display:'flex',alignItems:'center',gap:8}}><div style={{width:10,height:10,borderRadius:'50%',background:u.color}}/>{u.unidad}</div></td>
+                    <td style={{...S.td,fontFamily:'var(--mono)'}}>{cop(u.inv)}</td>
+                    <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--green)'}}>{cop(u.venta)}</td>
+                    <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:600,color:u.pctInv>15?'var(--red)':u.pctInv>10?'var(--yellow)':'var(--green)'}}>{u.pctInv.toFixed(1)}%</td>
+                    <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--text2)'}}>{cop(u.pres)}</td>
+                    <td style={{...S.td,fontFamily:'var(--mono)'}}>{cop(u.gastos)}</td>
+                    <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:600,color:u.pctEjec>100?'var(--red)':u.pctEjec>80?'var(--yellow)':'var(--green)'}}>{u.pres>0?u.pctEjec.toFixed(1)+'%':'—'}</td>
+                    <td style={{...S.td,textAlign:'center'}}>{u.pendientes>0?<span style={{background:'var(--yellow-soft)',color:'var(--yellow)',padding:'2px 8px',borderRadius:6,fontSize:12,fontWeight:600}}>{u.pendientes}</span>:'—'}</td>
+                  </tr>
+                ))}
+                <tr style={{borderTop:'2px solid var(--border2)',background:'var(--bg3)'}}>
+                  <td style={{...S.td,fontWeight:700}}>TOTAL</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--accent2)'}}>{cop(totalInv)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--green)'}}>{cop(totalVenta)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700}}>{roiPct.toFixed(1)}%</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700}}>{cop(totalPres)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:totalGastos>totalPres?'var(--red)':'var(--text)'}}>{cop(totalGastos)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700}}>{totalPres>0?((totalGastos/totalPres)*100).toFixed(1)+'%':'—'}</td>
+                  <td style={S.td}/>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── ACTIVIDADES ── */}
+      {tabLider==='actividades'&&(
+        <div style={S.card}>
+          <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+            <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Todas las actividades — {actFiltradas.length} registros</h4>
+            <span style={{fontSize:11,color:'var(--text3)'}}>Abiertas: {actFiltradas.filter(a=>a.estado!=='Listo'&&a.estado!=='Cancelado').length}</span>
+          </div>
+          <div style={{padding:'10px 16px',display:'flex',flexDirection:'column',gap:8,maxHeight:600,overflowY:'auto'}}>
+            {actFiltradas.length===0&&<div style={{padding:32,textAlign:'center',color:'var(--text3)'}}>No hay actividades registradas</div>}
+            {actFiltradas.map((a,i)=>(
+              <div key={i} style={{background:'var(--bg3)',borderRadius:10,padding:'12px 16px',border:'1px solid var(--border2)',display:'flex',gap:12,alignItems:'flex-start'}}>
+                <div style={{width:10,height:10,borderRadius:'50%',background:a._color,flexShrink:0,marginTop:4}}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:'flex',alignItems:'center',gap:7,flexWrap:'wrap',marginBottom:4}}>
+                    <span style={{fontWeight:500,fontSize:13,textDecoration:a.estado==='Cancelado'?'line-through':'none'}}>{a.tarea}</span>
+                    <Badge label={a.prioridad}/><Badge label={a.estado}/>
+                    {a.asignadoPor&&<span style={{fontSize:10,color:'var(--accent2)',background:'var(--accent-soft)',padding:'1px 6px',borderRadius:4}}>Líder</span>}
+                  </div>
+                  <div style={{display:'flex',gap:12,fontSize:11,color:'var(--text3)',flexWrap:'wrap'}}>
+                    <span style={{color:a._color,fontWeight:600}}>{a._unidad}</span>
+                    {a.distribuidor&&<span>{a.distribuidor}</span>}
+                    {a.categoria&&<span>{a.categoria}</span>}
+                    {a.fechaLimite&&<span>📅 {a.fechaLimite}</span>}
+                    {a.responsable&&<span>👤 {a.responsable}</span>}
+                  </div>
+                  {a.notas&&<p style={{marginTop:4,fontSize:11,color:'var(--text3)',borderLeft:'2px solid var(--border2)',paddingLeft:7}}>{a.notas}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── POR CLIENTE ── */}
+      {tabLider==='clientes'&&(
+        <div style={S.card}>
+          <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}><h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Inversión por cliente/distribuidor</h4></div>
+          <table style={{width:'100%',borderCollapse:'collapse'}}>
+            <thead><tr>{['Distribuidor','Unidad','Inversión','Venta Neta','% Inv/Venta','Participación'].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+            <tbody>
+              {topClientes.length===0&&<tr><td colSpan={6} style={{...S.td,textAlign:'center',color:'var(--text3)',padding:32}}>Sin datos</td></tr>}
+              {topClientes.map((c,i)=>{
+                const pct = c.venta>0?(c.inv/c.venta)*100:0
+                return (
+                  <tr key={i}>
+                    <td style={{...S.td,fontWeight:500}}>{c.nombre}</td>
+                    <td style={{...S.td}}><div style={{display:'flex',alignItems:'center',gap:6}}><div style={{width:8,height:8,borderRadius:'50%',background:c.color}}/><span style={{fontSize:12,color:'var(--text2)'}}>{c.unidad}</span></div></td>
+                    <td style={{...S.td,fontFamily:'var(--mono)'}}>{cop(c.inv)}</td>
+                    <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--green)'}}>{c.venta>0?cop(c.venta):'—'}</td>
+                    <td style={{...S.td}}>{c.venta>0?<span style={{fontFamily:'var(--mono)',fontWeight:600,color:pct>15?'var(--red)':pct>10?'var(--yellow)':'var(--green)'}}>{pct.toFixed(1)}%</span>:'—'}</td>
+                    <td style={{...S.td,minWidth:130}}>
+                      <div style={{display:'flex',alignItems:'center',gap:7}}>
+                        <div style={{flex:1,height:5,background:'var(--bg4)',borderRadius:3}}><div style={{width:Math.min(totalInv>0?(c.inv/totalInv)*100:0,100)+'%',height:'100%',background:COLORES[i%COLORES.length],borderRadius:3}}/></div>
+                        <span style={{fontSize:11,color:'var(--text2)',minWidth:34}}>{totalInv>0?((c.inv/totalInv)*100).toFixed(1):0}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+              {topClientes.length>0&&(
+                <tr style={{borderTop:'2px solid var(--border2)',background:'var(--bg3)'}}>
+                  <td colSpan={2} style={{...S.td,fontWeight:700}}>TOTAL</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--accent2)'}}>{cop(totalInv)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--green)'}}>{cop(totalVenta)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700}}>{roiPct.toFixed(1)}%</td>
+                  <td style={S.td}/>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── PRESUPUESTO ── */}
+      {tabLider==='presupuesto'&&(
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          {/* Por mes */}
+          <div style={S.card}>
+            <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}><h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Presupuesto ejecutado vs asignado por mes</h4></div>
+            <table style={{width:'100%',borderCollapse:'collapse'}}>
+              <thead><tr>{['Mes','Asignado','Ejecutado','Disponible','% Ejec.','Barra'].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {MESES.map(m=>{
+                  const pres=filtered.reduce((s,d)=>s+d.presupuestos.filter(p=>p.mes===m).reduce((ss,p)=>ss+(Number(p.monto)||0),0),0)
+                  const gastado=filtered.reduce((s,d)=>s+(d.gastosPresupuesto||[]).filter(g=>g.mes===m).reduce((ss,g)=>ss+(Number(g.valorFactura)||0),0),0)
+                  if(pres===0&&gastado===0) return null
+                  const ejec=pres>0?(gastado/pres)*100:0
+                  return (
+                    <tr key={m} onClick={()=>setFiltroMes(filtroMes===m?'':m)} style={{cursor:'pointer',background:filtroMes===m?'rgba(108,99,255,0.06)':'transparent'}}>
+                      <td style={{...S.td,fontWeight:600,color:filtroMes===m?'var(--accent2)':'var(--text)'}}>{m}</td>
+                      <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--text2)'}}>{cop(pres)}</td>
+                      <td style={{...S.td,fontFamily:'var(--mono)'}}>{cop(gastado)}</td>
+                      <td style={{...S.td,fontFamily:'var(--mono)',color:pres-gastado>=0?'var(--green)':'var(--red)'}}>{cop(pres-gastado)}</td>
+                      <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:600,color:ejec>100?'var(--red)':ejec>80?'var(--yellow)':'var(--green)'}}>{ejec.toFixed(1)}%</td>
+                      <td style={{...S.td,minWidth:120}}><div style={{height:5,background:'var(--bg4)',borderRadius:3}}><div style={{width:Math.min(ejec,100)+'%',height:'100%',background:ejec>100?'var(--red)':ejec>80?'var(--yellow)':'var(--green)',borderRadius:3}}/></div></td>
+                    </tr>
+                  )
+                })}
+                <tr style={{borderTop:'2px solid var(--border2)',background:'var(--bg3)'}}>
+                  <td style={{...S.td,fontWeight:700}}>TOTAL</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700}}>{cop(totalPres)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--accent2)'}}>{cop(totalGastos)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:totalPres-totalGastos>=0?'var(--green)':'var(--red)'}}>{cop(totalPres-totalGastos)}</td>
+                  <td colSpan={2} style={S.td}/>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Por unidad */}
+          <div style={S.card}>
+            <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}><h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Por unidad de negocio</h4></div>
+            <table style={{width:'100%',borderCollapse:'collapse'}}>
+              <thead><tr>{['Unidad','Presupuesto','Ejecutado','Disponible','% Ejec.'].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {filtered.map((d,i)=>{
+                  const pres=d.presupuestos.filter(p=>!filtroMes||p.mes===filtroMes).reduce((s,p)=>s+(Number(p.monto)||0),0)
+                  const gastado=(d.gastosPresupuesto||[]).filter(g=>!filtroMes||g.mes===filtroMes).reduce((s,g)=>s+(Number(g.valorFactura)||0),0)
+                  const ejec=pres>0?(gastado/pres)*100:0
+                  return (
+                    <tr key={i}>
+                      <td style={{...S.td,fontWeight:600}}><div style={{display:'flex',alignItems:'center',gap:8}}><div style={{width:10,height:10,borderRadius:'50%',background:d._color}}/>{d._unidad}</div></td>
+                      <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--text2)'}}>{cop(pres)}</td>
+                      <td style={{...S.td,fontFamily:'var(--mono)'}}>{cop(gastado)}</td>
+                      <td style={{...S.td,fontFamily:'var(--mono)',color:pres-gastado>=0?'var(--green)':'var(--red)'}}>{cop(pres-gastado)}</td>
+                      <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:600,color:ejec>100?'var(--red)':ejec>80?'var(--yellow)':'var(--green)'}}>{pres>0?ejec.toFixed(1)+'%':'—'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Modal asignar actividad */}
+      {modalPendiente&&(
+        <Modal title="Asignar actividad a unidad" onClose={()=>setModalPendiente(false)} wide>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+            <Field label="Unidad destino *">
+              <select value={formPend.unidad} onChange={e=>setFormPend({...formPend,unidad:e.target.value})}>
+                <option value="">Selecciona unidad...</option>
+                {unidades.map(u=><option key={u.id} value={u.id}>{u.nombre}</option>)}
+              </select>
+            </Field>
+            <Field label="Distribuidor (opcional)">
+              <input value={formPend.distribuidor} onChange={e=>setFormPend({...formPend,distribuidor:e.target.value})} placeholder="Nombre del distribuidor..."/>
+            </Field>
+            <Field label="Tarea / Actividad *" span>
+              <input value={formPend.tarea} onChange={e=>setFormPend({...formPend,tarea:e.target.value})} placeholder="Describe la actividad..."/>
+            </Field>
+            <Field label="Categoría">
+              <input value={formPend.categoria} onChange={e=>setFormPend({...formPend,categoria:e.target.value})} placeholder="Ej: Seguimiento, Diseño..."/>
+            </Field>
+            <Field label="Fecha límite">
+              <input type="date" value={formPend.fechaLimite} onChange={e=>setFormPend({...formPend,fechaLimite:e.target.value})}/>
+            </Field>
+            <Field label="Prioridad">
+              <select value={formPend.prioridad} onChange={e=>setFormPend({...formPend,prioridad:e.target.value})}>
+                {['Alta','Media','Baja'].map(p=><option key={p}>{p}</option>)}
+              </select>
+            </Field>
+            <Field label="Responsable">
+              <input value={formPend.responsable} onChange={e=>setFormPend({...formPend,responsable:e.target.value})} placeholder="Nombre..."/>
+            </Field>
+            <Field label="Notas" span>
+              <textarea value={formPend.notas} onChange={e=>setFormPend({...formPend,notas:e.target.value})} rows={2} style={{resize:'vertical'}} placeholder="Detalles adicionales..."/>
+            </Field>
+          </div>
+          <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:20}}>
+            <button onClick={()=>setModalPendiente(false)} style={S.btn('var(--bg3)','var(--text2)')}>Cancelar</button>
+            <button onClick={crearPendiente} style={S.btn('var(--accent)','#fff')}><Check size={15}/> Asignar actividad</button>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }
 
-// Vista presupuesto consolidado para Juan
 function PresupuestoConsolidado() {
   const allData = USUARIOS.filter(u=>u.rol==='normal').map(u=>{
     try { const d=localStorage.getItem(getStorageKey(u.id)); return d?{...JSON.parse(d),_unidad:u.nombre,_color:u.color}:null } catch { return null }
