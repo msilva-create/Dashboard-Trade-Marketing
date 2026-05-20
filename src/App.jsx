@@ -550,13 +550,15 @@ function Ventas({ data, setData }) {
   })
 
   // Inversión desde pestaña inversiones por distribuidor+mes+anio
+  // Normaliza nombres para manejar variaciones (S.A.S., espacios, mayúsculas)
+  const norm = s => String(s||'').toLowerCase().replace(/[.\s-]/g,'').replace(/sas$|sa$/,'').trim()
   const getInv = (dist,mes,anio) =>
-    data.inversiones.filter(i=>i.distribuidor===dist&&i.mes===mes&&i.anio===anio)
+    data.inversiones.filter(i=>(i.distribuidor===dist||norm(i.distribuidor)===norm(dist))&&i.mes===mes&&i.anio===anio)
       .reduce((s,i)=>s+(Number(i.inversion)||0),0)
 
   // Promedio acumulado por distribuidor (todos los meses filtrados)
   const promAcum = (dist) => {
-    const rows = data.ventas.filter(v=>v.distribuidor===dist&&(!filtroAnio||v.anio===Number(filtroAnio)))
+    const rows = data.ventas.filter(v=>(v.distribuidor===dist||norm(v.distribuidor)===norm(dist))&&(!filtroAnio||v.anio===Number(filtroAnio)))
     const totalGal = rows.reduce((s,v)=>s+(Number(v.galones)||0),0)
     const totalVta = rows.reduce((s,v)=>s+(Number(v.ventaNeta)||0),0)
     return totalGal>0 ? totalVta/totalGal : 0
