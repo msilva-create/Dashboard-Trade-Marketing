@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pi
 import * as XLSX from 'xlsx'
 
 const STORAGE_KEY = 'tracker_v3'
+let _currentUserKey = STORAGE_KEY
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const TIPOS_PLAN = ['Prolub respalda','Sell out Prolub respalda','Apoyo directo','Activación','Otro']
 const CONCEPTOS = ['Apoyo a la nomina','CVC','Producto/promocion','Evento','Material POP','Digital','Transporte','Otro']
@@ -14,7 +15,7 @@ const ESTADOS_PLAN = ['Activo','En negociación','Cerrado','Cancelado']
 const COLORES = ['#6c63ff','#3dd68c','#ff9f43','#ff5f5f','#06b6d4','#a78bfa','#f59e0b','#10b981','#ec4899','#14b8a6']
 
 function load() {
-  try { const d = localStorage.getItem(STORAGE_KEY); if (d) return JSON.parse(d) } catch {}
+  try { const d = localStorage.getItem(_currentUserKey); if (d) return JSON.parse(d) } catch {}
   return {
     inversiones: [
       { id:1, fecha:'2026-01-01', anio:2026, mes:'Enero', distribuidor:'CVS- SERVITECAS S.A.S', tipoPlan:'Prolub respalda', concepto:'Apoyo a la nomina', inversion:1109900, galonesPlan:'', notas:'' },
@@ -51,7 +52,7 @@ function load() {
     ],
   }
 }
-function save(d) { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)) } catch {} }
+function save(d) { try { localStorage.setItem(_currentUserKey, JSON.stringify(d)) } catch {} }
 
 const parseN = v => { if(typeof v==='number') return Math.abs(v); const c=String(v).replace(/[$\s ]/g,'').replace(/\./g,'').replace(',','.'); return parseFloat(c)||0 }
 const cop = n => new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',minimumFractionDigits:0}).format(n||0)
@@ -2503,18 +2504,20 @@ export default function App() {
   const [chatOpen, setChatOpen] = useState(false)
 
   // Cargar datos del usuario actual
-  const loadUser = () => {
-    if(!usuario) return load()
-    try { const d=localStorage.getItem(getStorageKey(usuario.id)); return d?JSON.parse(d):load() } catch { return load() }
+  const loadUser = (uid) => {
+    if(!uid) { _currentUserKey = STORAGE_KEY; return load() }
+    _currentUserKey = getStorageKey(uid)
+    try { const d=localStorage.getItem(_currentUserKey); return d?JSON.parse(d):load() } catch { return load() }
   }
-  const [data, setData] = useState(loadUser)
+  const [data, setData] = useState(()=>loadUser(usuario?.id))
 
   // Al cambiar usuario recargar sus datos
-  useEffect(()=>{ if(usuario) setData(loadUser()) },[usuario?.id])
+  useEffect(()=>{ if(usuario) setData(loadUser(usuario.id)) },[usuario?.id])
 
   const saveUser = d => {
     if(!usuario) return
-    localStorage.setItem(getStorageKey(usuario.id), JSON.stringify(d))
+    _currentUserKey = getStorageKey(usuario.id)
+    localStorage.setItem(_currentUserKey, JSON.stringify(d))
   }
 
   const setDataUser = d => { setData(d); saveUser(d) }
@@ -2603,7 +2606,7 @@ export default function App() {
             <button onClick={()=>exportarExcel(data)} style={{...S.btn('var(--green-soft)','var(--green)'),fontSize:12,padding:'5px 14px',border:'1px solid rgba(61,214,140,0.2)'}}>
               <Download size={13}/> Exportar Excel
             </button>
-            <button onClick={()=>{if(confirm('¿Borrar tus datos?')){localStorage.removeItem(getStorageKey(usuario.id));window.location.reload()}}} style={{fontSize:11,color:'var(--text3)',background:'none',border:'none',cursor:'pointer',padding:'4px 8px',fontFamily:'var(--font)'}}>Resetear</button>
+            <button onClick={()=>{if(confirm('¿Borrar tus datos?')){localStorage.removeItem(getStorageKey(usuario.id));_currentUserKey=STORAGE_KEY;window.location.reload()}}} style={{fontSize:11,color:'var(--text3)',background:'none',border:'none',cursor:'pointer',padding:'4px 8px',fontFamily:'var(--font)'}}>Resetear</button>
           </div>
         </footer>
       )}
