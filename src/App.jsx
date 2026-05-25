@@ -11,7 +11,7 @@ let _currentUserKey = STORAGE_KEY
 // ═══════════════════════════════════════════════════════
 const SHEETS_CONFIG = {
   distribucion: {
-    url: 'https://script.google.com/macros/s/AKfycbwuHVbraIJMzmeS0TfY9m8168tO7wSUfi8gEVhIpPDDQzx4xwCNxdXBF5mjtSdHLuo/exec',
+    url: 'https://script.google.com/macros/s/AKfycbznN7zl2UkPB8zW3VcziRKB6on2FFi-_oEoiCa7qJ3XySE2sn4QyRGC3a9LmfiETEoU/exec',
     enabled: true,
   }
 }
@@ -1786,7 +1786,7 @@ function ApoyoCierre({ data, setData }) {
   const [formAsig, setFormAsig] = useState({ comercial:'', distribuidor:'', mes:'', anio:2026, monto:'' })
   const [formRed, setFormRed] = useState({ cliente:'', producto:'', valor:'', notas:'' })
 
-  const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwuHVbraIJMzmeS0TfY9m8168tO7wSUfi8gEVhIpPDDQzx4xwCNxdXBF5mjtSdHLuo/exec'
+  const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbznN7zl2UkPB8zW3VcziRKB6on2FFi-_oEoiCa7qJ3XySE2sn4QyRGC3a9LmfiETEoU/exec'
 
   // Emails por comercial
   const EMAILS = {
