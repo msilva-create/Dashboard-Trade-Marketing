@@ -1662,6 +1662,260 @@ function Pendientes({ data, setData }) {
 }
 
 // ═══════════════════════════════════════════════════════
+// APOYO CIERRE
+// ═══════════════════════════════════════════════════════
+function ApoyoCierre({ data, setData }) {
+  const [mesActivo, setMesActivo] = useState('')
+  const [comercialActivo, setComercialActivo] = useState(null)
+  const [modalAsignacion, setModalAsignacion] = useState(false)
+  const [modalRedencion, setModalRedencion] = useState(false)
+  const [formAsig, setFormAsig] = useState({ comercial:'', distribuidor:'', mes:'', anio:2026, monto:'' })
+  const [formRed, setFormRed] = useState({ producto:'', valor:'', notas:'' })
+
+  // Data de apoyo cierre
+  const apoyos = data.apoyoCierre || []
+  const redenciones = data.redenciones || []
+
+  const mesesConData = [...new Set(apoyos.map(a=>a.mes))].sort((a,b)=>MESES.indexOf(a)-MESES.indexOf(b))
+  const comerciales = [...new Set(apoyos.map(a=>a.comercial))].sort()
+  const distribuidores = [...new Set(data.inversiones.map(i=>i.distribuidor))].sort()
+
+  const apoyosFiltrados = mesActivo ? apoyos.filter(a=>a.mes===mesActivo) : apoyos
+
+  // Saldo de un comercial en un mes = monto asignado - total redimido
+  const getSaldo = (comercial, mes) => {
+    const asig = apoyos.filter(a=>a.comercial===comercial&&a.mes===mes).reduce((s,a)=>s+(Number(a.monto)||0),0)
+    const redim = redenciones.filter(r=>r.comercial===comercial&&r.mes===mes).reduce((s,r)=>s+(Number(r.valor)||0),0)
+    return { asignado:asig, redimido:redim, saldo:asig-redim }
+  }
+
+  const guardarAsignacion = () => {
+    if(!formAsig.comercial||!formAsig.mes||!formAsig.monto) return
+    const nueva = { id:Date.now(), ...formAsig, monto:Number(formAsig.monto), anio:Number(formAsig.anio) }
+    const nd = {...data, apoyoCierre:[...apoyos, nueva]}
+    setData(nd); save(nd)
+    setModalAsignacion(false)
+    setFormAsig({ comercial:'', distribuidor:'', mes:'', anio:2026, monto:'' })
+  }
+
+  const guardarRedencion = () => {
+    if(!comercialActivo||!formRed.producto||!formRed.valor) return
+    const nueva = {
+      id: Date.now(),
+      comercial: comercialActivo.comercial,
+      distribuidor: comercialActivo.distribuidor,
+      mes: comercialActivo.mes,
+      anio: comercialActivo.anio,
+      producto: formRed.producto,
+      valor: Number(formRed.valor),
+      notas: formRed.notas,
+      fecha: new Date().toLocaleDateString('es-CO'),
+    }
+    const nd = {...data, redenciones:[...redenciones, nueva]}
+    setData(nd); save(nd)
+    setModalRedencion(false)
+    setFormRed({ producto:'', valor:'', notas:'' })
+  }
+
+  const delAsig = id => { const nd={...data,apoyoCierre:apoyos.filter(a=>a.id!==id)};setData(nd);save(nd) }
+  const delRed = id => { const nd={...data,redenciones:redenciones.filter(r=>r.id!==id)};setData(nd);save(nd) }
+
+  // Resumen por comercial en el mes activo
+  const resumenComerciales = comerciales.filter(c=>!mesActivo||apoyos.some(a=>a.comercial===c&&a.mes===mesActivo)).map(c=>{
+    const rows = mesActivo
+      ? apoyos.filter(a=>a.comercial===c&&a.mes===mesActivo)
+      : apoyos.filter(a=>a.comercial===c)
+    const meses_c = [...new Set(rows.map(a=>a.mes))]
+    return {
+      comercial: c,
+      meses: meses_c,
+      totalAsignado: rows.reduce((s,a)=>s+(Number(a.monto)||0),0),
+      totalRedimido: redenciones.filter(r=>r.comercial===c&&(!mesActivo||r.mes===mesActivo)).reduce((s,r)=>s+(Number(r.valor)||0),0),
+    }
+  })
+
+  const totalAsig = apoyosFiltrados.reduce((s,a)=>s+(Number(a.monto)||0),0)
+  const totalRedim = redenciones.filter(r=>!mesActivo||r.mes===mesActivo).reduce((s,r)=>s+(Number(r.valor)||0),0)
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:18}}>
+      {/* Toolbar */}
+      <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
+        <select value={mesActivo} onChange={e=>setMesActivo(e.target.value)} style={{width:160}}>
+          <option value="">Todos los meses</option>
+          {MESES.map(m=><option key={m}>{m}</option>)}
+        </select>
+        {mesActivo&&<button onClick={()=>setMesActivo('')} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:12}}>✕</button>}
+        <button onClick={()=>setModalAsignacion(true)} style={{...S.btn('var(--accent)','#fff'),marginLeft:'auto'}}>
+          <PlusCircle size={15}/> Asignar apoyo
+        </button>
+      </div>
+
+      {/* KPIs */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}>
+        <KpiCard icon={DollarSign} label="Total asignado" value={cop(totalAsig)} sub={mesActivo||'Todos los meses'} accent="var(--text)"/>
+        <KpiCard icon={TrendingUp} label="Total redimido" value={cop(totalRedim)} accent="var(--orange)"/>
+        <KpiCard icon={BarChart2} label="Saldo disponible" value={cop(totalAsig-totalRedim)} accent={totalAsig-totalRedim<0?'var(--red)':'var(--green)'}/>
+      </div>
+
+      {/* Tarjetas por comercial */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(320px,1fr))',gap:14}}>
+        {resumenComerciales.length===0&&(
+          <div style={{...S.card,padding:40,textAlign:'center',color:'var(--text3)',gridColumn:'1/-1'}}>
+            No hay apoyos de cierre registrados. Usa <strong>Asignar apoyo</strong> para comenzar.
+          </div>
+        )}
+        {resumenComerciales.map((c,i)=>{
+          const saldo = c.totalAsignado - c.totalRedimido
+          const pct = c.totalAsignado>0?(c.totalRedimido/c.totalAsignado)*100:0
+          // Redenciones de este comercial
+          const redsC = redenciones.filter(r=>r.comercial===c.comercial&&(!mesActivo||r.mes===mesActivo))
+          // Asignaciones detalle
+          const asigC = apoyosFiltrados.filter(a=>a.comercial===c.comercial)
+          return (
+            <div key={i} style={{...S.card,display:'flex',flexDirection:'column'}}>
+              {/* Header */}
+              <div style={{padding:'14px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                <div>
+                  <div style={{fontWeight:700,fontSize:15,marginBottom:3}}>{c.comercial}</div>
+                  <div style={{fontSize:11,color:'var(--text3)'}}>{c.meses.join(' · ')}</div>
+                </div>
+                <button onClick={()=>{
+                  const a = asigC[0]
+                  setComercialActivo({comercial:c.comercial,distribuidor:a?.distribuidor||'',mes:mesActivo||a?.mes||'',anio:a?.anio||2026})
+                  setModalRedencion(true)
+                }} style={{...S.btn('var(--orange)','#fff'),fontSize:12,padding:'6px 12px'}}>
+                  + Redención
+                </button>
+              </div>
+
+              {/* Body */}
+              <div style={{padding:'14px 18px',display:'flex',flexDirection:'column',gap:10}}>
+                {/* Asignaciones */}
+                <div>
+                  <div style={{fontSize:10,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:6}}>Asignaciones</div>
+                  {asigC.map((a,j)=>(
+                    <div key={j} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 10px',background:'var(--bg3)',borderRadius:7,marginBottom:4}}>
+                      <div>
+                        <span style={{fontSize:12,fontWeight:500}}>{a.mes} {a.anio}</span>
+                        {a.distribuidor&&<span style={{fontSize:11,color:'var(--text3)',marginLeft:8}}>→ {a.distribuidor}</span>}
+                      </div>
+                      <div style={{display:'flex',alignItems:'center',gap:8}}>
+                        <span style={{fontFamily:'var(--mono)',fontWeight:600,color:'var(--accent2)'}}>{cop(a.monto)}</span>
+                        <button onClick={()=>delAsig(a.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'3px 6px'}}><Trash2 size={11}/></button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Barra saldo */}
+                <div>
+                  <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--text3)',marginBottom:4}}>
+                    <span>Redimido</span>
+                    <span style={{color:pct>100?'var(--red)':pct>80?'var(--yellow)':'var(--orange)'}}>{pct.toFixed(1)}% de {cop(c.totalAsignado)}</span>
+                  </div>
+                  <div style={{height:8,background:'var(--bg4)',borderRadius:4}}>
+                    <div style={{width:Math.min(pct,100)+'%',height:'100%',background:pct>100?'var(--red)':pct>80?'var(--yellow)':'var(--orange)',borderRadius:4,transition:'width 0.3s'}}/>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',marginTop:6,fontSize:12}}>
+                    <span style={{color:'var(--text2)'}}>Redimido: <strong style={{fontFamily:'var(--mono)',color:'var(--orange)'}}>{cop(c.totalRedimido)}</strong></span>
+                    <span style={{color:'var(--text2)'}}>Saldo: <strong style={{fontFamily:'var(--mono)',color:saldo<0?'var(--red)':'var(--green)'}}>{cop(saldo)}</strong></span>
+                  </div>
+                </div>
+
+                {/* Redenciones */}
+                {redsC.length>0&&(
+                  <div>
+                    <div style={{fontSize:10,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:6}}>Redenciones</div>
+                    {redsC.map((r,j)=>(
+                      <div key={j} style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',padding:'7px 10px',background:'rgba(255,159,67,0.08)',border:'1px solid rgba(255,159,67,0.15)',borderRadius:7,marginBottom:4}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:12,fontWeight:500,color:'var(--text)'}}>{r.producto}</div>
+                          <div style={{fontSize:11,color:'var(--text3)'}}>{r.fecha} {r.mes&&'— '+r.mes} {r.distribuidor&&'— '+r.distribuidor}</div>
+                          {r.notas&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>{r.notas}</div>}
+                        </div>
+                        <div style={{display:'flex',alignItems:'center',gap:7,flexShrink:0,marginLeft:10}}>
+                          <span style={{fontFamily:'var(--mono)',fontWeight:600,color:'var(--orange)'}}>{cop(r.valor)}</span>
+                          <button onClick={()=>delRed(r.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'3px 6px'}}><Trash2 size={11}/></button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Modal asignar apoyo */}
+      {modalAsignacion&&(
+        <Modal title="Asignar apoyo de cierre" onClose={()=>setModalAsignacion(false)}>
+          <div style={{display:'flex',flexDirection:'column',gap:14}}>
+            <Field label="Comercial *">
+              <input list="comerciales-list" value={formAsig.comercial} onChange={e=>setFormAsig({...formAsig,comercial:e.target.value})} placeholder="Nombre del comercial"/>
+              <datalist id="comerciales-list">{comerciales.map(c=><option key={c} value={c}/>)}</datalist>
+            </Field>
+            <Field label="Distribuidor (para quién es el apoyo)">
+              <input list="dist-apoyo" value={formAsig.distribuidor} onChange={e=>setFormAsig({...formAsig,distribuidor:e.target.value})} placeholder="Ej: LUBRICAFE S.A.S."/>
+              <datalist id="dist-apoyo">{distribuidores.map(d=><option key={d} value={d}/>)}</datalist>
+            </Field>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+              <Field label="Mes *">
+                <select value={formAsig.mes} onChange={e=>setFormAsig({...formAsig,mes:e.target.value})}>
+                  <option value="">Selecciona...</option>
+                  {MESES.map(m=><option key={m}>{m}</option>)}
+                </select>
+              </Field>
+              <Field label="Año">
+                <input type="number" value={formAsig.anio} onChange={e=>setFormAsig({...formAsig,anio:e.target.value})} placeholder="2026"/>
+              </Field>
+            </div>
+            <Field label="Monto asignado (COP) *">
+              <input type="number" value={formAsig.monto} onChange={e=>setFormAsig({...formAsig,monto:e.target.value})} placeholder="Ej: 1200000"/>
+            </Field>
+          </div>
+          <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:20}}>
+            <button onClick={()=>setModalAsignacion(false)} style={S.btn('var(--bg3)','var(--text2)')}>Cancelar</button>
+            <button onClick={guardarAsignacion} style={S.btn('var(--accent)','#fff')}><Check size={15}/> Guardar</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal redención */}
+      {modalRedencion&&comercialActivo&&(
+        <Modal title={'Registrar redención — '+comercialActivo.comercial} onClose={()=>setModalRedencion(false)}>
+          <div style={{padding:'10px 14px',background:'var(--bg3)',borderRadius:8,marginBottom:14,fontSize:12,color:'var(--text2)'}}>
+            Comercial: <strong>{comercialActivo.comercial}</strong>
+            {comercialActivo.distribuidor&&<> · Distribuidor: <strong>{comercialActivo.distribuidor}</strong></>}
+            {comercialActivo.mes&&<> · Mes: <strong>{comercialActivo.mes}</strong></>}
+            {comercialActivo.mes&&(()=>{
+              const s = getSaldo(comercialActivo.comercial, comercialActivo.mes)
+              return <> · Saldo: <strong style={{color:s.saldo<0?'var(--red)':'var(--green)'}}>{cop(s.saldo)}</strong></>
+            })()}
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:14}}>
+            <Field label="Producto / Concepto redimido *">
+              <input value={formRed.producto} onChange={e=>setFormRed({...formRed,producto:e.target.value})} placeholder="Ej: Producto Plan Expreso, Bono cumplimiento..."/>
+            </Field>
+            <Field label="Valor redimido (COP) *">
+              <input type="number" value={formRed.valor} onChange={e=>setFormRed({...formRed,valor:e.target.value})} placeholder="0"/>
+            </Field>
+            <Field label="Notas">
+              <textarea value={formRed.notas} onChange={e=>setFormRed({...formRed,notas:e.target.value})} rows={2} style={{resize:'vertical'}} placeholder="Observaciones..."/>
+            </Field>
+          </div>
+          <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:20}}>
+            <button onClick={()=>setModalRedencion(false)} style={S.btn('var(--bg3)','var(--text2)')}>Cancelar</button>
+            <button onClick={guardarRedencion} style={S.btn('var(--orange)','#fff')}><Check size={15}/> Registrar redención</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════
 // EXPORTAR EXCEL
 // ═══════════════════════════════════════════════════════
 function exportarExcel(data) {
@@ -1942,6 +2196,7 @@ const TABS = [
   {id:'planes',     label:'Planes Q',    icon:BookOpen},
   {id:'presupuesto',label:'Presupuesto', icon:DollarSign},
   {id:'pendientes', label:'Pendientes',  icon:ListTodo},
+  {id:'apoyocierre', label:'Apoyo Cierre', icon:DollarSign},
 ]
 
 
@@ -1950,7 +2205,7 @@ const TABS = [
 // ═══════════════════════════════════════════════════════
 const USUARIOS = [
   { id:'industria',    nombre:'Industria',          pass:'ind2026',   color:'#06b6d4', rol:'normal' },
-  { id:'distribucion', nombre:'Distribución',        pass:'dis2026',   color:'#3dd68c', rol:'normal' },
+  { id:'distribucion', nombre:'Distribución',        pass:'0000',      color:'#3dd68c', rol:'normal' },
   { id:'zonas',        nombre:'Zonas Directas',      pass:'zon2026',   color:'#ff9f43', rol:'normal' },
   { id:'presupuesto',  nombre:'Presupuesto (Juan)',  pass:'pres2026',  color:'#a78bfa', rol:'presupuesto' },
   { id:'lider',        nombre:'Líder de Mercadeo',   pass:'lider2026', color:'#f59e0b', rol:'lider' },
@@ -2591,6 +2846,7 @@ export default function App() {
               {tab==='planes'      &&<Planes       data={data} setData={setDataUser}/>}
               {tab==='presupuesto' &&<Presupuesto  data={data} setData={setDataUser}/>}
               {tab==='pendientes'  &&<Pendientes   data={data} setData={setDataUser}/>}
+              {tab==='apoyocierre' &&<ApoyoCierre  data={data} setData={setDataUser}/>}
             </>
           )}
         </div>
