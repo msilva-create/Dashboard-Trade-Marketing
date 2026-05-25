@@ -1778,26 +1778,33 @@ function Pendientes({ data, setData }) {
 // ═══════════════════════════════════════════════════════
 function ApoyoCierre({ data, setData }) {
   const [mesActivo, setMesActivo] = useState('')
+  const [comercialDetalle, setComercialDetalle] = useState(null) // comercial expandido
   const [comercialActivo, setComercialActivo] = useState(null)
   const [modalAsignacion, setModalAsignacion] = useState(false)
   const [modalRedencion, setModalRedencion] = useState(false)
+  const [enviandoEmail, setEnviandoEmail] = useState(false)
   const [formAsig, setFormAsig] = useState({ comercial:'', distribuidor:'', mes:'', anio:2026, monto:'' })
-  const [formRed, setFormRed] = useState({ producto:'', valor:'', notas:'' })
+  const [formRed, setFormRed] = useState({ cliente:'', producto:'', valor:'', notas:'' })
 
-  // Data de apoyo cierre
+  const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwuHVbraIJMzmeS0TfY9m8168tO7wSUfi8gEVhIpPDDQzx4xwCNxdXBF5mjtSdHLuo/exec'
+
+  // Emails por comercial
+  const EMAILS = {
+    'Cristian':  'cblanco@prolub.com.co',
+    'Mauricio':  'oramirez@prolub.com.co',
+    'Gonzalo':   'grodriguez@prolub.com.co',
+  }
+  const EMAIL_JEFE = 'cgil@prolub.com.co'
+
   const apoyos = data.apoyoCierre || []
   const redenciones = data.redenciones || []
-
-  const mesesConData = [...new Set(apoyos.map(a=>a.mes))].sort((a,b)=>MESES.indexOf(a)-MESES.indexOf(b))
-  const comerciales = [...new Set(apoyos.map(a=>a.comercial))].sort()
   const distribuidores = [...new Set(data.inversiones.map(i=>i.distribuidor))].sort()
-
+  const comerciales = [...new Set(apoyos.map(a=>a.comercial))].sort()
   const apoyosFiltrados = mesActivo ? apoyos.filter(a=>a.mes===mesActivo) : apoyos
 
-  // Saldo de un comercial en un mes = monto asignado - total redimido
   const getSaldo = (comercial, mes) => {
-    const asig = apoyos.filter(a=>a.comercial===comercial&&a.mes===mes).reduce((s,a)=>s+(Number(a.monto)||0),0)
-    const redim = redenciones.filter(r=>r.comercial===comercial&&r.mes===mes).reduce((s,r)=>s+(Number(r.valor)||0),0)
+    const asig = apoyos.filter(a=>a.comercial===comercial&&(!mes||a.mes===mes)).reduce((s,a)=>s+(Number(a.monto)||0),0)
+    const redim = redenciones.filter(r=>r.comercial===comercial&&(!mes||r.mes===mes)).reduce((s,r)=>s+(Number(r.valor)||0),0)
     return { asignado:asig, redimido:redim, saldo:asig-redim }
   }
 
@@ -1810,14 +1817,17 @@ function ApoyoCierre({ data, setData }) {
     setFormAsig({ comercial:'', distribuidor:'', mes:'', anio:2026, monto:'' })
   }
 
-  const guardarRedencion = () => {
+  const guardarRedencion = async () => {
     if(!comercialActivo||!formRed.producto||!formRed.valor) return
+    const saldoActual = getSaldo(comercialActivo.comercial, mesActivo||comercialActivo.mes)
+    const nuevaSaldo = saldoActual.saldo - Number(formRed.valor)
     const nueva = {
       id: Date.now(),
       comercial: comercialActivo.comercial,
       distribuidor: comercialActivo.distribuidor,
-      mes: comercialActivo.mes,
-      anio: comercialActivo.anio,
+      mes: mesActivo||comercialActivo.mes||'',
+      anio: comercialActivo.anio||2026,
+      cliente: formRed.cliente,
       producto: formRed.producto,
       valor: Number(formRed.valor),
       notas: formRed.notas,
@@ -1826,31 +1836,56 @@ function ApoyoCierre({ data, setData }) {
     const nd = {...data, redenciones:[...redenciones, nueva]}
     setData(nd); save(nd)
     setModalRedencion(false)
-    setFormRed({ producto:'', valor:'', notas:'' })
+    setFormRed({ cliente:'', producto:'', valor:'', notas:'' })
+
+    // Enviar correo via Google Apps Script
+    const emailDest = EMAILS[comercialActivo.comercial]
+    if(emailDest) {
+      setEnviandoEmail(true)
+      try {
+        await fetch(SHEETS_URL, {
+          method: 'POST',
+          body: JSON.stringify({
+            accion: 'enviar_correo',
+            destinatario: emailDest,
+            copia: EMAIL_JEFE,
+            comercial: comercialActivo.comercial,
+            cliente: formRed.cliente,
+            producto: formRed.producto,
+            valorRedimido: Number(formRed.valor),
+            nuevoSaldo: nuevaSaldo,
+            mes: mesActivo||comercialActivo.mes||'',
+            fecha: nueva.fecha,
+            notas: formRed.notas,
+          })
+        })
+      } catch(e) { console.error('Error enviando email:', e) }
+      setEnviandoEmail(false)
+    }
   }
 
   const delAsig = id => { const nd={...data,apoyoCierre:apoyos.filter(a=>a.id!==id)};setData(nd);save(nd) }
   const delRed = id => { const nd={...data,redenciones:redenciones.filter(r=>r.id!==id)};setData(nd);save(nd) }
 
-  // Resumen por comercial en el mes activo
-  const resumenComerciales = comerciales.filter(c=>!mesActivo||apoyos.some(a=>a.comercial===c&&a.mes===mesActivo)).map(c=>{
-    const rows = mesActivo
-      ? apoyos.filter(a=>a.comercial===c&&a.mes===mesActivo)
-      : apoyos.filter(a=>a.comercial===c)
-    const meses_c = [...new Set(rows.map(a=>a.mes))]
-    return {
-      comercial: c,
-      meses: meses_c,
-      totalAsignado: rows.reduce((s,a)=>s+(Number(a.monto)||0),0),
-      totalRedimido: redenciones.filter(r=>r.comercial===c&&(!mesActivo||r.mes===mesActivo)).reduce((s,r)=>s+(Number(r.valor)||0),0),
-    }
-  })
+  // Resumen por comercial
+  const resumenComerciales = comerciales.map(c=>{
+    const asigRows = mesActivo ? apoyos.filter(a=>a.comercial===c&&a.mes===mesActivo) : apoyos.filter(a=>a.comercial===c)
+    const redsRows = mesActivo ? redenciones.filter(r=>r.comercial===c&&r.mes===mesActivo) : redenciones.filter(r=>r.comercial===c)
+    const meses_c = [...new Set(asigRows.map(a=>a.mes))]
+    const totalAsig = asigRows.reduce((s,a)=>s+(Number(a.monto)||0),0)
+    const totalRedim = redsRows.reduce((s,r)=>s+(Number(r.valor)||0),0)
+    // Clientes únicos que han redimido
+    const clientesRed = [...new Set(redsRows.map(r=>r.cliente||r.distribuidor).filter(Boolean))]
+    return { comercial:c, meses:meses_c, totalAsig, totalRedim, saldo:totalAsig-totalRedim, redsRows, asigRows, clientesRed }
+  }).filter(c=>!mesActivo||c.asigRows.length>0)
 
   const totalAsig = apoyosFiltrados.reduce((s,a)=>s+(Number(a.monto)||0),0)
   const totalRedim = redenciones.filter(r=>!mesActivo||r.mes===mesActivo).reduce((s,r)=>s+(Number(r.valor)||0),0)
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:18}}>
+      {enviandoEmail&&<div style={{position:'fixed',top:70,right:24,background:'var(--accent)',color:'#fff',padding:'10px 18px',borderRadius:10,fontSize:13,zIndex:400}}>✉️ Enviando correo...</div>}
+
       {/* Toolbar */}
       <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
         <select value={mesActivo} onChange={e=>setMesActivo(e.target.value)} style={{width:160}}>
@@ -1865,96 +1900,117 @@ function ApoyoCierre({ data, setData }) {
 
       {/* KPIs */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}>
-        <KpiCard icon={DollarSign} label="Total asignado" value={cop(totalAsig)} sub={mesActivo||'Todos los meses'} accent="var(--text)"/>
+        <KpiCard icon={DollarSign} label="Total asignado" value={cop(totalAsig)} sub={mesActivo||'Todos los meses'}/>
         <KpiCard icon={TrendingUp} label="Total redimido" value={cop(totalRedim)} accent="var(--orange)"/>
         <KpiCard icon={BarChart2} label="Saldo disponible" value={cop(totalAsig-totalRedim)} accent={totalAsig-totalRedim<0?'var(--red)':'var(--green)'}/>
       </div>
 
       {/* Tarjetas por comercial */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(320px,1fr))',gap:14}}>
+      <div style={{display:'flex',flexDirection:'column',gap:12}}>
         {resumenComerciales.length===0&&(
-          <div style={{...S.card,padding:40,textAlign:'center',color:'var(--text3)',gridColumn:'1/-1'}}>
-            No hay apoyos de cierre registrados. Usa <strong>Asignar apoyo</strong> para comenzar.
+          <div style={{...S.card,padding:40,textAlign:'center',color:'var(--text3)'}}>
+            No hay apoyos registrados. Usa <strong>Asignar apoyo</strong>.
           </div>
         )}
         {resumenComerciales.map((c,i)=>{
-          const saldo = c.totalAsignado - c.totalRedimido
-          const pct = c.totalAsignado>0?(c.totalRedimido/c.totalAsignado)*100:0
-          // Redenciones de este comercial
-          const redsC = redenciones.filter(r=>r.comercial===c.comercial&&(!mesActivo||r.mes===mesActivo))
-          // Asignaciones detalle
-          const asigC = apoyosFiltrados.filter(a=>a.comercial===c.comercial)
+          const pct = c.totalAsig>0?(c.totalRedim/c.totalAsig)*100:0
+          const expandido = comercialDetalle===c.comercial
           return (
-            <div key={i} style={{...S.card,display:'flex',flexDirection:'column'}}>
-              {/* Header */}
-              <div style={{padding:'14px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                <div>
-                  <div style={{fontWeight:700,fontSize:15,marginBottom:3}}>{c.comercial}</div>
-                  <div style={{fontSize:11,color:'var(--text3)'}}>{c.meses.join(' · ')}</div>
+            <div key={i} style={{...S.card}}>
+              {/* Header comercial */}
+              <div style={{padding:'14px 20px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}}
+                onClick={()=>setComercialDetalle(expandido?null:c.comercial)}>
+                <div style={{width:40,height:40,borderRadius:10,background:'var(--accent-soft)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,fontWeight:700,color:'var(--accent2)',flexShrink:0}}>
+                  {c.comercial[0]}
                 </div>
-                <button onClick={()=>{
-                  const a = asigC[0]
-                  setComercialActivo({comercial:c.comercial,distribuidor:a?.distribuidor||'',mes:mesActivo||a?.mes||'',anio:a?.anio||2026})
-                  setModalRedencion(true)
-                }} style={{...S.btn('var(--orange)','#fff'),fontSize:12,padding:'6px 12px'}}>
-                  + Redención
-                </button>
-              </div>
-
-              {/* Body */}
-              <div style={{padding:'14px 18px',display:'flex',flexDirection:'column',gap:10}}>
-                {/* Asignaciones */}
-                <div>
-                  <div style={{fontSize:10,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:6}}>Asignaciones</div>
-                  {asigC.map((a,j)=>(
-                    <div key={j} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 10px',background:'var(--bg3)',borderRadius:7,marginBottom:4}}>
-                      <div>
-                        <span style={{fontSize:12,fontWeight:500}}>{a.mes} {a.anio}</span>
-                        {a.distribuidor&&<span style={{fontSize:11,color:'var(--text3)',marginLeft:8}}>→ {a.distribuidor}</span>}
-                      </div>
-                      <div style={{display:'flex',alignItems:'center',gap:8}}>
-                        <span style={{fontFamily:'var(--mono)',fontWeight:600,color:'var(--accent2)'}}>{cop(a.monto)}</span>
-                        <button onClick={()=>delAsig(a.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'3px 6px'}}><Trash2 size={11}/></button>
-                      </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4}}>
+                    <span style={{fontWeight:700,fontSize:15}}>{c.comercial}</span>
+                    {EMAILS[c.comercial]&&<span style={{fontSize:11,color:'var(--text3)'}}>{EMAILS[c.comercial]}</span>}
+                    <span style={{fontSize:11,background:'var(--bg4)',color:'var(--text2)',padding:'2px 8px',borderRadius:5}}>{c.meses.join(' · ')}</span>
+                  </div>
+                  {/* Barra progreso inline */}
+                  <div style={{display:'flex',alignItems:'center',gap:10}}>
+                    <div style={{flex:1,height:6,background:'var(--bg4)',borderRadius:3}}>
+                      <div style={{width:Math.min(pct,100)+'%',height:'100%',background:pct>100?'var(--red)':pct>80?'var(--yellow)':'var(--orange)',borderRadius:3}}/>
                     </div>
-                  ))}
-                </div>
-
-                {/* Barra saldo */}
-                <div>
-                  <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--text3)',marginBottom:4}}>
-                    <span>Redimido</span>
-                    <span style={{color:pct>100?'var(--red)':pct>80?'var(--yellow)':'var(--orange)'}}>{pct.toFixed(1)}% de {cop(c.totalAsignado)}</span>
-                  </div>
-                  <div style={{height:8,background:'var(--bg4)',borderRadius:4}}>
-                    <div style={{width:Math.min(pct,100)+'%',height:'100%',background:pct>100?'var(--red)':pct>80?'var(--yellow)':'var(--orange)',borderRadius:4,transition:'width 0.3s'}}/>
-                  </div>
-                  <div style={{display:'flex',justifyContent:'space-between',marginTop:6,fontSize:12}}>
-                    <span style={{color:'var(--text2)'}}>Redimido: <strong style={{fontFamily:'var(--mono)',color:'var(--orange)'}}>{cop(c.totalRedimido)}</strong></span>
-                    <span style={{color:'var(--text2)'}}>Saldo: <strong style={{fontFamily:'var(--mono)',color:saldo<0?'var(--red)':'var(--green)'}}>{cop(saldo)}</strong></span>
+                    <span style={{fontSize:12,color:'var(--text2)',whiteSpace:'nowrap'}}>
+                      <strong style={{color:'var(--orange)',fontFamily:'var(--mono)'}}>{cop(c.totalRedim)}</strong>
+                      <span style={{color:'var(--text3)'}}> / {cop(c.totalAsig)}</span>
+                      <span style={{marginLeft:8,color:c.saldo<0?'var(--red)':'var(--green)',fontFamily:'var(--mono)',fontWeight:600}}> Saldo: {cop(c.saldo)}</span>
+                    </span>
                   </div>
                 </div>
-
-                {/* Redenciones */}
-                {redsC.length>0&&(
-                  <div>
-                    <div style={{fontSize:10,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:6}}>Redenciones</div>
-                    {redsC.map((r,j)=>(
-                      <div key={j} style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',padding:'7px 10px',background:'rgba(255,159,67,0.08)',border:'1px solid rgba(255,159,67,0.15)',borderRadius:7,marginBottom:4}}>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:12,fontWeight:500,color:'var(--text)'}}>{r.producto}</div>
-                          <div style={{fontSize:11,color:'var(--text3)'}}>{r.fecha} {r.mes&&'— '+r.mes} {r.distribuidor&&'— '+r.distribuidor}</div>
-                          {r.notas&&<div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>{r.notas}</div>}
-                        </div>
-                        <div style={{display:'flex',alignItems:'center',gap:7,flexShrink:0,marginLeft:10}}>
-                          <span style={{fontFamily:'var(--mono)',fontWeight:600,color:'var(--orange)'}}>{cop(r.valor)}</span>
-                          <button onClick={()=>delRed(r.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'3px 6px'}}><Trash2 size={11}/></button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                  <button onClick={e=>{e.stopPropagation();
+                    setComercialActivo({comercial:c.comercial,distribuidor:'',mes:mesActivo||c.meses[0]||'',anio:2026})
+                    setModalRedencion(true)
+                  }} style={{...S.btn('var(--orange)','#fff'),fontSize:12,padding:'6px 14px'}}>
+                    + Redención
+                  </button>
+                  <span style={{fontSize:14,color:'var(--text3)',transition:'transform 0.2s',transform:expandido?'rotate(180deg)':'rotate(0deg)'}}>▼</span>
+                </div>
               </div>
+
+              {/* Detalle expandido */}
+              {expandido&&(
+                <div style={{borderTop:'1px solid var(--border)',padding:'16px 20px',display:'flex',flexDirection:'column',gap:14}}>
+                  {/* Asignaciones por mes */}
+                  <div>
+                    <div style={{fontSize:10,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:8}}>Asignaciones</div>
+                    <div style={{display:'flex',flexDirection:'column',gap:5}}>
+                      {c.asigRows.map((a,j)=>(
+                        <div key={j} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 12px',background:'var(--bg3)',borderRadius:8}}>
+                          <div>
+                            <span style={{fontSize:12,fontWeight:500}}>{a.mes} {a.anio}</span>
+                            {a.distribuidor&&<span style={{fontSize:11,color:'var(--text3)',marginLeft:8}}>→ {a.distribuidor}</span>}
+                          </div>
+                          <div style={{display:'flex',alignItems:'center',gap:8}}>
+                            <span style={{fontFamily:'var(--mono)',fontWeight:600,color:'var(--accent2)'}}>{cop(a.monto)}</span>
+                            <button onClick={()=>delAsig(a.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'3px 6px'}}><Trash2 size={11}/></button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Redenciones por cliente */}
+                  {c.redsRows.length>0&&(
+                    <div>
+                      <div style={{fontSize:10,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:8}}>
+                        Redenciones por cliente
+                      </div>
+                      {/* Agrupar por cliente */}
+                      {[...new Set(c.redsRows.map(r=>r.cliente||r.distribuidor||'Sin cliente'))].map(cliente=>{
+                        const redsCliente = c.redsRows.filter(r=>(r.cliente||r.distribuidor||'Sin cliente')===cliente)
+                        const totalCliente = redsCliente.reduce((s,r)=>s+(Number(r.valor)||0),0)
+                        return (
+                          <div key={cliente} style={{marginBottom:10,background:'var(--bg3)',borderRadius:10,overflow:'hidden'}}>
+                            <div style={{padding:'8px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid var(--border)'}}>
+                              <span style={{fontSize:12,fontWeight:600,color:'var(--accent2)'}}>👤 {cliente}</span>
+                              <span style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:'var(--orange)'}}>{cop(totalCliente)}</span>
+                            </div>
+                            {redsCliente.map((r,j)=>(
+                              <div key={j} style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',padding:'7px 14px',borderBottom:j<redsCliente.length-1?'1px solid var(--border)':'none'}}>
+                                <div style={{flex:1,minWidth:0}}>
+                                  <div style={{fontSize:12,fontWeight:500}}>{r.producto}</div>
+                                  <div style={{fontSize:11,color:'var(--text3)'}}>{r.fecha} {r.mes&&'· '+r.mes}</div>
+                                  {r.notas&&<div style={{fontSize:11,color:'var(--text3)'}}>{r.notas}</div>}
+                                </div>
+                                <div style={{display:'flex',alignItems:'center',gap:7,flexShrink:0,marginLeft:10}}>
+                                  <span style={{fontFamily:'var(--mono)',fontWeight:600,color:'var(--orange)'}}>{cop(r.valor)}</span>
+                                  <button onClick={()=>delRed(r.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'3px 6px'}}><Trash2 size={11}/></button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                  {c.redsRows.length===0&&<div style={{fontSize:12,color:'var(--text3)',fontStyle:'italic'}}>Sin redenciones aún</div>}
+                </div>
+              )}
             </div>
           )
         })}
@@ -1997,16 +2053,20 @@ function ApoyoCierre({ data, setData }) {
       {/* Modal redención */}
       {modalRedencion&&comercialActivo&&(
         <Modal title={'Registrar redención — '+comercialActivo.comercial} onClose={()=>setModalRedencion(false)}>
-          <div style={{padding:'10px 14px',background:'var(--bg3)',borderRadius:8,marginBottom:14,fontSize:12,color:'var(--text2)'}}>
-            Comercial: <strong>{comercialActivo.comercial}</strong>
-            {comercialActivo.distribuidor&&<> · Distribuidor: <strong>{comercialActivo.distribuidor}</strong></>}
-            {comercialActivo.mes&&<> · Mes: <strong>{comercialActivo.mes}</strong></>}
-            {comercialActivo.mes&&(()=>{
-              const s = getSaldo(comercialActivo.comercial, comercialActivo.mes)
-              return <> · Saldo: <strong style={{color:s.saldo<0?'var(--red)':'var(--green)'}}>{cop(s.saldo)}</strong></>
+          <div style={{padding:'10px 14px',background:'var(--bg3)',borderRadius:8,marginBottom:14,fontSize:12,color:'var(--text2)',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+            <span>Comercial: <strong>{comercialActivo.comercial}</strong></span>
+            {(mesActivo||comercialActivo.mes)&&<span>· Mes: <strong>{mesActivo||comercialActivo.mes}</strong></span>}
+            {(()=>{
+              const s = getSaldo(comercialActivo.comercial, mesActivo||comercialActivo.mes)
+              return s.asignado>0 ? <span>· Saldo: <strong style={{color:s.saldo<0?'var(--red)':'var(--green)'}}>{cop(s.saldo)}</strong></span> : null
             })()}
+            {EMAILS[comercialActivo.comercial]&&<span style={{color:'var(--text3)'}}>· ✉️ {EMAILS[comercialActivo.comercial]}</span>}
           </div>
           <div style={{display:'flex',flexDirection:'column',gap:14}}>
+            <Field label="Cliente que redime *">
+              <input list="clientes-red" value={formRed.cliente} onChange={e=>setFormRed({...formRed,cliente:e.target.value})} placeholder="Ej: LUBRICAFE S.A.S., MAQUINAGRO..."/>
+              <datalist id="clientes-red">{distribuidores.map(d=><option key={d} value={d}/>)}</datalist>
+            </Field>
             <Field label="Producto / Concepto redimido *">
               <input value={formRed.producto} onChange={e=>setFormRed({...formRed,producto:e.target.value})} placeholder="Ej: Producto Plan Expreso, Bono cumplimiento..."/>
             </Field>
@@ -2017,9 +2077,12 @@ function ApoyoCierre({ data, setData }) {
               <textarea value={formRed.notas} onChange={e=>setFormRed({...formRed,notas:e.target.value})} rows={2} style={{resize:'vertical'}} placeholder="Observaciones..."/>
             </Field>
           </div>
-          <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:20}}>
+          <div style={{background:'rgba(255,159,67,0.08)',border:'1px solid rgba(255,159,67,0.2)',borderRadius:8,padding:'8px 12px',fontSize:11,color:'var(--orange)',marginTop:14}}>
+            ✉️ Al registrar se enviará correo automático a <strong>{EMAILS[comercialActivo.comercial]||'comercial'}</strong> con copia a Paola
+          </div>
+          <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:14}}>
             <button onClick={()=>setModalRedencion(false)} style={S.btn('var(--bg3)','var(--text2)')}>Cancelar</button>
-            <button onClick={guardarRedencion} style={S.btn('var(--orange)','#fff')}><Check size={15}/> Registrar redención</button>
+            <button onClick={guardarRedencion} style={S.btn('var(--orange)','#fff')}><Check size={15}/> Registrar y enviar correo</button>
           </div>
         </Modal>
       )}
