@@ -2950,6 +2950,7 @@ export default function App() {
     {id:'planes',     label:'Planes Q',    icon:BookOpen},
     {id:'presupuesto',label:'Presupuesto', icon:DollarSign},
     {id:'pendientes', label:'Pendientes',  icon:ListTodo},
+    {id:'apoyocierre', label:'Apoyo Cierre', icon:DollarSign},
   ]
 
   const tabs = esLider?TABS_LIDER:esPresupuesto?TABS_PRES:TABS_NORMAL
