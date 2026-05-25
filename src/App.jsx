@@ -5,6 +5,118 @@ import * as XLSX from 'xlsx'
 
 const STORAGE_KEY = 'tracker_v3'
 let _currentUserKey = STORAGE_KEY
+
+// ═══════════════════════════════════════════════════════
+// GOOGLE SHEETS — Solo para usuario Distribución
+// ═══════════════════════════════════════════════════════
+const SHEETS_CONFIG = {
+  distribucion: {
+    url: 'https://script.google.com/macros/s/AKfycbwuHVbraIJMzmeS0TfY9m8168tO7wSUfi8gEVhIpPDDQzx4xwCNxdXBF5mjtSdHLuo/exec',
+    enabled: true,
+  }
+}
+
+// Mapeo entre claves del app y nombres de hoja en Sheets
+const HOJA_MAP = {
+  inversiones:       'INVERSIONES',
+  ventas:            'VENTAS',
+  presupuestos:      'PRESUPUESTOS',
+  planes:            'PLANES',
+  apoyoCierre:       'APOYO_CIERRE',
+  redenciones:       'REDENCIONES_APOYO',
+  pendientes:        'PENDIENTES',
+}
+
+// Mapeo de campos app → columnas Sheets por hoja
+const CAMPOS_MAP = {
+  inversiones:  { id:'id', fecha:'fecha', anio:'año', mes:'mes', distribuidor:'distribuidor', tipoPlan:'tipoPlan', concepto:'concepto', inversion:'inversion', galonesPlan:'galonesPlan', notas:'notas' },
+  ventas:       { id:'id', anio:'año', mes:'mes', distribuidor:'distribuidor', galones:'galones', ventaNeta:'ventaNeta', notas:'notas' },
+  presupuestos: { id:'id', anio:'año', mes:'mes', monto:'monto' },
+  planes:       { id:'id', distribuidor:'distribuidor', anio:'año', quarter:'quarter', estado:'estado', tiposPlan:'tipoPlan', metaGalones:'metaGalones', metaVenta:'metaVenta', condiciones:'condiciones', acuerdos:'acuerdos', notas:'notas' },
+  apoyoCierre:  { id:'ID', anio:'AÑO', mes:'MES', comercial:'COMERCIAL', monto:'MONTO_ASIGNADO', distribuidor:'CLIENTE' },
+  redenciones:  { id:'ID', fecha:'FECHA', anio:'AÑO', mes:'MES', comercial:'COMERCIAL', distribuidor:'CLIENTE', producto:'PRODUCTO', valor:'VALOR_REDIMIDO', notas:'OBSERVACION' },
+  pendientes:   { id:'id', distribuidor:'distribuidor', tarea:'tarea', categoria:'categoria', fechaLimite:'fechaLimite', prioridad:'prioridad', estado:'estado', responsable:'responsable', notas:'notas' },
+}
+
+// Convierte un objeto del app al formato de Sheets
+function toSheetRow(tipo, obj) {
+  const map = CAMPOS_MAP[tipo] || {}
+  const row = {}
+  Object.entries(map).forEach(([appKey, sheetKey]) => {
+    let val = obj[appKey]
+    if(val === undefined) val = ''
+    if(Array.isArray(val)) val = val.join(', ')
+    row[sheetKey] = val
+  })
+  return row
+}
+
+// Convierte una fila de Sheets al formato del app
+function fromSheetRow(tipo, row) {
+  const map = CAMPOS_MAP[tipo] || {}
+  const obj = {}
+  Object.entries(map).forEach(([appKey, sheetKey]) => {
+    let val = row[sheetKey]
+    if(val === undefined || val === '') val = appKey === 'anio' ? 2026 : ''
+    // Parsear números
+    if(['anio','inversion','galonesPlan','galones','ventaNeta','monto','metaGalones','metaVenta','monto','valor'].includes(appKey)) {
+      val = Number(val) || 0
+    }
+    // Parsear arrays
+    if(appKey === 'tiposPlan' && typeof val === 'string') {
+      val = val.split(',').map(s=>s.trim()).filter(Boolean)
+    }
+    obj[appKey] = val
+  })
+  if(!obj.id) obj.id = Date.now()
+  return obj
+}
+
+// Cargar datos desde Sheets
+async function cargarDesdeSheets(uid) {
+  const cfg = SHEETS_CONFIG[uid]
+  if(!cfg?.enabled) return null
+  try {
+    const res = await fetch(cfg.url)
+    const json = await res.json()
+    if(!json.ok) return null
+    const d = json.data
+    return {
+      inversiones:      (d.inversiones      ||[]).map(r=>fromSheetRow('inversiones',r)),
+      ventas:           (d.ventas           ||[]).map(r=>fromSheetRow('ventas',r)),
+      presupuestos:     (d.presupuestos     ||[]).map(r=>fromSheetRow('presupuestos',r)),
+      planes:           (d.planes           ||[]).map(r=>fromSheetRow('planes',r)),
+      apoyoCierre:      (d.apoyo_cierre     ||[]).map(r=>fromSheetRow('apoyoCierre',r)),
+      redenciones:      (d.redenciones_apoyo||[]).map(r=>fromSheetRow('redenciones',r)),
+      gastosPresupuesto:[],
+      pendientes:       (d.pendientes       ||[]).map(r=>fromSheetRow('pendientes',r)),
+    }
+  } catch(e) {
+    console.error('Error cargando Sheets:', e)
+    return null
+  }
+}
+
+// Guardar colección completa en Sheets (reemplaza todo)
+async function guardarEnSheets(uid, tipo, items) {
+  const cfg = SHEETS_CONFIG[uid]
+  if(!cfg?.enabled) return
+  const hoja = HOJA_MAP[tipo]
+  if(!hoja) return
+  try {
+    await fetch(cfg.url, {
+      method: 'POST',
+      body: JSON.stringify({
+        accion: 'reemplazar_todo',
+        hoja,
+        filas: items.map(i=>toSheetRow(tipo, i))
+      })
+    })
+  } catch(e) {
+    console.error('Error guardando en Sheets:', e)
+  }
+}
+
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const TIPOS_PLAN = ['Prolub respalda','Sell out Prolub respalda','Apoyo directo','Activación','Otro']
 const CONCEPTOS = ['Apoyo a la nomina','CVC','Producto/promocion','Evento','Material POP','Digital','Transporte','Otro']
@@ -2759,6 +2871,9 @@ export default function App() {
   const [chatOpen, setChatOpen] = useState(false)
 
   // Cargar datos del usuario actual
+  const [sheetsLoading, setSheetsLoading] = useState(false)
+  const [sheetsSync, setSheetsSync] = useState(null) // 'syncing' | 'ok' | 'error'
+
   const loadUser = (uid) => {
     if(!uid) { _currentUserKey = STORAGE_KEY; return load() }
     _currentUserKey = getStorageKey(uid)
@@ -2766,13 +2881,43 @@ export default function App() {
   }
   const [data, setData] = useState(()=>loadUser(usuario?.id))
 
-  // Al cambiar usuario recargar sus datos
-  useEffect(()=>{ if(usuario) setData(loadUser(usuario.id)) },[usuario?.id])
+  // Al cambiar usuario recargar sus datos + intentar cargar desde Sheets
+  useEffect(()=>{
+    if(!usuario) return
+    setData(loadUser(usuario.id))
+    // Si es Distribución, intentar cargar desde Sheets
+    if(SHEETS_CONFIG[usuario.id]?.enabled) {
+      setSheetsLoading(true)
+      setSheetsSync('syncing')
+      cargarDesdeSheets(usuario.id).then(sheetData => {
+        setSheetsLoading(false)
+        if(sheetData) {
+          // Merge: Sheets tiene prioridad, pero mantenemos gastosPresupuesto local
+          const local = loadUser(usuario.id)
+          const merged = {...sheetData, gastosPresupuesto: local.gastosPresupuesto||[]}
+          setData(merged)
+          _currentUserKey = getStorageKey(usuario.id)
+          localStorage.setItem(_currentUserKey, JSON.stringify(merged))
+          setSheetsSync('ok')
+        } else {
+          setSheetsSync('error')
+        }
+      })
+    }
+  },[usuario?.id])
 
   const saveUser = d => {
     if(!usuario) return
     _currentUserKey = getStorageKey(usuario.id)
     localStorage.setItem(_currentUserKey, JSON.stringify(d))
+    // Si es Distribución, sincronizar con Sheets en background
+    if(SHEETS_CONFIG[usuario.id]?.enabled) {
+      setSheetsSync('syncing')
+      const tipos = ['inversiones','ventas','presupuestos','planes','apoyoCierre','redenciones','pendientes']
+      Promise.all(tipos.map(t => guardarEnSheets(usuario.id, t, d[t]||[])))
+        .then(()=>setSheetsSync('ok'))
+        .catch(()=>setSheetsSync('error'))
+    }
   }
 
   const setDataUser = d => { setData(d); saveUser(d) }
@@ -2829,6 +2974,9 @@ export default function App() {
           <div style={{display:'flex',alignItems:'center',gap:7,background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:20,padding:'4px 12px'}}>
             <div style={{width:8,height:8,borderRadius:'50%',background:usuario.color}}/>
             <span style={{fontSize:12,fontWeight:500,color:'var(--text)'}}>{usuario.nombre}</span>
+            {sheetsSync==='syncing'&&<span style={{fontSize:10,color:'var(--yellow)'}}>↻ Sync...</span>}
+            {sheetsSync==='ok'&&<span style={{fontSize:10,color:'var(--green)'}}>✓ Sheets</span>}
+            {sheetsSync==='error'&&<span style={{fontSize:10,color:'var(--red)'}}>✗ Offline</span>}
           </div>
           <button onClick={cerrarSesion} style={{fontSize:11,color:'var(--text3)',background:'none',border:'none',cursor:'pointer',padding:'4px 8px',fontFamily:'var(--font)'}}>Salir</button>
         </div>
@@ -2862,6 +3010,17 @@ export default function App() {
             <button onClick={()=>exportarExcel(data)} style={{...S.btn('var(--green-soft)','var(--green)'),fontSize:12,padding:'5px 14px',border:'1px solid rgba(61,214,140,0.2)'}}>
               <Download size={13}/> Exportar Excel
             </button>
+            {SHEETS_CONFIG[usuario?.id]?.enabled&&(
+              <button onClick={()=>{
+                setSheetsSync('syncing')
+                cargarDesdeSheets(usuario.id).then(sd=>{
+                  if(sd){const m={...sd,gastosPresupuesto:data.gastosPresupuesto||[]};setData(m);localStorage.setItem(getStorageKey(usuario.id),JSON.stringify(m));setSheetsSync('ok')}
+                  else setSheetsSync('error')
+                })
+              }} style={{...S.btn('rgba(6,182,212,0.15)','#06b6d4'),fontSize:12,padding:'5px 14px',border:'1px solid rgba(6,182,212,0.3)'}}>
+                ↻ Recargar Sheets
+              </button>
+            )}
             <button onClick={()=>{if(confirm('¿Borrar tus datos?')){localStorage.removeItem(getStorageKey(usuario.id));_currentUserKey=STORAGE_KEY;window.location.reload()}}} style={{fontSize:11,color:'var(--text3)',background:'none',border:'none',cursor:'pointer',padding:'4px 8px',fontFamily:'var(--font)'}}>Resetear</button>
           </div>
         </footer>
