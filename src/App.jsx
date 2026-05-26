@@ -11,7 +11,7 @@ let _currentUserKey = STORAGE_KEY
 // ═══════════════════════════════════════════════════════
 const SHEETS_CONFIG = {
   distribucion: {
-    url: 'https://script.google.com/macros/s/AKfycbwMaQZys7JMPd9byu7701AIy2lqmtwBulBHCf5pQuRKv7XMtdWtJralmzlfH3lXcQFs/exec',
+    url: 'https://script.google.com/macros/s/AKfycbzgSB5bZEo-3JgBbTySp8GOVB0VpYl8ki3J2EM-daQrB42HiAguVzqWZUCoFovx5rTF/exec',
     enabled: true,
   }
 }
@@ -99,29 +99,37 @@ async function cargarDesdeSheets(uid) {
   }
 }
 
-// Guardar en Sheets usando GET con chunks (evita CORS completamente)
+// Guardar en Sheets en lotes de 20 filas via JSONP
 async function guardarEnSheets(uid, tipo, items) {
   const cfg = SHEETS_CONFIG[uid]
   if(!cfg?.enabled) return
   const hoja = HOJA_MAP[tipo]
   if(!hoja) return
+
+  const filas = items.map(i=>toSheetRow(tipo, i))
+  const LOTE = 20
+
+  const enviarScript = (payload) => new Promise(resolve => {
+    const cb = 'gs_cb_' + Date.now() + '_' + Math.random().toString(36).slice(2)
+    window[cb] = () => { resolve(); delete window[cb] }
+    const s = document.createElement('script')
+    s.src = cfg.url + '?callback=' + cb + '&data=' + encodeURIComponent(JSON.stringify(payload))
+    s.onerror = () => resolve()
+    s.onload = () => { setTimeout(resolve, 300); s.remove() }
+    document.head.appendChild(s)
+  })
+
   try {
-    const filas = items.map(i=>toSheetRow(tipo, i))
-    const payload = encodeURIComponent(JSON.stringify({
-      accion: 'reemplazar_todo',
-      hoja,
-      filas
-    }))
-    // GET request con script tag — evita CORS 100%
-    return new Promise((resolve) => {
-      const callbackName = 'gs_cb_' + tipo + '_' + Date.now()
-      window[callbackName] = () => { resolve(); delete window[callbackName] }
-      const script = document.createElement('script')
-      script.src = cfg.url + '?callback=' + callbackName + '&data=' + payload
-      script.onerror = () => resolve()
-      script.onload = () => { setTimeout(resolve, 500); script.remove() }
-      document.head.appendChild(script)
-    })
+    // Primero limpiar la hoja
+    await enviarScript({ accion:'limpiar', hoja })
+    await new Promise(r=>setTimeout(r,500))
+
+    // Luego insertar en lotes de 20
+    for(let i=0; i<filas.length; i+=LOTE) {
+      const lote = filas.slice(i, i+LOTE)
+      await enviarScript({ accion:'agregar_lote', hoja, filas:lote })
+      await new Promise(r=>setTimeout(r,400))
+    }
   } catch(e) {
     console.error('Error guardando en Sheets:', e)
   }
@@ -1796,7 +1804,7 @@ function ApoyoCierre({ data, setData }) {
   const [formAsig, setFormAsig] = useState({ comercial:'', distribuidor:'', mes:'', anio:2026, monto:'' })
   const [formRed, setFormRed] = useState({ cliente:'', producto:'', valor:'', notas:'' })
 
-  const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwMaQZys7JMPd9byu7701AIy2lqmtwBulBHCf5pQuRKv7XMtdWtJralmzlfH3lXcQFs/exec'
+  const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzgSB5bZEo-3JgBbTySp8GOVB0VpYl8ki3J2EM-daQrB42HiAguVzqWZUCoFovx5rTF/exec'
 
   // Emails por comercial
   const EMAILS = {
