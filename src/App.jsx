@@ -3085,6 +3085,17 @@ export default function App() {
                 ↻ Recargar Sheets
               </button>
             )}
+            {SHEETS_CONFIG[usuario?.id]?.enabled&&(
+              <button onClick={()=>{
+                setSheetsSync('syncing')
+                const tipos=['inversiones','ventas','presupuestos','planes','apoyoCierre','redenciones','pendientes']
+                Promise.all(tipos.map(t=>guardarEnSheets(usuario.id,t,data[t]||[])))
+                  .then(()=>setSheetsSync('ok'))
+                  .catch(()=>setSheetsSync('error'))
+              }} style={{...S.btn('rgba(168,139,250,0.15)','#a78bfa'),fontSize:12,padding:'5px 14px',border:'1px solid rgba(168,139,250,0.3)'}}>
+                ↑ Subir todo a Sheets
+              </button>
+            )}
             <button onClick={()=>{if(confirm('¿Borrar tus datos?')){localStorage.removeItem(getStorageKey(usuario.id));_currentUserKey=STORAGE_KEY;window.location.reload()}}} style={{fontSize:11,color:'var(--text3)',background:'none',border:'none',cursor:'pointer',padding:'4px 8px',fontFamily:'var(--font)'}}>Resetear</button>
           </div>
         </footer>
