@@ -20,7 +20,8 @@ const SHEETS_CONFIG = {
 const HOJA_MAP = {
   inversiones:       'INVERSIONES',
   ventas:            'VENTAS',
-  presupuestos:      'PRESUPUESTOS',
+  presupuestos:      'PRESUPUESTO',
+  gastosPresupuesto: 'GASTOS_PRESUPUESTO',
   planes:            'PLANES',
   apoyoCierre:       'APOYO_CIERRE',
   redenciones:       'REDENCIONES_APOYO',
@@ -29,12 +30,13 @@ const HOJA_MAP = {
 
 // Mapeo de campos app → columnas Sheets por hoja
 const CAMPOS_MAP = {
-  inversiones:  { id:'id', fecha:'fecha', anio:'año', mes:'mes', distribuidor:'distribuidor', tipoPlan:'tipoPlan', concepto:'concepto', inversion:'inversion', galonesPlan:'galonesPlan', notas:'notas' },
-  ventas:       { id:'id', anio:'año', mes:'mes', distribuidor:'distribuidor', galones:'galones', ventaNeta:'ventaNeta', notas:'notas' },
+  inversiones:  { id:'id', fecha:'Fecha', anio:'Año', mes:'Mes', distribuidor:'Distribuidor', tipoPlan:'Tipo Plan', concepto:'Concepto', inversion:'Inversión', galonesPlan:'Gal. Plan', notas:'Notas' },
+  ventas:       { id:'id', anio:'Año', mes:'Mes', distribuidor:'Distribuidor', galones:'Galones', ventaNeta:'Venta Neta', notas:'Notas' },
   presupuestos: { id:'id', anio:'año', mes:'mes', monto:'monto' },
+  gastosPresupuesto: { id:'id', anio:'año', mes:'mes', gasto:'Gasto (Nom. Producto, Cliente)', valorFactura:'Valor Factura', canal:'Canal', observacion:'Observación (ATJ)', estado:'Estado', centroCostos:'Centro de Costos', ordenCompra:'Orden de Compra', nitProveedor:'NIT Proveedor', nomProveedor:'Nom. Proveedor', docCargado:'Doc. Cargado', obsKatherine:'Obs. Katherine', notas:'notas' },
   planes:       { id:'id', distribuidor:'distribuidor', anio:'año', quarter:'quarter', estado:'estado', tiposPlan:'tipoPlan', metaGalones:'metaGalones', metaVenta:'metaVenta', condiciones:'condiciones', acuerdos:'acuerdos', notas:'notas' },
   apoyoCierre:  { id:'ID', anio:'AÑO', mes:'MES', comercial:'COMERCIAL', monto:'MONTO_ASIGNADO', distribuidor:'CLIENTE' },
-  redenciones:  { id:'ID', fecha:'FECHA', anio:'AÑO', mes:'MES', comercial:'COMERCIAL', distribuidor:'CLIENTE', producto:'PRODUCTO', valor:'VALOR_REDIMIDO', notas:'OBSERVACION' },
+  redenciones:  { id:'ID', fecha:'FECHA', anio:'AÑO', mes:'MES', comercial:'COMERCIAL', cliente:'CLIENTE', producto:'PRODUCTO', valor:'VALOR_REDIMIDO', notas:'OBSERVACION' },
   pendientes:   { id:'id', distribuidor:'distribuidor', tarea:'tarea', categoria:'categoria', fechaLimite:'fechaLimite', prioridad:'prioridad', estado:'estado', responsable:'responsable', notas:'notas' },
 }
 
@@ -97,21 +99,25 @@ async function cargarDesdeSheets(uid) {
   }
 }
 
-// Guardar colección completa en Sheets (reemplaza todo)
+// Guardar colección completa en Sheets usando no-cors (fire and forget)
 async function guardarEnSheets(uid, tipo, items) {
   const cfg = SHEETS_CONFIG[uid]
   if(!cfg?.enabled) return
   const hoja = HOJA_MAP[tipo]
   if(!hoja) return
   try {
-    await fetch(cfg.url, {
+    const payload = {
+      accion: 'reemplazar_todo',
+      hoja,
+      filas: items.map(i=>toSheetRow(tipo, i))
+    }
+    // Usar no-cors para evitar bloqueo CORS de Google Apps Script
+    fetch(cfg.url, {
       method: 'POST',
-      body: JSON.stringify({
-        accion: 'reemplazar_todo',
-        hoja,
-        filas: items.map(i=>toSheetRow(tipo, i))
-      })
-    })
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(payload)
+    }).catch(e => console.error('Sheets save error:', e))
   } catch(e) {
     console.error('Error guardando en Sheets:', e)
   }
@@ -1843,8 +1849,10 @@ function ApoyoCierre({ data, setData }) {
     if(emailDest) {
       setEnviandoEmail(true)
       try {
-        await fetch(SHEETS_URL, {
+        fetch(SHEETS_URL, {
           method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain' },
           body: JSON.stringify({
             accion: 'enviar_correo',
             destinatario: emailDest,
@@ -2976,7 +2984,7 @@ export default function App() {
     // Si es Distribución, sincronizar con Sheets en background
     if(SHEETS_CONFIG[usuario.id]?.enabled) {
       setSheetsSync('syncing')
-      const tipos = ['inversiones','ventas','presupuestos','planes','apoyoCierre','redenciones','pendientes']
+      const tipos = ['inversiones','ventas','presupuestos','gastosPresupuesto','planes','apoyoCierre','redenciones','pendientes']
       Promise.all(tipos.map(t => guardarEnSheets(usuario.id, t, d[t]||[])))
         .then(()=>setSheetsSync('ok'))
         .catch(()=>setSheetsSync('error'))
