@@ -99,25 +99,41 @@ async function cargarDesdeSheets(uid) {
   }
 }
 
-// Guardar colección completa en Sheets usando no-cors (fire and forget)
+// Guardar en Sheets usando iframe form trick para evitar CORS
 async function guardarEnSheets(uid, tipo, items) {
   const cfg = SHEETS_CONFIG[uid]
   if(!cfg?.enabled) return
   const hoja = HOJA_MAP[tipo]
   if(!hoja) return
   try {
-    const payload = {
+    const payload = JSON.stringify({
       accion: 'reemplazar_todo',
       hoja,
       filas: items.map(i=>toSheetRow(tipo, i))
+    })
+    // Crear iframe oculto para submit del form sin CORS
+    const iframeId = 'gs-iframe-'+tipo
+    let iframe = document.getElementById(iframeId)
+    if(!iframe) {
+      iframe = document.createElement('iframe')
+      iframe.id = iframeId
+      iframe.name = iframeId
+      iframe.style.display = 'none'
+      document.body.appendChild(iframe)
     }
-    // Usar no-cors para evitar bloqueo CORS de Google Apps Script
-    fetch(cfg.url, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(payload)
-    }).catch(e => console.error('Sheets save error:', e))
+    const form = document.createElement('form')
+    form.method = 'POST'
+    form.action = cfg.url
+    form.target = iframeId
+    form.style.display = 'none'
+    const input = document.createElement('input')
+    input.type = 'hidden'
+    input.name = 'data'
+    input.value = payload
+    form.appendChild(input)
+    document.body.appendChild(form)
+    form.submit()
+    setTimeout(() => { document.body.removeChild(form) }, 2000)
   } catch(e) {
     console.error('Error guardando en Sheets:', e)
   }
