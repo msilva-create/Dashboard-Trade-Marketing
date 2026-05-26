@@ -99,41 +99,29 @@ async function cargarDesdeSheets(uid) {
   }
 }
 
-// Guardar en Sheets usando iframe form trick para evitar CORS
+// Guardar en Sheets usando GET con chunks (evita CORS completamente)
 async function guardarEnSheets(uid, tipo, items) {
   const cfg = SHEETS_CONFIG[uid]
   if(!cfg?.enabled) return
   const hoja = HOJA_MAP[tipo]
   if(!hoja) return
   try {
-    const payload = JSON.stringify({
+    const filas = items.map(i=>toSheetRow(tipo, i))
+    const payload = encodeURIComponent(JSON.stringify({
       accion: 'reemplazar_todo',
       hoja,
-      filas: items.map(i=>toSheetRow(tipo, i))
+      filas
+    }))
+    // GET request con script tag — evita CORS 100%
+    return new Promise((resolve) => {
+      const callbackName = 'gs_cb_' + tipo + '_' + Date.now()
+      window[callbackName] = () => { resolve(); delete window[callbackName] }
+      const script = document.createElement('script')
+      script.src = cfg.url + '?callback=' + callbackName + '&data=' + payload
+      script.onerror = () => resolve()
+      script.onload = () => { setTimeout(resolve, 500); script.remove() }
+      document.head.appendChild(script)
     })
-    // Crear iframe oculto para submit del form sin CORS
-    const iframeId = 'gs-iframe-'+tipo
-    let iframe = document.getElementById(iframeId)
-    if(!iframe) {
-      iframe = document.createElement('iframe')
-      iframe.id = iframeId
-      iframe.name = iframeId
-      iframe.style.display = 'none'
-      document.body.appendChild(iframe)
-    }
-    const form = document.createElement('form')
-    form.method = 'POST'
-    form.action = cfg.url
-    form.target = iframeId
-    form.style.display = 'none'
-    const input = document.createElement('input')
-    input.type = 'hidden'
-    input.name = 'data'
-    input.value = payload
-    form.appendChild(input)
-    document.body.appendChild(form)
-    form.submit()
-    setTimeout(() => { document.body.removeChild(form) }, 2000)
   } catch(e) {
     console.error('Error guardando en Sheets:', e)
   }
