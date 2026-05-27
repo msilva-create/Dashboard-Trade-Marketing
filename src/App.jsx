@@ -90,7 +90,7 @@ async function cargarDesdeSheets(uid) {
       planes:           (d.planes           ||[]).map(r=>fromSheetRow('planes',r)),
       apoyoCierre:      (d.apoyo_cierre     ||[]).map(r=>fromSheetRow('apoyoCierre',r)),
       redenciones:      (d.redenciones_apoyo||[]).map(r=>fromSheetRow('redenciones',r)),
-      gastosPresupuesto:[],
+      gastosPresupuesto:(d.gastos_presupuesto||[]).map(r=>fromSheetRow('gastosPresupuesto',r)),
       pendientes:       (d.pendientes       ||[]).map(r=>fromSheetRow('pendientes',r)),
     }
   } catch(e) {
@@ -107,7 +107,7 @@ async function guardarEnSheets(uid, tipo, items) {
   if(!hoja) return
 
   const filas = items.map(i=>toSheetRow(tipo, i))
-  const LOTE = 20
+  const LOTE = 5
 
   const enviarScript = (payload) => new Promise(resolve => {
     const cb = 'gs_cb_' + Date.now() + '_' + Math.random().toString(36).slice(2)
@@ -2977,7 +2977,7 @@ export default function App() {
         if(sheetData) {
           // Merge: Sheets tiene prioridad, pero mantenemos gastosPresupuesto local
           const local = loadUser(usuario.id)
-          const merged = {...sheetData, gastosPresupuesto: local.gastosPresupuesto||[]}
+          const merged = {...sheetData, gastosPresupuesto: sheetData.gastosPresupuesto?.length ? sheetData.gastosPresupuesto : (local.gastosPresupuesto||[])}
           setData(merged)
           _currentUserKey = getStorageKey(usuario.id)
           localStorage.setItem(_currentUserKey, JSON.stringify(merged))
