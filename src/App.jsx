@@ -99,7 +99,7 @@ async function cargarDesdeSheets(uid) {
   }
 }
 
-// Guardar en Sheets en lotes de 20 filas via JSONP
+// Guardar en Sheets fila por fila via JSONP
 async function guardarEnSheets(uid, tipo, items) {
   const cfg = SHEETS_CONFIG[uid]
   if(!cfg?.enabled) return
@@ -107,28 +107,28 @@ async function guardarEnSheets(uid, tipo, items) {
   if(!hoja) return
 
   const filas = items.map(i=>toSheetRow(tipo, i))
-  const LOTE = 5
 
   const enviarScript = (payload) => new Promise(resolve => {
     const cb = 'gs_cb_' + Date.now() + '_' + Math.random().toString(36).slice(2)
     window[cb] = () => { resolve(); delete window[cb] }
     const s = document.createElement('script')
     s.src = cfg.url + '?callback=' + cb + '&data=' + encodeURIComponent(JSON.stringify(payload))
-    s.onerror = () => resolve()
-    s.onload = () => { setTimeout(resolve, 300); s.remove() }
+    s.onerror = () => { resolve() }
+    s.onload = () => { setTimeout(resolve, 200); s.remove() }
     document.head.appendChild(s)
+    // Timeout por si no responde
+    setTimeout(resolve, 3000)
   })
 
   try {
-    // Primero limpiar la hoja
+    // Limpiar hoja primero
     await enviarScript({ accion:'limpiar', hoja })
-    await new Promise(r=>setTimeout(r,500))
+    await new Promise(r=>setTimeout(r,800))
 
-    // Luego insertar en lotes de 20
-    for(let i=0; i<filas.length; i+=LOTE) {
-      const lote = filas.slice(i, i+LOTE)
-      await enviarScript({ accion:'agregar_lote', hoja, filas:lote })
-      await new Promise(r=>setTimeout(r,400))
+    // Insertar de 1 en 1 para evitar límite de URL
+    for(let i=0; i<filas.length; i++) {
+      await enviarScript({ accion:'agregar_lote', hoja, filas:[filas[i]] })
+      await new Promise(r=>setTimeout(r,300))
     }
   } catch(e) {
     console.error('Error guardando en Sheets:', e)
@@ -2975,12 +2975,10 @@ export default function App() {
       cargarDesdeSheets(usuario.id).then(sheetData => {
         setSheetsLoading(false)
         if(sheetData) {
-          // Merge: Sheets tiene prioridad, pero mantenemos gastosPresupuesto local
-          const local = loadUser(usuario.id)
-          const merged = {...sheetData, gastosPresupuesto: sheetData.gastosPresupuesto?.length ? sheetData.gastosPresupuesto : (local.gastosPresupuesto||[])}
-          setData(merged)
+          // Sheets es la fuente de verdad — reemplaza todo
+          setData(sheetData)
           _currentUserKey = getStorageKey(usuario.id)
-          localStorage.setItem(_currentUserKey, JSON.stringify(merged))
+          localStorage.setItem(_currentUserKey, JSON.stringify(sheetData))
           setSheetsSync('ok')
         } else {
           setSheetsSync('error')
@@ -3098,7 +3096,7 @@ export default function App() {
               <button onClick={()=>{
                 setSheetsSync('syncing')
                 cargarDesdeSheets(usuario.id).then(sd=>{
-                  if(sd){const m={...sd,gastosPresupuesto:data.gastosPresupuesto||[]};setData(m);localStorage.setItem(getStorageKey(usuario.id),JSON.stringify(m));setSheetsSync('ok')}
+                  if(sd){setData(sd);localStorage.setItem(getStorageKey(usuario.id),JSON.stringify(sd));setSheetsSync('ok')}
                   else setSheetsSync('error')
                 })
               }} style={{...S.btn('rgba(6,182,212,0.15)','#06b6d4'),fontSize:12,padding:'5px 14px',border:'1px solid rgba(6,182,212,0.3)'}}>
