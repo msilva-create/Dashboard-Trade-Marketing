@@ -99,6 +99,43 @@ async function cargarDesdeSheets(uid) {
   }
 }
 
+// Insertar una sola fila en Sheets via JSONP
+async function insertarFilaSheets(uid, tipo, item) {
+  const cfg = SHEETS_CONFIG[uid]
+  if(!cfg?.enabled) return
+  const hoja = HOJA_MAP[tipo]
+  if(!hoja) return
+  const fila = toSheetRow(tipo, item)
+  const cb = 'gs_cb_' + Date.now() + '_' + Math.random().toString(36).slice(2)
+  return new Promise(resolve => {
+    window[cb] = () => { resolve(); delete window[cb] }
+    const s = document.createElement('script')
+    s.src = cfg.url + '?callback=' + cb + '&data=' + encodeURIComponent(JSON.stringify({accion:'agregar_lote', hoja, filas:[fila]}))
+    s.onerror = () => resolve()
+    s.onload = () => { setTimeout(resolve, 200); s.remove() }
+    document.head.appendChild(s)
+    setTimeout(resolve, 4000)
+  })
+}
+
+// Eliminar una fila en Sheets via JSONP
+async function eliminarFilaSheets(uid, tipo, id) {
+  const cfg = SHEETS_CONFIG[uid]
+  if(!cfg?.enabled) return
+  const hoja = HOJA_MAP[tipo]
+  if(!hoja) return
+  const cb = 'gs_cb_' + Date.now() + '_' + Math.random().toString(36).slice(2)
+  return new Promise(resolve => {
+    window[cb] = () => { resolve(); delete window[cb] }
+    const s = document.createElement('script')
+    s.src = cfg.url + '?callback=' + cb + '&data=' + encodeURIComponent(JSON.stringify({accion:'eliminar', hoja, id}))
+    s.onerror = () => resolve()
+    s.onload = () => { setTimeout(resolve, 200); s.remove() }
+    document.head.appendChild(s)
+    setTimeout(resolve, 4000)
+  })
+}
+
 // Guardar en Sheets fila por fila via JSONP
 async function guardarEnSheets(uid, tipo, items) {
   const cfg = SHEETS_CONFIG[uid]
@@ -614,9 +651,9 @@ function Inversiones({ data, setData }) {
                   <td key={col.key} style={celda(inv.id,col.key)} onClick={()=>startEdit(inv.id,col.key,inv[col.key])}>
                     {editCell?.id===inv.id&&editCell?.field===col.key ? (
                       col.key==='mes'?(
-                        <select value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={commitEdit} onKeyDown={onKD} ref={inputRef}
-                          style={{background:'transparent',color:'var(--text)',border:'none',outline:'none',fontSize:12,width:'100%',fontFamily:'var(--font)'}}>
-                          <option value="">—</option>{MESES.map(m=><option key={m}>{m}</option>)}
+                        <select value={editVal} onChange={e=>{setEditVal(e.target.value);setTimeout(commitEdit,50)}} ref={inputRef} autoFocus
+                          style={{background:'var(--bg2)',color:'var(--text)',border:'1px solid var(--accent)',borderRadius:4,fontSize:12,width:'100%',fontFamily:'var(--font)',padding:'2px'}}>
+                          <option value="">— Selecciona mes —</option>{MESES.map(m=><option key={m} value={m}>{m}</option>)}
                         </select>
                       ):col.key==='concepto'?(
                         <select value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={commitEdit} onKeyDown={onKD} ref={inputRef}
@@ -1615,14 +1652,14 @@ function Presupuesto({ data, setData }) {
                     <td key={col.key} style={celda(g.id,col.key)} onClick={()=>startEdit(g.id,col.key,g[col.key])}>
                       {editCell?.id===g.id&&editCell?.field===col.key ? (
                         col.key==='mes'?(
-                          <select value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={commitEdit} onKeyDown={onKD} ref={inputRef}
-                            style={{background:'transparent',color:'var(--text)',border:'none',outline:'none',fontSize:12,width:'100%',fontFamily:'var(--font)'}}>
-                            <option value="">—</option>{MESES.map(m=><option key={m}>{m}</option>)}
+                          <select value={editVal} onChange={e=>{setEditVal(e.target.value);setTimeout(()=>{setEditCell(c=>c?{...c,_val:e.target.value}:c);commitEdit()},50)}} ref={inputRef} autoFocus
+                            style={{background:'var(--bg2)',color:'var(--text)',border:'1px solid var(--accent)',borderRadius:4,fontSize:12,width:'100%',fontFamily:'var(--font)',padding:'2px'}}>
+                            <option value="">— Selecciona mes —</option>{MESES.map(m=><option key={m} value={m}>{m}</option>)}
                           </select>
                         ):col.key==='estado'?(
-                          <select value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={commitEdit} onKeyDown={onKD} ref={inputRef}
-                            style={{background:'transparent',color:'var(--text)',border:'none',outline:'none',fontSize:12,width:'100%',fontFamily:'var(--font)'}}>
-                            {ESTADOS_G.map(s=><option key={s}>{s}</option>)}
+                          <select value={editVal} onChange={e=>{setEditVal(e.target.value);setTimeout(commitEdit,50)}} ref={inputRef} autoFocus
+                            style={{background:'var(--bg2)',color:'var(--text)',border:'1px solid var(--accent)',borderRadius:4,fontSize:12,width:'100%',fontFamily:'var(--font)',padding:'2px'}}>
+                            {ESTADOS_G.map(s=><option key={s} value={s}>{s}</option>)}
                           </select>
                         ):(
                           <input ref={inputRef} value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={commitEdit} onKeyDown={onKD}
@@ -2130,9 +2167,9 @@ function exportarExcel(data) {
   const ws5 = XLSX.utils.json_to_sheet(data.pendientes.map(p=>({ Distribuidor:p.distribuidor, Tarea:p.tarea, Categoria:p.categoria, 'Fecha Limite':p.fechaLimite, Prioridad:p.prioridad, Estado:p.estado, Responsable:p.responsable, Notas:p.notas })))
   ws5['!cols']=[22,35,16,13,10,12,16,28].map(w=>({wch:w}))
   XLSX.utils.book_append_sheet(wb,ws5,'Pendientes')
-  const ws6 = XLSX.utils.json_to_sheet((data.gastosPresupuesto||[]).map(g=>({ 'Año':g.anio, Mes:g.mes, 'Gasto (Nom. Producto, Cliente)':g.gasto, 'Valor Factura':g.valorFactura, Canal:g.canal, 'Observación (ATJ, otros)':g.observacion, Estado:g.estado, 'Centro de Costos':g.centroCostos, Notas:g.notas })))
-  ws6['!cols']=[8,12,35,16,14,25,12,18,25].map(w=>({wch:w}))
-  XLSX.utils.book_append_sheet(wb,ws6,'Presupuesto Gastos')
+  const ws6 = XLSX.utils.json_to_sheet((data.gastosPresupuesto||[]).filter(g=>g.mes||g.gasto).map((g,i)=>({'id':g.id||Date.now()+i,'año':g.anio||2026,'Mes':g.mes||'','Gasto (Nom. Producto, Cliente)':g.gasto||'','Valor Factura':Number(g.valorFactura)||0,'Canal':g.canal||'','Observación (ATJ)':g.observacion||'','Estado':g.estado||'Pendiente','Centro de Costos':g.centroCostos||'','Orden de Compra':g.ordenCompra||'','NIT Proveedor':g.nitProveedor||'','Nom. Proveedor':g.nomProveedor||'','Doc. Cargado':g.docCargado||'','Obs. Katherine':g.obsKatherine||'','notas':g.notas||''})))
+  ws6['!cols']=[14,8,12,35,16,10,25,12,16,14,14,18,10,18,20].map(w=>({wch:w}))
+  XLSX.utils.book_append_sheet(wb,ws6,'GASTOS_PRESUPUESTO')
   XLSX.writeFile(wb,`Tracker_${new Date().toISOString().slice(0,10)}.xlsx`)
 }
 
@@ -2987,21 +3024,26 @@ export default function App() {
     }
   },[usuario?.id])
 
-  const saveUser = d => {
+  const saveUser = (d, opts={}) => {
     if(!usuario) return
     _currentUserKey = getStorageKey(usuario.id)
     localStorage.setItem(_currentUserKey, JSON.stringify(d))
-    // Si es Distribución, sincronizar con Sheets en background
-    if(SHEETS_CONFIG[usuario.id]?.enabled) {
+    // Solo sincronizar si se pasa una fila específica (insertar/eliminar)
+    if(SHEETS_CONFIG[usuario.id]?.enabled && opts.insertar) {
       setSheetsSync('syncing')
-      const tipos = ['inversiones','ventas','presupuestos','gastosPresupuesto','planes','apoyoCierre','redenciones','pendientes']
-      Promise.all(tipos.map(t => guardarEnSheets(usuario.id, t, d[t]||[])))
+      insertarFilaSheets(usuario.id, opts.tipo, opts.insertar)
+        .then(()=>setSheetsSync('ok'))
+        .catch(()=>setSheetsSync('error'))
+    }
+    if(SHEETS_CONFIG[usuario.id]?.enabled && opts.eliminar) {
+      setSheetsSync('syncing')
+      eliminarFilaSheets(usuario.id, opts.tipo, opts.eliminar)
         .then(()=>setSheetsSync('ok'))
         .catch(()=>setSheetsSync('error'))
     }
   }
 
-  const setDataUser = d => { setData(d); saveUser(d) }
+  const setDataUser = (d, opts={}) => { setData(d); saveUser(d, opts) }
 
   const cerrarSesion = () => { localStorage.removeItem(AUTH_KEY); setUsuario(null); setTab('dashboard') }
 
