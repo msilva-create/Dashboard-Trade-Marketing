@@ -741,9 +741,9 @@ function Ventas({ data, setData }) {
     if(!form.distribuidor||!form.mes) return
     const entry={...form, id:editId||Date.now(), galones:Number(form.galones)||0, ventaNeta:Number(form.ventaNeta)||0, anio:Number(form.anio)}
     const ventas=editId?data.ventas.map(v=>v.id===editId?entry:v):[...data.ventas,entry]
-    const nd={...data,ventas};setData(nd);save(nd);setModal(false);setEditId(null);setForm(blank)
+    const nd={...data,ventas};setData(nd);save(nd,editId?{}:{insertar:entry,tipo:'ventas'});setModal(false);setEditId(null);setForm(blank)
   }
-  const del = id => { const nd={...data,ventas:data.ventas.filter(v=>v.id!==id)};setData(nd);save(nd) }
+  const del = id => { const nd={...data,ventas:data.ventas.filter(v=>v.id!==id)};setData(nd);save(nd,{eliminar:id,tipo:'ventas'}) }
   const edit = v => { setForm({...v,galones:String(v.galones),ventaNeta:String(v.ventaNeta)});setEditId(v.id);setModal(true) }
 
   // Resumen acumulado por distribuidor
@@ -1498,7 +1498,7 @@ function Presupuesto({ data, setData }) {
   // Añadir fila
   const addFila = () => {
     const n={id:Date.now(),anio:Number(filtroAnio)||2026,mes:filtroMes||'',gasto:'',valorFactura:0,canal:'',observacion:'',estado:'Pendiente',centroCostos:'',notas:''}
-    const nd={...data,gastosPresupuesto:[...(data.gastosPresupuesto||[]),n]};setData(nd);save(nd)
+    const nd={...data,gastosPresupuesto:[...(data.gastosPresupuesto||[]),n]};setData(nd);save(nd,{insertar:n,tipo:'gastosPresupuesto'})
     setTimeout(()=>startEdit(n.id,'gasto',''),60)
   }
 
@@ -1540,9 +1540,9 @@ function Presupuesto({ data, setData }) {
   const submitPres = () => {
     if(!formP.mes||!formP.monto) return
     const entry={id:Date.now(),mes:formP.mes,anio:Number(formP.anio),monto:Number(formP.monto)}
-    const nd={...data,presupuestos:[...data.presupuestos,entry]};setData(nd);save(nd);setModalPres(false);setFormP({mes:'',anio:2026,monto:''})
+    const nd={...data,presupuestos:[...data.presupuestos,entry]};setData(nd);save(nd,{insertar:entry,tipo:'presupuestos'});setModalPres(false);setFormP({mes:'',anio:2026,monto:''})
   }
-  const delPres = id => { const nd={...data,presupuestos:data.presupuestos.filter(p=>p.id!==id)};setData(nd);save(nd) }
+  const delPres = id => { const nd={...data,presupuestos:data.presupuestos.filter(p=>p.id!==id)};setData(nd);save(nd,{eliminar:id,tipo:'presupuestos'}) }
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:18}}>
@@ -1746,9 +1746,9 @@ function Pendientes({ data, setData }) {
     if(!form.distribuidor||!form.tarea) return
     const entry={...form,id:editId||Date.now()}
     const pendientes=editId?data.pendientes.map(p=>p.id===editId?entry:p):[...data.pendientes,entry]
-    const nd={...data,pendientes}; setData(nd); save(nd); setModal(false); setEditId(null); setForm(blank)
+    const nd={...data,pendientes}; setData(nd); save(nd,editId?{}:{insertar:entry,tipo:'pendientes'}); setModal(false); setEditId(null); setForm(blank)
   }
-  const del = id => { const nd={...data,pendientes:data.pendientes.filter(p=>p.id!==id)}; setData(nd); save(nd) }
+  const del = id => { const nd={...data,pendientes:data.pendientes.filter(p=>p.id!==id)}; setData(nd); save(nd,{eliminar:id,tipo:'pendientes'}) }
   const edit = p => { setForm({...p}); setEditId(p.id); setModal(true) }
   const toggle = p => {
     const next={'Pendiente':'En curso','En curso':'Listo','Listo':'Cancelado','Cancelado':'Pendiente'}
