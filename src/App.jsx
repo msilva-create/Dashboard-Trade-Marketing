@@ -1639,8 +1639,8 @@ function Presupuesto({ data, setData }) {
                   <input type="checkbox" checked={seleccionados.size===gastos.length&&gastos.length>0} onChange={toggleTodos} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
                 </th>
                 <th style={{...S.th,width:36,padding:'8px 4px',textAlign:'center',fontSize:10}}>#</th>
+                <th style={{...S.th,width:36}}></th>
                 {COLS_G.map(c=><th key={c.key} style={{...S.th,width:c.w}}>{c.label}</th>)}
-                <th style={{...S.th,width:40}}></th>
               </tr>
             </thead>
             <tbody>
@@ -1655,6 +1655,9 @@ function Presupuesto({ data, setData }) {
                     <input type="checkbox" checked={seleccionados.has(g.id)} onChange={e=>{setSeleccionados(prev=>{const n=new Set(prev);n.has(g.id)?n.delete(g.id):n.add(g.id);return n})}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
                   </td>
                   <td style={{padding:'6px 4px',textAlign:'center',fontSize:10,color:'var(--text3)',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>{idx+1}</td>
+                  <td style={{padding:'4px',borderTop:'1px solid var(--border)',textAlign:'center',width:36}}>
+                    <button onClick={()=>{if(window.confirm('¿Eliminar?')){const nd={...data,gastosPresupuesto:(data.gastosPresupuesto||[]).filter(x=>x.id!==g.id)};setData(nd);save(nd)}}} style={{background:'var(--red-soft)',color:'var(--red)',border:'none',borderRadius:6,padding:'2px 8px',cursor:'pointer',fontSize:13,fontWeight:700,lineHeight:1}}>✕</button>
+                  </td>
                   {COLS_G.map(col=>(
                     <td key={col.key} style={celda(g.id,col.key)} onClick={()=>startEdit(g.id,col.key,g[col.key])}>
                       {editCell?.id===g.id&&editCell?.field===col.key ? (
