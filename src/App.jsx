@@ -497,6 +497,7 @@ function Inversiones({ data, setData }) {
   const [editCell, setEditCell] = useState(null)
   const [editVal, setEditVal] = useState('')
   const inputRef = useRef(null)
+  useEffect(()=>setSeleccionados(new Set()),[data.inversiones?.length])
 
   const COLS = [
     {key:'fecha',        label:'Fecha',        w:100},
@@ -654,7 +655,7 @@ function Inversiones({ data, setData }) {
             {lista.map((inv,idx)=>(
               <tr key={inv.id} style={{background:seleccionados.has(inv.id)?'rgba(108,99,255,0.06)':'transparent'}}>
                 <td style={{padding:'6px',textAlign:'center',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}} onClick={e=>e.stopPropagation()}>
-                  <input type="checkbox" checked={seleccionados.has(inv.id)} onClick={e=>{e.stopPropagation();toggleSel(inv.id)}} onChange={()=>{}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
+                  <input type="checkbox" checked={seleccionados.has(inv.id)} onChange={e=>{e.stopPropagation();toggleSel(inv.id)}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
                 </td>
                 <td style={{padding:'6px 4px',textAlign:'center',fontSize:10,color:'var(--text3)',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>{idx+1}</td>
                 {COLS.map(col=>(
@@ -1451,6 +1452,7 @@ function Presupuesto({ data, setData }) {
   const [editCell, setEditCell] = useState(null)
   const [editVal, setEditVal] = useState('')
   const [modalPres, setModalPres] = useState(false)
+  useEffect(()=>setSeleccionados(new Set()),[data.gastosPresupuesto?.length])
   const [formP, setFormP] = useState({ mes:'', anio:2026, monto:'' })
   const inputRef = useRef(null)
   const COLS_G = [
@@ -1658,7 +1660,7 @@ function Presupuesto({ data, setData }) {
               {gastos.map((g,idx)=>(
                 <tr key={g.id} style={{background:seleccionados.has(g.id)?'rgba(108,99,255,0.06)':'transparent'}}>
                   <td style={{padding:'6px',textAlign:'center',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}} onClick={e=>e.stopPropagation()}>
-                    <input type="checkbox" checked={seleccionados.has(g.id)} onClick={e=>{e.stopPropagation();toggleSel(g.id)}} onChange={()=>{}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
+                    <input type="checkbox" checked={seleccionados.has(g.id)} onChange={e=>{e.stopPropagation();toggleSel(g.id)}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
                   </td>
                   <td style={{padding:'6px 4px',textAlign:'center',fontSize:10,color:'var(--text3)',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>{idx+1}</td>
                   {COLS_G.map(col=>(
