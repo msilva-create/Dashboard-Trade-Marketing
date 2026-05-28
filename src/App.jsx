@@ -528,11 +528,7 @@ function Inversiones({ data, setData }) {
   const presMes = filtroMes ? data.presupuestos.filter(p=>p.mes===filtroMes&&(!filtroAnio||p.anio===Number(filtroAnio))).reduce((s,p)=>s+(Number(p.monto)||0),0) : 0
 
   const toggleSel = id => setSeleccionados(prev=>{const n=new Set(prev);n.has(id)?n.delete(id):n.add(id);return n})
-  const toggleTodos = () => {
-    const todosM = lista.length>0 && lista.every(i=>seleccionados.has(i.id))
-    if(todosM){ setSeleccionados(new Set()) }
-    else { setSeleccionados(new Set(lista.map(i=>String(i.id)))) }
-  }
+  const toggleTodos = () => setSeleccionados(prev=>prev.size===lista.length&&lista.length>0?new Set():new Set(lista.map(i=>i.id)))
   const eliminarSel = () => {
     if(!seleccionados.size||!confirm('¿Eliminar '+seleccionados.size+' registros?')) return
     const nd={...data,inversiones:data.inversiones.filter(i=>!seleccionados.has(i.id))}
@@ -640,7 +636,7 @@ function Inversiones({ data, setData }) {
           <thead>
             <tr style={{background:'var(--bg3)'}}>
               <th style={{...S.th,width:36,textAlign:'center',padding:'8px 6px'}}>
-                <input type="checkbox" checked={seleccionados.size===lista.length&&lista.length>0} onChange={e=>{e.stopPropagation();toggleTodos()}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
+                <input type="checkbox" checked={seleccionados.size===lista.length&&lista.length>0} onChange={toggleTodos} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
               </th>
               <th style={{...S.th,width:36,padding:'8px 4px',textAlign:'center',fontSize:10}}>#</th>
               {COLS.map(c=><th key={c.key} style={{...S.th,width:c.w}}>{c.label}</th>)}
@@ -655,7 +651,7 @@ function Inversiones({ data, setData }) {
             {lista.map((inv,idx)=>(
               <tr key={inv.id} style={{background:seleccionados.has(inv.id)?'rgba(108,99,255,0.06)':'transparent'}}>
                 <td style={{padding:'6px',textAlign:'center',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}} onClick={e=>e.stopPropagation()}>
-                  <input type="checkbox" checked={seleccionados.has(inv.id)} onChange={e=>{e.stopPropagation();toggleSel(inv.id)}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
+                  <input type="checkbox" checked={seleccionados.has(inv.id)} onChange={e=>{e.stopPropagation();e.preventDefault();setSeleccionados(prev=>{const n=new Set(prev);n.has(inv.id)?n.delete(inv.id):n.add(inv.id);return n})}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
                 </td>
                 <td style={{padding:'6px 4px',textAlign:'center',fontSize:10,color:'var(--text3)',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>{idx+1}</td>
                 {COLS.map(col=>(
@@ -1655,7 +1651,7 @@ function Presupuesto({ data, setData }) {
               {gastos.map((g,idx)=>(
                 <tr key={g.id} style={{background:seleccionados.has(g.id)?'rgba(108,99,255,0.06)':'transparent'}}>
                   <td style={{padding:'6px',textAlign:'center',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>
-                    <input type="checkbox" checked={seleccionados.has(g.id)} onChange={()=>toggleSel(g.id)} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
+                    <input type="checkbox" checked={seleccionados.has(g.id)} onChange={e=>{e.stopPropagation();e.preventDefault();setSeleccionados(prev=>{const n=new Set(prev);n.has(g.id)?n.delete(g.id):n.add(g.id);return n})}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
                   </td>
                   <td style={{padding:'6px 4px',textAlign:'center',fontSize:10,color:'var(--text3)',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>{idx+1}</td>
                   {COLS_G.map(col=>(
