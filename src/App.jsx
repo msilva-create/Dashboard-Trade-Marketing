@@ -1479,12 +1479,8 @@ function Presupuesto({ data, setData }) {
   const toggleTodos = () => setSeleccionados(prev=>prev.size===gastos.length&&gastos.length>0?new Set():new Set(gastos.map(g=>g.id)))
   const eliminarSel = () => {
     if(!seleccionados.size||!confirm('¿Eliminar '+seleccionados.size+' gastos?')) return
-    const ids = [...seleccionados]
     const nd={...data,gastosPresupuesto:(data.gastosPresupuesto||[]).filter(g=>!seleccionados.has(g.id))}
-    setData(nd)
-    localStorage.setItem(getStorageKey ? getStorageKey(_currentUserKey.replace('tracker_v3_','')) : _currentUserKey, JSON.stringify(nd))
-    try { save(nd) } catch(e) {}
-    setSeleccionados(new Set())
+    setData(nd);save(nd);setSeleccionados(new Set())
   }
 
   // Edición inline
