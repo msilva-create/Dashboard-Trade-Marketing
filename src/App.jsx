@@ -532,13 +532,12 @@ function Inversiones({ data, setData }) {
     setEditCell({id,field});setEditVal(String(val||''))
     setTimeout(()=>inputRef.current?.focus(),20)
   }
-  const commitEdit = (forcedVal) => {
+  const commitEdit = () => {
     if(!editCell) return
     const {id,field}=editCell
-    const val2 = forcedVal !== undefined ? forcedVal : editVal
     const inversiones=data.inversiones.map(i=>{
       if(i.id!==id) return i
-      const val=(field==='inversion'||field==='galonesPlan'||field==='anio')?(Number(val2)||0):val2
+      const val=(field==='inversion'||field==='galonesPlan'||field==='anio')?(Number(editVal)||0):editVal
       return {...i,[field]:val}
     })
     const nd={...data,inversiones};setData(nd);save(nd);setEditCell(null)
@@ -652,7 +651,7 @@ function Inversiones({ data, setData }) {
                   <td key={col.key} style={celda(inv.id,col.key)} onClick={()=>startEdit(inv.id,col.key,inv[col.key])}>
                     {editCell?.id===inv.id&&editCell?.field===col.key ? (
                       col.key==='mes'?(
-                        <select value={editVal} onChange={e=>{const v=e.target.value;setEditVal(v);setTimeout(()=>commitEdit(v),50)}} ref={inputRef} autoFocus
+                        <select value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={()=>commitEdit()} ref={inputRef} autoFocus
                           style={{background:'var(--bg2)',color:'var(--text)',border:'1px solid var(--accent)',borderRadius:4,fontSize:12,width:'100%',fontFamily:'var(--font)',padding:'2px'}}>
                           <option value="">— Selecciona mes —</option>{MESES.map(m=><option key={m} value={m}>{m}</option>)}
                         </select>
@@ -1444,8 +1443,6 @@ function Presupuesto({ data, setData }) {
   const [modalPres, setModalPres] = useState(false)
   const [formP, setFormP] = useState({ mes:'', anio:2026, monto:'' })
   const inputRef = useRef(null)
-  const lastValRef = useRef('')
-
   const COLS_G = [
     {key:'mes',          label:'Mes',                    w:85},
     {key:'gasto',        label:'Gasto (Nom. Producto, Cliente)', w:260},
@@ -1484,17 +1481,16 @@ function Presupuesto({ data, setData }) {
   }
 
   // Edición inline
-  const startEdit = (id,field,val) => { lastValRef.current=String(val||'');setEditCell({id,field});setEditVal(String(val||''));setTimeout(()=>inputRef.current?.focus(),20) }
-  const commitEdit = (forcedVal) => {
+  const startEdit = (id,field,val) => { setEditCell({id,field});setEditVal(String(val||''));setTimeout(()=>inputRef.current?.focus(),20) }
+  const commitEdit = () => {
     if(!editCell) return
     const {id,field}=editCell
-    const val2 = forcedVal !== undefined ? forcedVal : (lastValRef.current || editVal)
     const gastosPresupuesto=(data.gastosPresupuesto||[]).map(g=>{
       if(g.id!==id) return g
-      const val=field==='valorFactura'?(Number(val2)||0):val2
+      const val=field==='valorFactura'?(Number(editVal)||0):editVal
       return {...g,[field]:val}
     })
-    const nd={...data,gastosPresupuesto};setData(nd);save(nd);setEditCell(null);lastValRef.current=''
+    const nd={...data,gastosPresupuesto};setData(nd);save(nd);setEditCell(null)
   }
   const onKD = e => { if(e.key==='Enter'){commitEdit();e.preventDefault()} else if(e.key==='Escape') setEditCell(null); else if(e.key==='Tab'){commitEdit();e.preventDefault()} }
 
@@ -1655,7 +1651,7 @@ function Presupuesto({ data, setData }) {
                     <td key={col.key} style={celda(g.id,col.key)} onClick={()=>startEdit(g.id,col.key,g[col.key])}>
                       {editCell?.id===g.id&&editCell?.field===col.key ? (
                         col.key==='mes'?(
-                          <select value={editVal} onChange={e=>{const v=e.target.value;lastValRef.current=v;setEditVal(v);commitEdit(v)}} ref={inputRef} autoFocus
+                          <select value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={()=>commitEdit()} ref={inputRef} autoFocus
                             style={{background:'var(--bg2)',color:'var(--text)',border:'1px solid var(--accent)',borderRadius:4,fontSize:12,width:'100%',fontFamily:'var(--font)',padding:'2px'}}>
                             <option value="">— Selecciona mes —</option>{MESES.map(m=><option key={m} value={m}>{m}</option>)}
                           </select>
