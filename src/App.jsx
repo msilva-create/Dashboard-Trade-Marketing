@@ -532,12 +532,13 @@ function Inversiones({ data, setData }) {
     setEditCell({id,field});setEditVal(String(val||''))
     setTimeout(()=>inputRef.current?.focus(),20)
   }
-  const commitEdit = () => {
+  const commitEdit = (forcedVal) => {
     if(!editCell) return
     const {id,field}=editCell
+    const val2 = forcedVal !== undefined ? forcedVal : editVal
     const inversiones=data.inversiones.map(i=>{
       if(i.id!==id) return i
-      const val=(field==='inversion'||field==='galonesPlan'||field==='anio')?(Number(editVal)||0):editVal
+      const val=(field==='inversion'||field==='galonesPlan'||field==='anio')?(Number(val2)||0):val2
       return {...i,[field]:val}
     })
     const nd={...data,inversiones};setData(nd);save(nd);setEditCell(null)
@@ -651,7 +652,7 @@ function Inversiones({ data, setData }) {
                   <td key={col.key} style={celda(inv.id,col.key)} onClick={()=>startEdit(inv.id,col.key,inv[col.key])}>
                     {editCell?.id===inv.id&&editCell?.field===col.key ? (
                       col.key==='mes'?(
-                        <select value={editVal} onChange={e=>{setEditVal(e.target.value);setTimeout(commitEdit,50)}} ref={inputRef} autoFocus
+                        <select value={editVal} onChange={e=>{const v=e.target.value;setEditVal(v);setTimeout(()=>commitEdit(v),50)}} ref={inputRef} autoFocus
                           style={{background:'var(--bg2)',color:'var(--text)',border:'1px solid var(--accent)',borderRadius:4,fontSize:12,width:'100%',fontFamily:'var(--font)',padding:'2px'}}>
                           <option value="">— Selecciona mes —</option>{MESES.map(m=><option key={m} value={m}>{m}</option>)}
                         </select>
@@ -1443,6 +1444,7 @@ function Presupuesto({ data, setData }) {
   const [modalPres, setModalPres] = useState(false)
   const [formP, setFormP] = useState({ mes:'', anio:2026, monto:'' })
   const inputRef = useRef(null)
+  const lastValRef = useRef('')
 
   const COLS_G = [
     {key:'mes',          label:'Mes',                    w:85},
@@ -1477,21 +1479,26 @@ function Presupuesto({ data, setData }) {
   const toggleTodos = () => setSeleccionados(prev=>prev.size===gastos.length&&gastos.length>0?new Set():new Set(gastos.map(g=>g.id)))
   const eliminarSel = () => {
     if(!seleccionados.size||!confirm('¿Eliminar '+seleccionados.size+' gastos?')) return
+    const ids = [...seleccionados]
     const nd={...data,gastosPresupuesto:(data.gastosPresupuesto||[]).filter(g=>!seleccionados.has(g.id))}
-    setData(nd);save(nd);setSeleccionados(new Set())
+    setData(nd)
+    localStorage.setItem(getStorageKey ? getStorageKey(_currentUserKey.replace('tracker_v3_','')) : _currentUserKey, JSON.stringify(nd))
+    try { save(nd) } catch(e) {}
+    setSeleccionados(new Set())
   }
 
   // Edición inline
-  const startEdit = (id,field,val) => { setEditCell({id,field});setEditVal(String(val||''));setTimeout(()=>inputRef.current?.focus(),20) }
-  const commitEdit = () => {
+  const startEdit = (id,field,val) => { lastValRef.current=String(val||'');setEditCell({id,field});setEditVal(String(val||''));setTimeout(()=>inputRef.current?.focus(),20) }
+  const commitEdit = (forcedVal) => {
     if(!editCell) return
     const {id,field}=editCell
+    const val2 = forcedVal !== undefined ? forcedVal : (lastValRef.current || editVal)
     const gastosPresupuesto=(data.gastosPresupuesto||[]).map(g=>{
       if(g.id!==id) return g
-      const val=field==='valorFactura'?(Number(editVal)||0):editVal
+      const val=field==='valorFactura'?(Number(val2)||0):val2
       return {...g,[field]:val}
     })
-    const nd={...data,gastosPresupuesto};setData(nd);save(nd);setEditCell(null)
+    const nd={...data,gastosPresupuesto};setData(nd);save(nd);setEditCell(null);lastValRef.current=''
   }
   const onKD = e => { if(e.key==='Enter'){commitEdit();e.preventDefault()} else if(e.key==='Escape') setEditCell(null); else if(e.key==='Tab'){commitEdit();e.preventDefault()} }
 
@@ -1652,12 +1659,12 @@ function Presupuesto({ data, setData }) {
                     <td key={col.key} style={celda(g.id,col.key)} onClick={()=>startEdit(g.id,col.key,g[col.key])}>
                       {editCell?.id===g.id&&editCell?.field===col.key ? (
                         col.key==='mes'?(
-                          <select value={editVal} onChange={e=>{setEditVal(e.target.value);setTimeout(()=>{setEditCell(c=>c?{...c,_val:e.target.value}:c);commitEdit()},50)}} ref={inputRef} autoFocus
+                          <select value={editVal} onChange={e=>{const v=e.target.value;lastValRef.current=v;setEditVal(v);commitEdit(v)}} ref={inputRef} autoFocus
                             style={{background:'var(--bg2)',color:'var(--text)',border:'1px solid var(--accent)',borderRadius:4,fontSize:12,width:'100%',fontFamily:'var(--font)',padding:'2px'}}>
                             <option value="">— Selecciona mes —</option>{MESES.map(m=><option key={m} value={m}>{m}</option>)}
                           </select>
                         ):col.key==='estado'?(
-                          <select value={editVal} onChange={e=>{setEditVal(e.target.value);setTimeout(commitEdit,50)}} ref={inputRef} autoFocus
+                          <select value={editVal} onChange={e=>{const v=e.target.value;setEditVal(v);setTimeout(()=>commitEdit(v),50)}} ref={inputRef} autoFocus
                             style={{background:'var(--bg2)',color:'var(--text)',border:'1px solid var(--accent)',borderRadius:4,fontSize:12,width:'100%',fontFamily:'var(--font)',padding:'2px'}}>
                             {ESTADOS_G.map(s=><option key={s} value={s}>{s}</option>)}
                           </select>
