@@ -1640,6 +1640,7 @@ function Presupuesto({ data, setData }) {
                 </th>
                 <th style={{...S.th,width:36,padding:'8px 4px',textAlign:'center',fontSize:10}}>#</th>
                 {COLS_G.map(c=><th key={c.key} style={{...S.th,width:c.w}}>{c.label}</th>)}
+                <th style={{...S.th,width:40}}></th>
               </tr>
             </thead>
             <tbody>
