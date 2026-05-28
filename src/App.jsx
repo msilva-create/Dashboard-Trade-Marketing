@@ -643,8 +643,8 @@ function Inversiones({ data, setData }) {
             )}
             {lista.map((inv,idx)=>(
               <tr key={inv.id} style={{background:seleccionados.has(inv.id)?'rgba(108,99,255,0.06)':'transparent'}}>
-                <td style={{padding:'6px',textAlign:'center',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>
-                  <input type="checkbox" checked={seleccionados.has(inv.id)} onChange={()=>toggleSel(inv.id)} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
+                <td style={{padding:'6px',textAlign:'center',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}} onClick={e=>e.stopPropagation()}>
+                  <input type="checkbox" checked={seleccionados.has(inv.id)} onChange={e=>{e.stopPropagation();toggleSel(inv.id)}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
                 </td>
                 <td style={{padding:'6px 4px',textAlign:'center',fontSize:10,color:'var(--text3)',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>{idx+1}</td>
                 {COLS.map(col=>(
@@ -1643,20 +1643,32 @@ function Presupuesto({ data, setData }) {
               )}
               {gastos.map((g,idx)=>(
                 <tr key={g.id} style={{background:seleccionados.has(g.id)?'rgba(108,99,255,0.06)':'transparent'}}>
-                  <td style={{padding:'6px',textAlign:'center',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>
-                    <input type="checkbox" checked={seleccionados.has(g.id)} onChange={()=>toggleSel(g.id)} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
+                  <td style={{padding:'6px',textAlign:'center',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}} onClick={e=>e.stopPropagation()}>
+                    <input type="checkbox" checked={seleccionados.has(g.id)} onChange={e=>{e.stopPropagation();toggleSel(g.id)}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
                   </td>
                   <td style={{padding:'6px 4px',textAlign:'center',fontSize:10,color:'var(--text3)',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>{idx+1}</td>
                   {COLS_G.map(col=>(
                     <td key={col.key} style={celda(g.id,col.key)} onClick={()=>startEdit(g.id,col.key,g[col.key])}>
                       {editCell?.id===g.id&&editCell?.field===col.key ? (
                         col.key==='mes'?(
-                          <select value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={()=>commitEdit()} ref={inputRef} autoFocus
+                          <select defaultValue={editVal} onChange={e=>{
+                            const v=e.target.value
+                            if(!editCell) return
+                            const {id,field}=editCell
+                            const gastosPresupuesto=(data.gastosPresupuesto||[]).map(g=>g.id!==id?g:{...g,[field]:v})
+                            const nd={...data,gastosPresupuesto};setData(nd);save(nd);setEditCell(null);setEditVal(v)
+                          }} ref={inputRef} autoFocus
                             style={{background:'var(--bg2)',color:'var(--text)',border:'1px solid var(--accent)',borderRadius:4,fontSize:12,width:'100%',fontFamily:'var(--font)',padding:'2px'}}>
                             <option value="">— Selecciona mes —</option>{MESES.map(m=><option key={m} value={m}>{m}</option>)}
                           </select>
                         ):col.key==='estado'?(
-                          <select value={editVal} onChange={e=>{const v=e.target.value;setEditVal(v);setTimeout(()=>commitEdit(v),50)}} ref={inputRef} autoFocus
+                          <select defaultValue={editVal} onChange={e=>{
+                            const v=e.target.value
+                            if(!editCell) return
+                            const {id,field}=editCell
+                            const gastosPresupuesto=(data.gastosPresupuesto||[]).map(g=>g.id!==id?g:{...g,[field]:v})
+                            const nd={...data,gastosPresupuesto};setData(nd);save(nd);setEditCell(null);setEditVal(v)
+                          }} ref={inputRef} autoFocus
                             style={{background:'var(--bg2)',color:'var(--text)',border:'1px solid var(--accent)',borderRadius:4,fontSize:12,width:'100%',fontFamily:'var(--font)',padding:'2px'}}>
                             {ESTADOS_G.map(s=><option key={s} value={s}>{s}</option>)}
                           </select>
