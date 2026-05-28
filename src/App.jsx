@@ -640,7 +640,7 @@ function Inversiones({ data, setData }) {
           <thead>
             <tr style={{background:'var(--bg3)'}}>
               <th style={{...S.th,width:36,textAlign:'center',padding:'8px 6px'}}>
-                <input type="checkbox" checked={seleccionados.size>0&&gastos.length>0&&gastos.every(g=>seleccionados.has(g.id))} onChange={e=>{e.stopPropagation();toggleTodos()}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
+                <input type="checkbox" checked={seleccionados.size===lista.length&&lista.length>0} onChange={e=>{e.stopPropagation();toggleTodos()}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
               </th>
               <th style={{...S.th,width:36,padding:'8px 4px',textAlign:'center',fontSize:10}}>#</th>
               {COLS.map(c=><th key={c.key} style={{...S.th,width:c.w}}>{c.label}</th>)}
