@@ -531,7 +531,7 @@ function Inversiones({ data, setData }) {
   const toggleTodos = () => {
     const todosM = lista.length>0 && lista.every(i=>seleccionados.has(String(i.id)))
     if(todosM){ setSeleccionados(new Set()) }
-    else { setSeleccionados(new Set(lista.map(i=>i.id))) }
+    else { setSeleccionados(new Set(lista.map(i=>String(i.id)))) }
   }
   const eliminarSel = () => {
     if(!seleccionados.size||!confirm('¿Eliminar '+seleccionados.size+' registros?')) return
@@ -1488,7 +1488,7 @@ function Presupuesto({ data, setData }) {
   const toggleTodos = () => {
     const todosM = gastos.length>0 && gastos.every(g=>seleccionados.has(String(g.id)))
     if(todosM){ setSeleccionados(new Set()) }
-    else { setSeleccionados(new Set(gastos.map(g=>g.id))) }
+    else { setSeleccionados(new Set(gastos.map(g=>String(g.id)))) }
   }
   const eliminarSel = () => {
     if(!seleccionados.size||!confirm('¿Eliminar '+seleccionados.size+' gastos?')) return
