@@ -497,7 +497,7 @@ function Inversiones({ data, setData }) {
   const [editCell, setEditCell] = useState(null)
   const [editVal, setEditVal] = useState('')
   const inputRef = useRef(null)
-  useEffect(()=>{ setSeleccionados(new Set()) },[JSON.stringify(gastos.map(g=>g.id))])
+
 
   const COLS = [
     {key:'fecha',        label:'Fecha',        w:100},
@@ -1645,7 +1645,7 @@ function Presupuesto({ data, setData }) {
             <thead>
               <tr style={{background:'var(--bg3)'}}>
                 <th style={{...S.th,width:36,textAlign:'center',padding:'8px 6px'}}>
-                  <input type="checkbox" checked={seleccionados.size>0&&gastos.length>0&&gastos.every(g=>seleccionados.has(g.id))} onChange={e=>{e.stopPropagation();toggleTodos()}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
+                  <input type="checkbox" checked={seleccionados.size===gastos.length&&gastos.length>0} onChange={toggleTodos} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
                 </th>
                 <th style={{...S.th,width:36,padding:'8px 4px',textAlign:'center',fontSize:10}}>#</th>
                 {COLS_G.map(c=><th key={c.key} style={{...S.th,width:c.w}}>{c.label}</th>)}
@@ -1659,8 +1659,8 @@ function Presupuesto({ data, setData }) {
               )}
               {gastos.map((g,idx)=>(
                 <tr key={g.id} style={{background:seleccionados.has(g.id)?'rgba(108,99,255,0.06)':'transparent'}}>
-                  <td style={{padding:'6px',textAlign:'center',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}} onClick={e=>e.stopPropagation()}>
-                    <input type="checkbox" checked={seleccionados.has(g.id)} onChange={e=>{e.stopPropagation();toggleSel(g.id)}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
+                  <td style={{padding:'6px',textAlign:'center',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>
+                    <input type="checkbox" checked={seleccionados.has(g.id)} onChange={()=>toggleSel(g.id)} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
                   </td>
                   <td style={{padding:'6px 4px',textAlign:'center',fontSize:10,color:'var(--text3)',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>{idx+1}</td>
                   {COLS_G.map(col=>(
