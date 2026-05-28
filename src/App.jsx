@@ -33,7 +33,7 @@ const CAMPOS_MAP = {
   inversiones:  { id:'id', fecha:'Fecha', anio:'Año', mes:'Mes', distribuidor:'Distribuidor', tipoPlan:'Tipo Plan', concepto:'Concepto', inversion:'Inversión', galonesPlan:'Gal. Plan', notas:'Notas' },
   ventas:       { id:'id', anio:'Año', mes:'Mes', distribuidor:'Distribuidor', galones:'Galones', ventaNeta:'Venta Neta', notas:'Notas' },
   presupuestos: { id:'id', anio:'año', mes:'mes', monto:'monto' },
-  gastosPresupuesto: { id:'id', anio:'año', mes:'mes', gasto:'Gasto (Nom. Producto, Cliente)', valorFactura:'Valor Factura', canal:'Canal', observacion:'Observación (ATJ)', estado:'Estado', centroCostos:'Centro de Costos', ordenCompra:'Orden de Compra', nitProveedor:'NIT Proveedor', nomProveedor:'Nom. Proveedor', docCargado:'Doc. Cargado', obsKatherine:'Obs. Katherine', notas:'notas' },
+  gastosPresupuesto: { id:'id', anio:'año', mes:'Mes', gasto:'Gasto (Nom. Producto, Cliente)', valorFactura:'Valor Factura', canal:'Canal', observacion:'Observación (ATJ)', estado:'Estado', centroCostos:'Centro de Costos', ordenCompra:'Orden de Compra', nitProveedor:'NIT Proveedor', nomProveedor:'Nom. Proveedor', docCargado:'Doc. Cargado', obsKatherine:'Obs. Katherine', notas:'notas' },
   planes:       { id:'id', distribuidor:'distribuidor', anio:'año', quarter:'quarter', estado:'estado', tiposPlan:'tipoPlan', metaGalones:'metaGalones', metaVenta:'metaVenta', condiciones:'condiciones', acuerdos:'acuerdos', notas:'notas' },
   apoyoCierre:  { id:'ID', anio:'AÑO', mes:'MES', comercial:'COMERCIAL', monto:'MONTO_ASIGNADO', distribuidor:'CLIENTE' },
   redenciones:  { id:'ID', fecha:'FECHA', anio:'AÑO', mes:'MES', comercial:'COMERCIAL', cliente:'CLIENTE', producto:'PRODUCTO', valor:'VALOR_REDIMIDO', notas:'OBSERVACION' },
@@ -58,7 +58,10 @@ function fromSheetRow(tipo, row) {
   const map = CAMPOS_MAP[tipo] || {}
   const obj = {}
   Object.entries(map).forEach(([appKey, sheetKey]) => {
+    // Try exact key, then lowercase, then uppercase
     let val = row[sheetKey]
+    if(val === undefined) val = row[sheetKey.toLowerCase()]
+    if(val === undefined) val = row[sheetKey.toUpperCase()]
     if(val === undefined || val === '') val = appKey === 'anio' ? 2026 : ''
     // Parsear números
     if(['anio','inversion','galonesPlan','galones','ventaNeta','monto','metaGalones','metaVenta','monto','valor'].includes(appKey)) {
@@ -219,7 +222,10 @@ function load() {
     ],
   }
 }
-function save(d) { try { localStorage.setItem(_currentUserKey, JSON.stringify(d)) } catch {} }
+function save(d, opts={}) { 
+  try { localStorage.setItem(_currentUserKey, JSON.stringify(d)) } catch {} 
+  if(window._sheetsSyncFn) try { window._sheetsSyncFn(d, opts) } catch {}
+}
 
 const parseN = v => { if(typeof v==='number') return Math.abs(v); const c=String(v).replace(/[$\s ]/g,'').replace(/\./g,'').replace(',','.'); return parseFloat(c)||0 }
 const cop = n => new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',minimumFractionDigits:0}).format(n||0)
@@ -521,7 +527,7 @@ function Inversiones({ data, setData }) {
   const presMes = filtroMes ? data.presupuestos.filter(p=>p.mes===filtroMes&&(!filtroAnio||p.anio===Number(filtroAnio))).reduce((s,p)=>s+(Number(p.monto)||0),0) : 0
 
   const toggleSel = id => setSeleccionados(prev=>{const n=new Set(prev);n.has(id)?n.delete(id):n.add(id);return n})
-  const toggleTodos = () => setSeleccionados(prev=>prev.size===lista.length&&lista.length>0?new Set():new Set(lista.map(i=>i.id)))
+  const toggleTodos = () => { if(seleccionados.size===lista.length&&lista.length>0){setSeleccionados(new Set())}else{setSeleccionados(new Set(lista.map(i=>i.id)))} }
   const eliminarSel = () => {
     if(!seleccionados.size||!confirm('¿Eliminar '+seleccionados.size+' registros?')) return
     const nd={...data,inversiones:data.inversiones.filter(i=>!seleccionados.has(i.id))}
@@ -629,7 +635,7 @@ function Inversiones({ data, setData }) {
           <thead>
             <tr style={{background:'var(--bg3)'}}>
               <th style={{...S.th,width:36,textAlign:'center',padding:'8px 6px'}}>
-                <input type="checkbox" checked={seleccionados.size===lista.length&&lista.length>0} onChange={toggleTodos} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
+                <input type="checkbox" checked={seleccionados.size===lista.length&&lista.length>0} onChange={e=>{e.stopPropagation();toggleTodos()}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
               </th>
               <th style={{...S.th,width:36,padding:'8px 4px',textAlign:'center',fontSize:10}}>#</th>
               {COLS.map(c=><th key={c.key} style={{...S.th,width:c.w}}>{c.label}</th>)}
@@ -1464,7 +1470,7 @@ function Presupuesto({ data, setData }) {
     (!filtroMes||g.mes===filtroMes) &&
     (!filtroAnio||g.anio===Number(filtroAnio)) &&
     (!busqueda||[g.gasto,g.observacion,g.estado,g.centroCostos,g.canal].some(v=>String(v||'').toLowerCase().includes(busqueda.toLowerCase())))
-  ).sort((a,b)=>MESES.indexOf(a.mes)-MESES.indexOf(b.mes)||(String(a.gasto||'').localeCompare(String(b.gasto||''))))
+  ).sort((a,b)=>{ const mi=MESES.indexOf(a.mes),mj=MESES.indexOf(b.mes); if(mi===-1&&mj===-1) return 0; if(mi===-1) return 1; if(mj===-1) return -1; return mi-mj })
 
   const totalGastado = gastos.reduce((s,g)=>s+(Number(g.valorFactura)||0),0)
   const presAsignado = data.presupuestos.filter(p=>(!filtroMes||p.mes===filtroMes)&&(!filtroAnio||p.anio===Number(filtroAnio))).reduce((s,p)=>s+(Number(p.monto)||0),0)
@@ -1473,7 +1479,7 @@ function Presupuesto({ data, setData }) {
 
   // Selección
   const toggleSel = id => setSeleccionados(prev=>{const n=new Set(prev);n.has(id)?n.delete(id):n.add(id);return n})
-  const toggleTodos = () => setSeleccionados(prev=>prev.size===gastos.length&&gastos.length>0?new Set():new Set(gastos.map(g=>g.id)))
+  const toggleTodos = () => { if(seleccionados.size===gastos.length&&gastos.length>0){setSeleccionados(new Set())}else{setSeleccionados(new Set(gastos.map(g=>g.id)))} }
   const eliminarSel = () => {
     if(!seleccionados.size||!confirm('¿Eliminar '+seleccionados.size+' gastos?')) return
     const nd={...data,gastosPresupuesto:(data.gastosPresupuesto||[]).filter(g=>!seleccionados.has(g.id))}
@@ -1629,7 +1635,7 @@ function Presupuesto({ data, setData }) {
             <thead>
               <tr style={{background:'var(--bg3)'}}>
                 <th style={{...S.th,width:36,textAlign:'center',padding:'8px 6px'}}>
-                  <input type="checkbox" checked={seleccionados.size===gastos.length&&gastos.length>0} onChange={toggleTodos} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
+                  <input type="checkbox" checked={seleccionados.size===gastos.length&&gastos.length>0} onChange={e=>{e.stopPropagation();toggleTodos()}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
                 </th>
                 <th style={{...S.th,width:36,padding:'8px 4px',textAlign:'center',fontSize:10}}>#</th>
                 {COLS_G.map(c=><th key={c.key} style={{...S.th,width:c.w}}>{c.label}</th>)}
@@ -3055,6 +3061,8 @@ export default function App() {
   }
 
   const setDataUser = (d, opts={}) => { setData(d); saveUser(d, opts) }
+  // Make global save() also sync to Sheets for current user
+  window._sheetsSyncFn = (d, opts) => saveUser(d, opts)
 
   const cerrarSesion = () => { localStorage.removeItem(AUTH_KEY); setUsuario(null); setTab('dashboard') }
 
