@@ -527,7 +527,11 @@ function Inversiones({ data, setData }) {
   const presMes = filtroMes ? data.presupuestos.filter(p=>p.mes===filtroMes&&(!filtroAnio||p.anio===Number(filtroAnio))).reduce((s,p)=>s+(Number(p.monto)||0),0) : 0
 
   const toggleSel = id => setSeleccionados(prev=>{const n=new Set(prev);n.has(id)?n.delete(id):n.add(id);return n})
-  const toggleTodos = () => { if(seleccionados.size===lista.length&&lista.length>0){setSeleccionados(new Set())}else{setSeleccionados(new Set(lista.map(i=>i.id)))} }
+  const todosSeleccionados = lista.length>0 && lista.every(i=>seleccionados.has(i.id))
+  const toggleTodos = () => {
+    if(todosSeleccionados){ setSeleccionados(new Set()) }
+    else { setSeleccionados(new Set(lista.map(i=>i.id))) }
+  }
   const eliminarSel = () => {
     if(!seleccionados.size||!confirm('¿Eliminar '+seleccionados.size+' registros?')) return
     const nd={...data,inversiones:data.inversiones.filter(i=>!seleccionados.has(i.id))}
@@ -635,7 +639,7 @@ function Inversiones({ data, setData }) {
           <thead>
             <tr style={{background:'var(--bg3)'}}>
               <th style={{...S.th,width:36,textAlign:'center',padding:'8px 6px'}}>
-                <input type="checkbox" checked={seleccionados.size>0&&seleccionados.size===lista.length} onChange={e=>{e.stopPropagation();toggleTodos()}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
+                <input type="checkbox" checked={todosSeleccionados} onChange={e=>{e.stopPropagation();toggleTodos()}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
               </th>
               <th style={{...S.th,width:36,padding:'8px 4px',textAlign:'center',fontSize:10}}>#</th>
               {COLS.map(c=><th key={c.key} style={{...S.th,width:c.w}}>{c.label}</th>)}
@@ -1479,7 +1483,14 @@ function Presupuesto({ data, setData }) {
 
   // Selección
   const toggleSel = id => setSeleccionados(prev=>{const n=new Set(prev);n.has(id)?n.delete(id):n.add(id);return n})
-  const toggleTodos = () => { if(seleccionados.size===gastos.length&&gastos.length>0){setSeleccionados(new Set())}else{setSeleccionados(new Set(gastos.map(g=>g.id)))} }
+  const todosSeleccionados = gastos.length>0 && gastos.every(g=>seleccionados.has(g.id))
+  const toggleTodos = () => {
+    if(todosSeleccionados){
+      setSeleccionados(new Set())
+    } else {
+      setSeleccionados(new Set(gastos.map(g=>g.id)))
+    }
+  }
   const eliminarSel = () => {
     if(!seleccionados.size||!confirm('¿Eliminar '+seleccionados.size+' gastos?')) return
     const nd={...data,gastosPresupuesto:(data.gastosPresupuesto||[]).filter(g=>!seleccionados.has(g.id))}
@@ -1635,7 +1646,7 @@ function Presupuesto({ data, setData }) {
             <thead>
               <tr style={{background:'var(--bg3)'}}>
                 <th style={{...S.th,width:36,textAlign:'center',padding:'8px 6px'}}>
-                  <input type="checkbox" checked={seleccionados.size>0&&seleccionados.size===gastos.length} onChange={e=>{e.stopPropagation();toggleTodos()}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
+                  <input type="checkbox" checked={todosSeleccionados} onChange={e=>{e.stopPropagation();toggleTodos()}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
                 </th>
                 <th style={{...S.th,width:36,padding:'8px 4px',textAlign:'center',fontSize:10}}>#</th>
                 {COLS_G.map(c=><th key={c.key} style={{...S.th,width:c.w}}>{c.label}</th>)}
