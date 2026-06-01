@@ -6,9 +6,6 @@ import * as XLSX from 'xlsx'
 const STORAGE_KEY = 'tracker_v3'
 let _currentUserKey = STORAGE_KEY
 
-// ═══════════════════════════════════════════════════════
-// GOOGLE SHEETS — Solo para usuario Distribución
-// ═══════════════════════════════════════════════════════
 const SHEETS_CONFIG = {
   distribucion: {
     url: 'https://script.google.com/macros/s/AKfycbzgSB5bZEo-3JgBbTySp8GOVB0VpYl8ki3J2EM-daQrB42HiAguVzqWZUCoFovx5rTF/exec',
@@ -16,7 +13,6 @@ const SHEETS_CONFIG = {
   }
 }
 
-// Mapeo entre claves del app y nombres de hoja en Sheets
 const HOJA_MAP = {
   inversiones:       'INVERSIONES',
   ventas:            'VENTAS',
@@ -28,7 +24,6 @@ const HOJA_MAP = {
   pendientes:        'PENDIENTES',
 }
 
-// Mapeo de campos app → columnas Sheets por hoja
 const CAMPOS_MAP = {
   inversiones:  { id:'id', fecha:'Fecha', anio:'Año', mes:'Mes', distribuidor:'Distribuidor', tipoPlan:'Tipo Plan', concepto:'Concepto', inversion:'Inversión', galonesPlan:'Gal. Plan', notas:'Notas' },
   ventas:       { id:'id', anio:'Año', mes:'Mes', distribuidor:'Distribuidor', galones:'Galones', ventaNeta:'Venta Neta', notas:'Notas' },
@@ -40,7 +35,13 @@ const CAMPOS_MAP = {
   pendientes:   { id:'id', distribuidor:'distribuidor', tarea:'tarea', categoria:'categoria', fechaLimite:'fechaLimite', prioridad:'prioridad', estado:'estado', responsable:'responsable', notas:'notas' },
 }
 
-// Convierte un objeto del app al formato de Sheets
+// ── NORMALIZAR MES ── "MAYO" / "mayo" → "Mayo"
+const normMes = m => {
+  const s = String(m||'').trim()
+  if(!s) return s
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()
+}
+
 function toSheetRow(tipo, obj) {
   const map = CAMPOS_MAP[tipo] || {}
   const row = {}
@@ -53,31 +54,31 @@ function toSheetRow(tipo, obj) {
   return row
 }
 
-// Convierte una fila de Sheets al formato del app
+// ── FIX: fromSheetRow normaliza el mes al leer de Sheets ──
 function fromSheetRow(tipo, row) {
   const map = CAMPOS_MAP[tipo] || {}
   const obj = {}
   Object.entries(map).forEach(([appKey, sheetKey]) => {
-    // Try exact key, then lowercase, then uppercase
     let val = row[sheetKey]
     if(val === undefined) val = row[sheetKey.toLowerCase()]
     if(val === undefined) val = row[sheetKey.toUpperCase()]
     if(val === undefined || val === '') val = appKey === 'anio' ? 2026 : ''
-    // Parsear números
-    if(['anio','inversion','galonesPlan','galones','ventaNeta','monto','metaGalones','metaVenta','monto','valor'].includes(appKey)) {
+    // Normalizar mes
+    if(appKey === 'mes' && typeof val === 'string' && val.trim()) {
+      val = normMes(val)
+    }
+    if(['anio','inversion','galonesPlan','galones','ventaNeta','monto','metaGalones','metaVenta','valor'].includes(appKey)) {
       val = Number(val) || 0
     }
-    // Parsear arrays
     if(appKey === 'tiposPlan' && typeof val === 'string') {
       val = val.split(',').map(s=>s.trim()).filter(Boolean)
     }
     obj[appKey] = val
   })
-  if(!obj.id) obj.id = Date.now()
+  if(!obj.id) obj.id = Date.now() + Math.random()
   return obj
 }
 
-// Cargar datos desde Sheets
 async function cargarDesdeSheets(uid) {
   const cfg = SHEETS_CONFIG[uid]
   if(!cfg?.enabled) return null
@@ -102,7 +103,6 @@ async function cargarDesdeSheets(uid) {
   }
 }
 
-// Insertar una sola fila en Sheets via JSONP
 async function insertarFilaSheets(uid, tipo, item) {
   const cfg = SHEETS_CONFIG[uid]
   if(!cfg?.enabled) return
@@ -121,7 +121,6 @@ async function insertarFilaSheets(uid, tipo, item) {
   })
 }
 
-// Eliminar una fila en Sheets via JSONP
 async function eliminarFilaSheets(uid, tipo, id) {
   const cfg = SHEETS_CONFIG[uid]
   if(!cfg?.enabled) return
@@ -139,15 +138,12 @@ async function eliminarFilaSheets(uid, tipo, id) {
   })
 }
 
-// Guardar en Sheets fila por fila via JSONP
 async function guardarEnSheets(uid, tipo, items) {
   const cfg = SHEETS_CONFIG[uid]
   if(!cfg?.enabled) return
   const hoja = HOJA_MAP[tipo]
   if(!hoja) return
-
   const filas = items.map(i=>toSheetRow(tipo, i))
-
   const enviarScript = (payload) => new Promise(resolve => {
     const cb = 'gs_cb_' + Date.now() + '_' + Math.random().toString(36).slice(2)
     window[cb] = () => { resolve(); delete window[cb] }
@@ -156,16 +152,11 @@ async function guardarEnSheets(uid, tipo, items) {
     s.onerror = () => { resolve() }
     s.onload = () => { setTimeout(resolve, 200); s.remove() }
     document.head.appendChild(s)
-    // Timeout por si no responde
     setTimeout(resolve, 3000)
   })
-
   try {
-    // Limpiar hoja primero
     await enviarScript({ accion:'limpiar', hoja })
     await new Promise(r=>setTimeout(r,800))
-
-    // Insertar de 1 en 1 para evitar límite de URL
     for(let i=0; i<filas.length; i++) {
       await enviarScript({ accion:'agregar_lote', hoja, filas:[filas[i]] })
       await new Promise(r=>setTimeout(r,300))
@@ -227,7 +218,7 @@ function save(d, opts={}) {
   if(window._sheetsSyncFn) try { window._sheetsSyncFn(d, opts) } catch {}
 }
 
-const parseN = v => { if(typeof v==='number') return Math.abs(v); const c=String(v).replace(/[$\s ]/g,'').replace(/\./g,'').replace(',','.'); return parseFloat(c)||0 }
+const parseN = v => { if(typeof v==='number') return Math.abs(v); const c=String(v).replace(/[$\s ]/g,'').replace(/\./g,'').replace(',','.'); return parseFloat(c)||0 }
 const cop = n => new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',minimumFractionDigits:0}).format(n||0)
 const num = n => new Intl.NumberFormat('es-CO').format(n||0)
 
@@ -296,7 +287,7 @@ function CT({ active, payload, label }) {
 }
 
 // ═══════════════════════════════════════════════════════
-// DASHBOARD
+// DASHBOARD — con gráfica por tipo de plan y desglose por distribuidor
 // ═══════════════════════════════════════════════════════
 function Dashboard({ data }) {
   const [filtroMes, setFiltroMes] = useState('')
@@ -307,17 +298,17 @@ function Dashboard({ data }) {
   const todosDistribuidores = [...new Set([...data.inversiones.map(i=>i.distribuidor),...data.ventas.map(v=>v.distribuidor)])].sort()
 
   const invF = data.inversiones.filter(i=>
-    (!filtroMes||i.mes===filtroMes)&&
+    (!filtroMes||normMes(i.mes)===normMes(filtroMes))&&
     (!filtroAnio||i.anio===Number(filtroAnio))&&
     (!filtroDist||i.distribuidor===filtroDist)
   )
   const ventF = data.ventas.filter(v=>
-    (!filtroMes||v.mes===filtroMes)&&
+    (!filtroMes||normMes(v.mes)===normMes(filtroMes))&&
     (!filtroAnio||v.anio===Number(filtroAnio))&&
     (!filtroDist||v.distribuidor===filtroDist)
   )
   const presF = data.presupuestos.filter(p=>
-    (!filtroMes||p.mes===filtroMes)&&
+    (!filtroMes||normMes(p.mes)===normMes(filtroMes))&&
     (!filtroAnio||p.anio===Number(filtroAnio))
   )
 
@@ -327,7 +318,6 @@ function Dashboard({ data }) {
   const totalPres = filtroDist ? 0 : presF.reduce((s,p)=>s+(p.monto||0),0)
   const roiPct = totalVenta>0 ? (totalInv/totalVenta)*100 : 0
 
-  // Por distribuidor
   const distribuidores = filtroDist ? [filtroDist] : [...new Set([...invF.map(i=>i.distribuidor),...ventF.map(v=>v.distribuidor)])]
   const porDist = distribuidores.map(d => {
     const inv = invF.filter(i=>i.distribuidor===d).reduce((s,i)=>s+(i.inversion||0),0)
@@ -337,23 +327,31 @@ function Dashboard({ data }) {
     return { name:d, inv, venta, galones, peso }
   }).sort((a,b)=>b.inv-a.inv)
 
-  // Por mes (respeta filtro dist pero no filtro mes para mostrar tendencia)
   const porMes = MESES.map(m=>({
     name:m.slice(0,3),
-    invertido: data.inversiones.filter(i=>i.mes===m&&(!filtroAnio||i.anio===Number(filtroAnio))&&(!filtroDist||i.distribuidor===filtroDist)).reduce((s,i)=>s+(i.inversion||0),0),
-    venta: data.ventas.filter(v=>v.mes===m&&(!filtroAnio||v.anio===Number(filtroAnio))&&(!filtroDist||v.distribuidor===filtroDist)).reduce((s,v)=>s+(v.ventaNeta||0),0),
-    presupuesto: filtroDist ? 0 : data.presupuestos.filter(p=>p.mes===m&&(!filtroAnio||p.anio===Number(filtroAnio))).reduce((s,p)=>s+(p.monto||0),0),
+    invertido: data.inversiones.filter(i=>normMes(i.mes)===m&&(!filtroAnio||i.anio===Number(filtroAnio))&&(!filtroDist||i.distribuidor===filtroDist)).reduce((s,i)=>s+(i.inversion||0),0),
+    venta: data.ventas.filter(v=>normMes(v.mes)===m&&(!filtroAnio||v.anio===Number(filtroAnio))&&(!filtroDist||v.distribuidor===filtroDist)).reduce((s,v)=>s+(v.ventaNeta||0),0),
+    presupuesto: filtroDist ? 0 : data.presupuestos.filter(p=>normMes(p.mes)===m&&(!filtroAnio||p.anio===Number(filtroAnio))).reduce((s,p)=>s+(p.monto||0),0),
   })).filter(m=>m.invertido>0||m.venta>0||m.presupuesto>0)
 
-  // Por concepto
+  // ── FIX: gráfica por tipo de plan en vez de por concepto ──
+  const porTipoPlan = TIPOS_PLAN.map(t=>({name:t,value:invF.filter(i=>i.tipoPlan===t).reduce((s,i)=>s+(i.inversion||0),0)})).filter(t=>t.value>0)
+
   const porConcepto = CONCEPTOS.map(c=>({name:c,value:invF.filter(i=>i.concepto===c).reduce((s,i)=>s+(i.inversion||0),0)})).filter(c=>c.value>0)
 
-  // Ventas por mes para el dist seleccionado
   const ventasPorMes = filtroDist ? MESES.map(m=>({
     name:m.slice(0,3),
-    galones: data.ventas.filter(v=>v.mes===m&&v.distribuidor===filtroDist&&(!filtroAnio||v.anio===Number(filtroAnio))).reduce((s,v)=>s+(v.galones||0),0),
-    venta: data.ventas.filter(v=>v.mes===m&&v.distribuidor===filtroDist&&(!filtroAnio||v.anio===Number(filtroAnio))).reduce((s,v)=>s+(v.ventaNeta||0),0),
+    galones: data.ventas.filter(v=>normMes(v.mes)===m&&v.distribuidor===filtroDist&&(!filtroAnio||v.anio===Number(filtroAnio))).reduce((s,v)=>s+(v.galones||0),0),
+    venta: data.ventas.filter(v=>normMes(v.mes)===m&&v.distribuidor===filtroDist&&(!filtroAnio||v.anio===Number(filtroAnio))).reduce((s,v)=>s+(v.ventaNeta||0),0),
   })).filter(m=>m.galones>0||m.venta>0) : []
+
+  // Datos para barchart apilado por distribuidor+tipo
+  const distribuidoresConInv = [...new Set(invF.map(i=>i.distribuidor))].sort()
+  const datosDesglose = distribuidoresConInv.map(d=>({
+    name: d.length>16 ? d.slice(0,16)+'…' : d,
+    fullName: d,
+    ...Object.fromEntries(TIPOS_PLAN.map(t=>[t, invF.filter(i=>i.distribuidor===d&&i.tipoPlan===t).reduce((s,i)=>s+(i.inversion||0),0)]))
+  }))
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:20}}>
@@ -388,7 +386,7 @@ function Dashboard({ data }) {
         {filtroDist&&<KpiCard icon={DollarSign} label="Precio prom/galón" value={totalGalones>0?cop(totalVenta/totalGalones):'—'} accent="var(--orange)"/>}
       </div>
 
-      {/* Gráficas */}
+      {/* Gráficas fila 1 */}
       <div style={{display:'grid',gridTemplateColumns: filtroDist?'1fr 1fr':'1.3fr 1fr',gap:16}}>
         <div style={{...S.card,padding:20}}>
           <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:14}}>
@@ -420,11 +418,11 @@ function Dashboard({ data }) {
           </div>
         ) : (
           <div style={{...S.card,padding:20}}>
-            <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:14}}>Inversión por concepto</h4>
+            <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:14}}>Inversión por tipo de plan</h4>
             <ResponsiveContainer width="100%" height={200}>
               <PieChart>
-                <Pie data={porConcepto} cx="50%" cy="50%" innerRadius={45} outerRadius={75} dataKey="value" nameKey="name" paddingAngle={3}>
-                  {porConcepto.map((_,i)=><Cell key={i} fill={COLORES[i%COLORES.length]}/>)}
+                <Pie data={porTipoPlan} cx="50%" cy="50%" innerRadius={45} outerRadius={75} dataKey="value" nameKey="name" paddingAngle={3}>
+                  {porTipoPlan.map((_,i)=><Cell key={i} fill={COLORES[i%COLORES.length]}/>)}
                 </Pie>
                 <Tooltip formatter={v=>cop(v)} contentStyle={{background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:10,fontSize:11}}/>
                 <Legend iconSize={7} iconType="circle" wrapperStyle={{fontSize:10,color:'var(--text2)'}}/>
@@ -434,7 +432,7 @@ function Dashboard({ data }) {
         )}
       </div>
 
-      {/* Tabla */}
+      {/* Tabla distribuidor vs venta */}
       <div style={S.card}>
         <div style={{padding:'14px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
           <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>
@@ -481,12 +479,88 @@ function Dashboard({ data }) {
         </table>
         {!filtroDist&&<div style={{padding:'8px 18px',fontSize:11,color:'var(--text3)',borderTop:'1px solid var(--border)'}}>💡 Clic en una fila para ver el detalle del distribuidor</div>}
       </div>
+
+      {/* ── NUEVO: Desglose por distribuidor y tipo de plan ── */}
+      {!filtroDist && invF.length > 0 && (
+        <div style={S.card}>
+          <div style={{padding:'14px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+            <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>
+              Desglose por distribuidor y tipo de plan {filtroMes && '— '+filtroMes}
+            </h4>
+            <span style={{fontSize:11,color:'var(--text3)'}}>Clic en fila para filtrar</span>
+          </div>
+
+          {/* BarChart apilado horizontal */}
+          {datosDesglose.length > 0 && (
+            <div style={{padding:'16px 20px 0'}}>
+              <ResponsiveContainer width="100%" height={Math.max(180, datosDesglose.length * 42)}>
+                <BarChart data={datosDesglose} layout="vertical" margin={{left:10,right:20,top:0,bottom:0}}>
+                  <XAxis type="number" tickFormatter={v=>`${(v/1000000).toFixed(1)}M`} tick={{fill:'var(--text3)',fontSize:10}} axisLine={false} tickLine={false}/>
+                  <YAxis type="category" dataKey="name" tick={{fill:'var(--text2)',fontSize:11}} axisLine={false} tickLine={false} width={130}/>
+                  <Tooltip
+                    formatter={(v,name)=>[cop(v),name]}
+                    contentStyle={{background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:10,fontSize:11}}
+                  />
+                  <Legend iconSize={7} iconType="circle" wrapperStyle={{fontSize:10,color:'var(--text2)'}}/>
+                  {TIPOS_PLAN.map((t,i)=>(
+                    <Bar key={t} dataKey={t} name={t} stackId="a" fill={COLORES[i%COLORES.length]}
+                      radius={i===TIPOS_PLAN.length-1?[0,4,4,0]:[0,0,0,0]}/>
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Tabla de desglose */}
+          <div style={{overflowX:'auto'}}>
+            <table style={{width:'100%',borderCollapse:'collapse',minWidth:700}}>
+              <thead>
+                <tr style={{background:'var(--bg3)'}}>
+                  <th style={S.th}>Distribuidor</th>
+                  {TIPOS_PLAN.map(t=><th key={t} style={{...S.th,fontSize:10}}>{t.length>22?t.slice(0,22)+'…':t}</th>)}
+                  <th style={S.th}>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {distribuidoresConInv.sort().map((d,idx)=>{
+                  const porTipo = TIPOS_PLAN.map(t=>invF.filter(i=>i.distribuidor===d&&i.tipoPlan===t).reduce((s,i)=>s+(i.inversion||0),0))
+                  const totalDist = porTipo.reduce((s,v)=>s+v,0)
+                  if(totalDist===0) return null
+                  return (
+                    <tr key={idx} style={{cursor:'pointer'}} onClick={()=>setFiltroDist(d)}>
+                      <td style={{...S.td,fontWeight:500}}>{d}</td>
+                      {porTipo.map((v,i)=>(
+                        <td key={i} style={{...S.td,fontFamily:'var(--mono)',color:v>0?COLORES[i%COLORES.length]:'var(--text3)'}}>
+                          {v>0?cop(v):'—'}
+                        </td>
+                      ))}
+                      <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--accent2)'}}>{cop(totalDist)}</td>
+                    </tr>
+                  )
+                })}
+                <tr style={{borderTop:'2px solid var(--border2)',background:'var(--bg3)'}}>
+                  <td style={{...S.td,fontWeight:700}}>TOTAL</td>
+                  {TIPOS_PLAN.map((t,i)=>{
+                    const total = invF.filter(i2=>i2.tipoPlan===t).reduce((s,i2)=>s+(i2.inversion||0),0)
+                    return <td key={i} style={{...S.td,fontFamily:'var(--mono)',fontWeight:600,color:total>0?COLORES[i%COLORES.length]:'var(--text3)'}}>{total>0?cop(total):'—'}</td>
+                  })}
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--accent2)'}}>{cop(totalInv)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div style={{padding:'8px 18px',fontSize:11,color:'var(--text3)',borderTop:'1px solid var(--border)'}}>
+            💡 Clic en fila para ver el detalle · Barras apiladas muestran la composición por tipo de plan
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
+
 // ═══════════════════════════════════════════════════════
-// INVERSIONES — Tabla tipo Excel
+// INVERSIONES — Tabla tipo Excel con fixes
 // ═══════════════════════════════════════════════════════
 function Inversiones({ data, setData }) {
   const [filtroMes, setFiltroMes] = useState('')
@@ -497,7 +571,6 @@ function Inversiones({ data, setData }) {
   const [editCell, setEditCell] = useState(null)
   const [editVal, setEditVal] = useState('')
   const inputRef = useRef(null)
-
 
   const COLS = [
     {key:'fecha',        label:'Fecha',        w:100},
@@ -514,20 +587,24 @@ function Inversiones({ data, setData }) {
   const anios = [...new Set(data.inversiones.map(i=>i.anio))].sort()
   const distribuidores = [...new Set(data.inversiones.map(i=>i.distribuidor))].sort()
 
+  // FIX: usa normMes para comparar meses independiente de capitalización
   const lista = data.inversiones.filter(i=>
-    (!filtroMes||i.mes===filtroMes) &&
+    (!filtroMes||normMes(i.mes)===normMes(filtroMes)) &&
     (!filtroAnio||i.anio===Number(filtroAnio)) &&
     (!filtroDist||i.distribuidor===filtroDist) &&
     (!busqueda||Object.values(i).some(v=>String(v||'').toLowerCase().includes(busqueda.toLowerCase())))
   ).sort((a,b)=>{
-    const mi=MESES.indexOf(a.mes), mj=MESES.indexOf(b.mes)
+    const mi=MESES.indexOf(normMes(a.mes)), mj=MESES.indexOf(normMes(b.mes))
     return mi!==mj ? mi-mj : String(a.distribuidor||'').localeCompare(String(b.distribuidor||''))
   })
 
   const totalFiltrado = lista.reduce((s,i)=>s+(Number(i.inversion)||0),0)
-  const presMes = filtroMes ? data.presupuestos.filter(p=>p.mes===filtroMes&&(!filtroAnio||p.anio===Number(filtroAnio))).reduce((s,p)=>s+(Number(p.monto)||0),0) : 0
 
-  const toggleSel = id => setSeleccionados(prev=>{const n=new Set(prev);n.has(id)?n.delete(id):n.add(id);return n})
+  // FIX: presMes usa normMes para encontrar el presupuesto aunque venga en mayúsculas de Sheets
+  const presMes = filtroMes
+    ? data.presupuestos.filter(p=>normMes(p.mes)===normMes(filtroMes)&&(!filtroAnio||p.anio===Number(filtroAnio))).reduce((s,p)=>s+(Number(p.monto)||0),0)
+    : 0
+
   const toggleTodos = () => setSeleccionados(prev=>prev.size===lista.length&&lista.length>0?new Set():new Set(lista.map(i=>i.id)))
   const eliminarSel = () => {
     if(!seleccionados.size||!confirm('¿Eliminar '+seleccionados.size+' registros?')) return
@@ -539,6 +616,8 @@ function Inversiones({ data, setData }) {
     setEditCell({id,field});setEditVal(String(val||''))
     setTimeout(()=>inputRef.current?.focus(),20)
   }
+
+  // FIX: commitEdit ahora sincroniza la fila editada a Sheets
   const commitEdit = () => {
     if(!editCell) return
     const {id,field}=editCell
@@ -547,8 +626,20 @@ function Inversiones({ data, setData }) {
       const val=(field==='inversion'||field==='galonesPlan'||field==='anio')?(Number(editVal)||0):editVal
       return {...i,[field]:val}
     })
-    const nd={...data,inversiones};setData(nd);save(nd);setEditCell(null)
+    const nd={...data,inversiones}
+    setData(nd)
+    save(nd)
+    // Sincronizar fila editada a Sheets: eliminar la vieja e insertar la actualizada
+    const filaActualizada = inversiones.find(i=>i.id===id)
+    if(filaActualizada && window._sheetsSyncFn) {
+      window._sheetsSyncFn(nd, {eliminar:id, tipo:'inversiones'})
+      setTimeout(()=>{
+        window._sheetsSyncFn(nd, {insertar:filaActualizada, tipo:'inversiones'})
+      }, 600)
+    }
+    setEditCell(null)
   }
+
   const onKD = e => {
     if(e.key==='Enter'){commitEdit();e.preventDefault()}
     if(e.key==='Escape') setEditCell(null)
@@ -567,7 +658,7 @@ function Inversiones({ data, setData }) {
     e.preventDefault()
     const rows=text.trim().split('\n').map(r=>r.split('\t'))
     const nuevas=rows.filter(r=>r.length>=2&&(r[0]||r[3])).map((r,i)=>({
-      id:Date.now()+i, fecha:r[0]||'', anio:Number(r[1])||2026, mes:r[2]||'',
+      id:Date.now()+i, fecha:r[0]||'', anio:Number(r[1])||2026, mes:normMes(r[2]||''),
       distribuidor:r[3]||'', tipoPlan:r[4]||'', concepto:r[5]||'',
       inversion:parseN(r[6]||0), galonesPlan:r[7]?parseN(r[7]):'', notas:r[8]||''
     })).filter(r=>r.distribuidor||r.mes)
@@ -651,7 +742,7 @@ function Inversiones({ data, setData }) {
             {lista.map((inv,idx)=>(
               <tr key={inv.id} style={{background:seleccionados.has(inv.id)?'rgba(108,99,255,0.06)':'transparent'}}>
                 <td style={{padding:'6px',textAlign:'center',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}} onClick={e=>e.stopPropagation()}>
-                  <input type="checkbox" checked={seleccionados.has(inv.id)} onChange={e=>{setSeleccionados(prev=>{const n=new Set(prev);n.has(inv.id)?n.delete(inv.id):n.add(inv.id);return n})}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
+                  <input type="checkbox" checked={seleccionados.has(inv.id)} onChange={()=>{setSeleccionados(prev=>{const n=new Set(prev);n.has(inv.id)?n.delete(inv.id):n.add(inv.id);return n})}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
                 </td>
                 <td style={{padding:'6px 4px',textAlign:'center',fontSize:10,color:'var(--text3)',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>{idx+1}</td>
                 {COLS.map(col=>(
@@ -698,9 +789,321 @@ function Inversiones({ data, setData }) {
   )
 }
 
+
 // ═══════════════════════════════════════════════════════
-// VENTAS
+// PRESUPUESTO — con filtro de mes corregido (normMes)
 // ═══════════════════════════════════════════════════════
+function Presupuesto({ data, setData }) {
+  const [filtroMes, setFiltroMes] = useState('')
+  const [filtroAnio, setFiltroAnio] = useState('2026')
+  const [busqueda, setBusqueda] = useState('')
+  const [seleccionados, setSeleccionados] = useState(new Set())
+  const [editCell, setEditCell] = useState(null)
+  const [editVal, setEditVal] = useState('')
+  const [modalPres, setModalPres] = useState(false)
+  const [formP, setFormP] = useState({ mes:'', anio:2026, monto:'' })
+  const inputRef = useRef(null)
+  const COLS_G = [
+    {key:'mes',          label:'Mes',                    w:85},
+    {key:'gasto',        label:'Gasto (Nom. Producto, Cliente)', w:260},
+    {key:'valorFactura', label:'Valor Factura',           w:125},
+    {key:'canal',        label:'Canal',                   w:80},
+    {key:'observacion',  label:'Observación (ATJ)',       w:180},
+    {key:'estado',       label:'Estado',                  w:100},
+    {key:'centroCostos', label:'Centro de Costos',        w:120},
+    {key:'ordenCompra',  label:'Orden de Compra',         w:110},
+    {key:'nitProveedor', label:'NIT Proveedor',           w:110},
+    {key:'nomProveedor', label:'Nom. Proveedor',          w:140},
+    {key:'docCargado',   label:'Doc. Cargado',            w:90},
+    {key:'obsKatherine', label:'Obs. Katherine',          w:160},
+  ]
+  const ESTADOS_G = ['Pendiente','Ingresado','Aprobado','Pagado','Rechazado']
+  const anios = [...new Set([...(data.gastosPresupuesto||[]).map(g=>g.anio),...data.presupuestos.map(p=>p.anio)])].sort()
+
+  // FIX: todos los filtros usan normMes para comparar independiente de capitalización
+  const gastos = (data.gastosPresupuesto||[]).filter(g=>
+    (!filtroMes||normMes(g.mes)===normMes(filtroMes)) &&
+    (!filtroAnio||g.anio===Number(filtroAnio)) &&
+    (!busqueda||[g.gasto,g.observacion,g.estado,g.centroCostos,g.canal].some(v=>String(v||'').toLowerCase().includes(busqueda.toLowerCase())))
+  ).sort((a,b)=>{
+    const mi=MESES.indexOf(normMes(a.mes)),mj=MESES.indexOf(normMes(b.mes))
+    if(mi===-1&&mj===-1) return 0; if(mi===-1) return 1; if(mj===-1) return -1; return mi-mj
+  })
+
+  const totalGastado = gastos.reduce((s,g)=>s+(Number(g.valorFactura)||0),0)
+
+  // FIX: presAsignado usa normMes
+  const presAsignado = data.presupuestos
+    .filter(p=>(!filtroMes||normMes(p.mes)===normMes(filtroMes))&&(!filtroAnio||p.anio===Number(filtroAnio)))
+    .reduce((s,p)=>s+(Number(p.monto)||0),0)
+
+  const ejec = presAsignado>0?(totalGastado/presAsignado)*100:0
+  const disponible = presAsignado - totalGastado
+
+  const toggleTodos = () => setSeleccionados(prev=>prev.size===gastos.length&&gastos.length>0?new Set():new Set(gastos.map(g=>g.id)))
+  const eliminarSel = () => {
+    if(!seleccionados.size||!confirm('¿Eliminar '+seleccionados.size+' gastos?')) return
+    const nd={...data,gastosPresupuesto:(data.gastosPresupuesto||[]).filter(g=>!seleccionados.has(g.id))}
+    setData(nd);save(nd);setSeleccionados(new Set())
+  }
+
+  const startEdit = (id,field,val) => { setEditCell({id,field});setEditVal(String(val||''));setTimeout(()=>inputRef.current?.focus(),20) }
+  const commitEdit = () => {
+    if(!editCell) return
+    const {id,field}=editCell
+    const gastosPresupuesto=(data.gastosPresupuesto||[]).map(g=>{
+      if(g.id!==id) return g
+      const val=field==='valorFactura'?(Number(editVal)||0):editVal
+      return {...g,[field]:val}
+    })
+    const nd={...data,gastosPresupuesto};setData(nd);save(nd);setEditCell(null)
+  }
+  const onKD = e => { if(e.key==='Enter'){commitEdit();e.preventDefault()} else if(e.key==='Escape') setEditCell(null); else if(e.key==='Tab'){commitEdit();e.preventDefault()} }
+
+  const addFila = () => {
+    const n={id:Date.now(),anio:Number(filtroAnio)||2026,mes:filtroMes||'',gasto:'',valorFactura:0,canal:'',observacion:'',estado:'Pendiente',centroCostos:'',notas:''}
+    const nd={...data,gastosPresupuesto:[...(data.gastosPresupuesto||[]),n]};setData(nd);save(nd,{insertar:n,tipo:'gastosPresupuesto'})
+    setTimeout(()=>startEdit(n.id,'gasto',''),60)
+  }
+
+  const handlePaste = e => {
+    const text=e.clipboardData.getData('text')
+    if(!text.includes('\t')&&!text.includes('\n')) return
+    e.preventDefault()
+    const rows=text.trim().split('\n').map(r=>r.split('\t'))
+    const nuevas=rows.filter(r=>r[0]||r[1]).map((r,i)=>({
+      id:Date.now()+i, anio:Number(filtroAnio)||2026,
+      mes:normMes(r[0]||filtroMes||''), gasto:r[1]||'',
+      valorFactura:parseN(r[2]||0), canal:r[3]||'',
+      observacion:r[4]||'', estado:r[5]||'Pendiente',
+      centroCostos:r[6]||'', notas:''
+    })).filter(r=>r.gasto||r.mes)
+    if(nuevas.length){
+      const nd={...data,gastosPresupuesto:[...(data.gastosPresupuesto||[]),...nuevas]};setData(nd);save(nd)
+      alert('✅ '+nuevas.length+' filas pegadas')
+    }
+  }
+
+  const celda = (id,field) => ({
+    padding:'6px 10px',fontSize:12,
+    borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)',
+    cursor:'cell',whiteSpace:'nowrap',overflow:'hidden',maxWidth:300,
+    background:editCell?.id===id&&editCell?.field===field?'rgba(108,99,255,0.18)':seleccionados.has(id)?'rgba(108,99,255,0.07)':'transparent',
+    outline:editCell?.id===id&&editCell?.field===field?'2px solid var(--accent)':'none',
+    outlineOffset:'-1px',
+  })
+
+  // FIX: resumenMeses usa normMes
+  const resumenMeses = MESES.map(m=>{
+    const gastado=(data.gastosPresupuesto||[]).filter(g=>normMes(g.mes)===m&&(!filtroAnio||g.anio===Number(filtroAnio))).reduce((s,g)=>s+(Number(g.valorFactura)||0),0)
+    const asignado=data.presupuestos.filter(p=>normMes(p.mes)===m&&(!filtroAnio||p.anio===Number(filtroAnio))).reduce((s,p)=>s+(Number(p.monto)||0),0)
+    return {mes:m,gastado,asignado,ejec:asignado>0?(gastado/asignado)*100:0,disponible:asignado-gastado}
+  }).filter(r=>r.gastado>0||r.asignado>0)
+
+  const submitPres = () => {
+    if(!formP.mes||!formP.monto) return
+    const entry={id:Date.now(),mes:formP.mes,anio:Number(formP.anio),monto:Number(formP.monto)}
+    const nd={...data,presupuestos:[...data.presupuestos,entry]};setData(nd);save(nd,{insertar:entry,tipo:'presupuestos'});setModalPres(false);setFormP({mes:'',anio:2026,monto:''})
+  }
+  const delPres = id => { const nd={...data,presupuestos:data.presupuestos.filter(p=>p.id!==id)};setData(nd);save(nd,{eliminar:id,tipo:'presupuestos'}) }
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:18}}>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+        <div style={{position:'relative',display:'flex',alignItems:'center'}}>
+          <Search size={13} style={{position:'absolute',left:9,color:'var(--text3)',pointerEvents:'none'}}/>
+          <input value={busqueda} onChange={e=>setBusqueda(e.target.value)} placeholder="Buscar gasto..." style={{paddingLeft:30,width:190,fontSize:13}}/>
+        </div>
+        <select value={filtroAnio} onChange={e=>setFiltroAnio(e.target.value)} style={{width:100}}>
+          <option value="">Año</option>{anios.map(a=><option key={a}>{a}</option>)}
+        </select>
+        <select value={filtroMes} onChange={e=>setFiltroMes(e.target.value)} style={{width:140}}>
+          <option value="">Todos los meses</option>{MESES.map(m=><option key={m}>{m}</option>)}
+        </select>
+        {(filtroMes||busqueda)&&<button onClick={()=>{setFiltroMes('');setBusqueda('')}} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:12}}>✕</button>}
+        <div style={{marginLeft:'auto',display:'flex',gap:8,flexWrap:'wrap'}}>
+          {seleccionados.size>0&&<button onClick={eliminarSel} style={{...S.btn('var(--red-soft)','var(--red)'),fontSize:12}}><Trash2 size={13}/> Eliminar {seleccionados.size}</button>}
+          <button onClick={()=>setModalPres(true)} style={{...S.btn('var(--bg3)','var(--text2)'),border:'1px solid var(--border2)',fontSize:12}}><DollarSign size={13}/> Asignar presupuesto</button>
+          <button onClick={addFila} style={{...S.btn('var(--green-soft)','var(--green)'),fontSize:12,border:'1px solid rgba(61,214,140,0.2)'}}><PlusCircle size={14}/> Añadir fila</button>
+        </div>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
+        <KpiCard icon={DollarSign} label="Presupuesto asignado" value={cop(presAsignado)} sub={filtroMes||(filtroAnio||'')+' Total período'}/>
+        <KpiCard icon={TrendingUp} label="Total ejecutado" value={cop(totalGastado)} sub={gastos.length+' registros'} accent="var(--accent2)"/>
+        <KpiCard icon={BarChart2} label="% Ejecutado" value={ejec.toFixed(1)+'%'} sub={ejec>100?'Excedido':ejec>80?'Casi al límite':'Dentro del presupuesto'} accent={ejec>100?'var(--red)':ejec>80?'var(--yellow)':'var(--green)'}/>
+        <KpiCard icon={DollarSign} label={disponible>=0?'Disponible':'Excedido'} value={cop(Math.abs(disponible))} accent={disponible>=0?'var(--green)':'var(--red)'}/>
+      </div>
+
+      {resumenMeses.length>0&&(
+        <div style={S.card}>
+          <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+            <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Ejecutado vs Presupuesto por mes</h4>
+            <span style={{fontSize:11,color:'var(--text3)'}}>Clic en un mes para filtrar el detalle</span>
+          </div>
+          <table style={{width:'100%',borderCollapse:'collapse'}}>
+            <thead><tr>{['Mes','Presupuesto asignado','Ejecutado','Disponible','% Ejec.','Barra',''].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+            <tbody>
+              {resumenMeses.map((r,i)=>(
+                <tr key={i} onClick={()=>setFiltroMes(filtroMes===r.mes?'':r.mes)} style={{cursor:'pointer',background:filtroMes===r.mes?'rgba(108,99,255,0.07)':'transparent'}}>
+                  <td style={{...S.td,fontWeight:600,color:filtroMes===r.mes?'var(--accent2)':'var(--text)'}}>{r.mes}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--text2)'}}>{cop(r.asignado)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:500}}>{cop(r.gastado)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',color:r.disponible>=0?'var(--green)':'var(--red)',fontWeight:500}}>{r.disponible>=0?'':'-'}{cop(Math.abs(r.disponible))}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:600,color:r.ejec>100?'var(--red)':r.ejec>80?'var(--yellow)':'var(--green)'}}>{r.ejec.toFixed(1)}%</td>
+                  <td style={{...S.td,minWidth:120}}>
+                    <div style={{height:6,background:'var(--bg4)',borderRadius:3}}>
+                      <div style={{width:Math.min(r.ejec,100)+'%',height:'100%',background:r.ejec>100?'var(--red)':r.ejec>80?'var(--yellow)':'var(--green)',borderRadius:3}}/>
+                    </div>
+                  </td>
+                  <td style={{...S.td,fontSize:11,color:'var(--text3)'}}>{filtroMes===r.mes?'◀ Filtrando':'Ver →'}</td>
+                </tr>
+              ))}
+              <tr style={{borderTop:'2px solid var(--border2)',background:'var(--bg3)'}}>
+                <td style={{...S.td,fontWeight:700}}>TOTAL</td>
+                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--text2)'}}>{cop(resumenMeses.reduce((s,r)=>s+r.asignado,0))}</td>
+                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--accent2)'}}>{cop(resumenMeses.reduce((s,r)=>s+r.gastado,0))}</td>
+                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:resumenMeses.reduce((s,r)=>s+r.disponible,0)>=0?'var(--green)':'var(--red)'}}>{cop(resumenMeses.reduce((s,r)=>s+r.disponible,0))}</td>
+                <td colSpan={3} style={S.td}/>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div style={{fontSize:11,color:'var(--text3)',display:'flex',gap:20,flexWrap:'wrap'}}>
+        <span>💡 Clic en celda para editar · Enter confirma · Tab siguiente</span>
+        <span>📋 Ctrl+V para pegar desde Excel (Mes, Gasto, Valor, Canal, Observación, Estado)</span>
+        <span>☑️ Checkbox para seleccionar y eliminar en bloque</span>
+      </div>
+
+      <div style={S.card}>
+        <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>
+            Detalle de gastos {filtroMes&&'— '+filtroMes} · {gastos.length} registros
+          </h4>
+          {filtroMes&&<button onClick={()=>setFiltroMes('')} style={{...S.btn('var(--bg3)','var(--text2)'),fontSize:11,padding:'3px 10px'}}>← Ver todos</button>}
+        </div>
+        <div style={{overflowX:'auto'}} onPaste={handlePaste}>
+          <table style={{borderCollapse:'collapse',tableLayout:'fixed',minWidth:'100%'}}>
+            <thead>
+              <tr style={{background:'var(--bg3)'}}>
+                <th style={{...S.th,width:36,textAlign:'center',padding:'8px 6px'}}>
+                  <input type="checkbox" checked={seleccionados.size===gastos.length&&gastos.length>0} onChange={toggleTodos} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
+                </th>
+                <th style={{...S.th,width:36,padding:'8px 4px',textAlign:'center',fontSize:10}}>#</th>
+                <th style={{...S.th,width:36}}></th>
+                {COLS_G.map(c=><th key={c.key} style={{...S.th,width:c.w}}>{c.label}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {gastos.length===0&&(
+                <tr><td colSpan={COLS_G.length+3} style={{padding:48,textAlign:'center',color:'var(--text3)',fontSize:13}}>
+                  No hay gastos. <strong>Añadir fila</strong>, importar Excel, o pegar con <strong>Ctrl+V</strong>.
+                </td></tr>
+              )}
+              {gastos.map((g,idx)=>(
+                <tr key={g.id} style={{background:seleccionados.has(g.id)?'rgba(108,99,255,0.06)':'transparent'}}>
+                  <td style={{padding:'6px',textAlign:'center',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>
+                    <input type="checkbox" checked={seleccionados.has(g.id)} onChange={()=>{setSeleccionados(prev=>{const n=new Set(prev);n.has(g.id)?n.delete(g.id):n.add(g.id);return n})}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
+                  </td>
+                  <td style={{padding:'6px 4px',textAlign:'center',fontSize:10,color:'var(--text3)',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>{idx+1}</td>
+                  <td style={{padding:'4px',borderTop:'1px solid var(--border)',textAlign:'center',width:36}}>
+                    <button onClick={()=>{if(window.confirm('¿Eliminar?')){const nd={...data,gastosPresupuesto:(data.gastosPresupuesto||[]).filter(x=>x.id!==g.id)};setData(nd);save(nd)}}} style={{background:'var(--red-soft)',color:'var(--red)',border:'none',borderRadius:6,padding:'2px 8px',cursor:'pointer',fontSize:13,fontWeight:700,lineHeight:1}}>✕</button>
+                  </td>
+                  {COLS_G.map(col=>(
+                    <td key={col.key} style={celda(g.id,col.key)} onClick={()=>startEdit(g.id,col.key,g[col.key])}>
+                      {editCell?.id===g.id&&editCell?.field===col.key ? (
+                        col.key==='mes'?(
+                          <select defaultValue={editVal} onChange={e=>{
+                            const v=e.target.value
+                            if(!editCell) return
+                            const {id,field}=editCell
+                            const gastosPresupuesto=(data.gastosPresupuesto||[]).map(g=>g.id!==id?g:{...g,[field]:v})
+                            const nd={...data,gastosPresupuesto};setData(nd);save(nd);setEditCell(null);setEditVal(v)
+                          }} ref={inputRef} autoFocus
+                            style={{background:'var(--bg2)',color:'var(--text)',border:'1px solid var(--accent)',borderRadius:4,fontSize:12,width:'100%',fontFamily:'var(--font)',padding:'2px'}}>
+                            <option value="">— Selecciona mes —</option>{MESES.map(m=><option key={m} value={m}>{m}</option>)}
+                          </select>
+                        ):col.key==='estado'?(
+                          <select defaultValue={editVal} onChange={e=>{
+                            const v=e.target.value
+                            if(!editCell) return
+                            const {id,field}=editCell
+                            const gastosPresupuesto=(data.gastosPresupuesto||[]).map(g=>g.id!==id?g:{...g,[field]:v})
+                            const nd={...data,gastosPresupuesto};setData(nd);save(nd);setEditCell(null);setEditVal(v)
+                          }} ref={inputRef} autoFocus
+                            style={{background:'var(--bg2)',color:'var(--text)',border:'1px solid var(--accent)',borderRadius:4,fontSize:12,width:'100%',fontFamily:'var(--font)',padding:'2px'}}>
+                            {ESTADOS_G.map(s=><option key={s} value={s}>{s}</option>)}
+                          </select>
+                        ):(
+                          <input ref={inputRef} value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={commitEdit} onKeyDown={onKD}
+                            type={col.key==='valorFactura'?'number':'text'}
+                            style={{background:'transparent',color:'var(--text)',border:'none',outline:'none',fontSize:12,width:'100%',fontFamily:col.key==='valorFactura'?'var(--mono)':'var(--font)'}}/>
+                        )
+                      ):(
+                        <span style={{fontFamily:col.key==='valorFactura'?'var(--mono)':'inherit',color:col.key==='valorFactura'?'var(--accent2)':col.key==='gasto'?'var(--text)':'var(--text2)',fontWeight:col.key==='valorFactura'?500:400}}>
+                          {col.key==='valorFactura'?cop(Number(g[col.key])||0):col.key==='estado'?(<Badge label={g[col.key]}/>):(g[col.key]||'')}
+                        </span>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+              {gastos.length>0&&(
+                <tr style={{background:'var(--bg3)',borderTop:'2px solid var(--border2)'}}>
+                  <td colSpan={3} style={{padding:'8px 10px'}}/>
+                  <td colSpan={2} style={{padding:'8px 12px',fontWeight:700,fontSize:12,color:'var(--text2)'}}>TOTAL {filtroMes&&'— '+filtroMes}</td>
+                  <td style={{padding:'8px 12px',fontFamily:'var(--mono)',fontWeight:700,fontSize:13,color:'var(--accent2)'}}>{cop(totalGastado)}</td>
+                  <td colSpan={4} style={{padding:'8px 10px'}}/>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style={S.card}>
+        <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}><h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Presupuestos asignados por mes</h4></div>
+        <table style={{width:'100%',borderCollapse:'collapse'}}>
+          <thead><tr>{['Año','Mes','Monto asignado','Ejecutado','Disponible',''].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {data.presupuestos.length===0&&<tr><td colSpan={6} style={{...S.td,textAlign:'center',color:'var(--text3)',padding:28}}>No hay presupuestos. Usa "Asignar presupuesto".</td></tr>}
+            {[...data.presupuestos].sort((a,b)=>a.anio!==b.anio?b.anio-a.anio:MESES.indexOf(normMes(a.mes))-MESES.indexOf(normMes(b.mes))).map(p=>{
+              // FIX: compara mes normalizado
+              const ejec2=(data.gastosPresupuesto||[]).filter(g=>normMes(g.mes)===normMes(p.mes)&&g.anio===p.anio).reduce((s,g)=>s+(Number(g.valorFactura)||0),0)
+              return (
+                <tr key={p.id}>
+                  <td style={{...S.td,color:'var(--text2)'}}>{p.anio}</td>
+                  <td style={{...S.td,fontWeight:500}}>{p.mes}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--text2)'}}>{cop(p.monto)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--accent2)'}}>{cop(ejec2)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',color:p.monto-ejec2>=0?'var(--green)':'var(--red)'}}>{cop(p.monto-ejec2)}</td>
+                  <td style={S.td}><button onClick={()=>delPres(p.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'4px 8px'}}><Trash2 size={13}/></button></td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {modalPres&&(
+        <Modal title="Asignar presupuesto mensual" onClose={()=>setModalPres(false)}>
+          <div style={{display:'flex',flexDirection:'column',gap:14}}>
+            <Field label="Año"><input type="number" value={formP.anio} onChange={e=>setFormP({...formP,anio:e.target.value})} placeholder="2026"/></Field>
+            <Field label="Mes *"><select value={formP.mes} onChange={e=>setFormP({...formP,mes:e.target.value})}><option value="">Selecciona...</option>{MESES.map(m=><option key={m}>{m}</option>)}</select></Field>
+            <Field label="Monto (COP) *"><input type="number" value={formP.monto} onChange={e=>setFormP({...formP,monto:e.target.value})} placeholder="0"/></Field>
+          </div>
+          <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:20}}>
+            <button onClick={()=>setModalPres(false)} style={S.btn('var(--bg3)','var(--text2)')}>Cancelar</button>
+            <button onClick={submitPres} style={S.btn('var(--accent)','#fff')}><Check size={15}/> Guardar</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  )
+}
+
 function Ventas({ data, setData }) {
   const [modal, setModal] = useState(false)
   const [filtroMes, setFiltroMes] = useState('')
@@ -715,23 +1118,20 @@ function Ventas({ data, setData }) {
   const distribuidores = [...new Set([...data.ventas.map(v=>v.distribuidor),...data.inversiones.map(i=>i.distribuidor)])].sort()
 
   const lista = data.ventas.filter(v=>
-    (!filtroMes||v.mes===filtroMes) &&
+    (!filtroMes||normMes(v.mes)===normMes(filtroMes)) &&
     (!filtroAnio||v.anio===Number(filtroAnio)) &&
     (!filtroDist||v.distribuidor===filtroDist) &&
     (!busqueda||String(v.distribuidor||'').toLowerCase().includes(busqueda.toLowerCase()))
   ).sort((a,b)=>{
-    const mi=MESES.indexOf(a.mes), mj=MESES.indexOf(b.mes)
+    const mi=MESES.indexOf(normMes(a.mes)), mj=MESES.indexOf(normMes(b.mes))
     return mi!==mj ? mi-mj : String(a.distribuidor||'').localeCompare(String(b.distribuidor||''))
   })
 
-  // Inversión desde pestaña inversiones por distribuidor+mes+anio
-  // Normaliza nombres para manejar variaciones (S.A.S., espacios, mayúsculas)
   const norm = s => String(s||'').toLowerCase().replace(/[.\s-]/g,'').replace(/sas$|sa$/,'').trim()
   const getInv = (dist,mes,anio) =>
-    data.inversiones.filter(i=>(i.distribuidor===dist||norm(i.distribuidor)===norm(dist))&&i.mes===mes&&i.anio===anio)
+    data.inversiones.filter(i=>(i.distribuidor===dist||norm(i.distribuidor)===norm(dist))&&normMes(i.mes)===normMes(mes)&&i.anio===anio)
       .reduce((s,i)=>s+(Number(i.inversion)||0),0)
 
-  // Promedio acumulado por distribuidor (todos los meses filtrados)
   const promAcum = (dist) => {
     const rows = data.ventas.filter(v=>(v.distribuidor===dist||norm(v.distribuidor)===norm(dist))&&(!filtroAnio||v.anio===Number(filtroAnio)))
     const totalGal = rows.reduce((s,v)=>s+(Number(v.galones)||0),0)
@@ -753,7 +1153,6 @@ function Ventas({ data, setData }) {
   const del = id => { const nd={...data,ventas:data.ventas.filter(v=>v.id!==id)};setData(nd);save(nd,{eliminar:id,tipo:'ventas'}) }
   const edit = v => { setForm({...v,galones:String(v.galones),ventaNeta:String(v.ventaNeta)});setEditId(v.id);setModal(true) }
 
-  // Resumen acumulado por distribuidor
   const resumenDist = [...new Set(lista.map(v=>v.distribuidor))].map(d=>{
     const rows = lista.filter(v=>v.distribuidor===d)
     const gal = rows.reduce((s,v)=>s+(Number(v.galones)||0),0)
@@ -764,7 +1163,6 @@ function Ventas({ data, setData }) {
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:18}}>
-      {/* Filtros */}
       <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
         <div style={{position:'relative',display:'flex',alignItems:'center'}}>
           <Search size={13} style={{position:'absolute',left:9,color:'var(--text3)',pointerEvents:'none'}}/>
@@ -786,7 +1184,6 @@ function Ventas({ data, setData }) {
         </button>
       </div>
 
-      {/* KPIs */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:12}}>
         <KpiCard icon={ShoppingCart} label="Venta neta total" value={cop(totalVenta)} sub={lista.length+' registros'} accent="var(--green)"/>
         <KpiCard icon={BarChart2} label="Total galones" value={num(Math.round(totalGalones))} accent="var(--accent2)"/>
@@ -795,7 +1192,6 @@ function Ventas({ data, setData }) {
         <KpiCard icon={BarChart2} label="% Inv / Venta" value={totalVenta>0?((totalInv/totalVenta)*100).toFixed(1)+'%':'—'} accent={totalVenta>0&&totalInv/totalVenta>0.15?'var(--red)':'var(--green)'}/>
       </div>
 
-      {/* Tabla detalle por registro */}
       <div style={S.card}>
         <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}>
           <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Detalle por registro</h4>
@@ -808,7 +1204,7 @@ function Ventas({ data, setData }) {
               </tr>
             </thead>
             <tbody>
-              {lista.length===0&&<tr><td colSpan={10} style={{...S.td,textAlign:'center',color:'var(--text3)',padding:40}}>No hay ventas registradas. Importa tu Excel de ventas.</td></tr>}
+              {lista.length===0&&<tr><td colSpan={10} style={{...S.td,textAlign:'center',color:'var(--text3)',padding:40}}>No hay ventas registradas.</td></tr>}
               {lista.map(v=>{
                 const inv = getInv(v.distribuidor,v.mes,v.anio)
                 const gal = Number(v.galones)||0
@@ -855,12 +1251,11 @@ function Ventas({ data, setData }) {
         </div>
       </div>
 
-      {/* Resumen acumulado por distribuidor */}
       {resumenDist.length>0&&(
         <div style={S.card}>
           <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
             <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Resumen acumulado por distribuidor</h4>
-            <span style={{fontSize:11,color:'var(--text3)'}}>Precio Acum. = Total Venta Neta ÷ Total Galones (todos los meses)</span>
+            <span style={{fontSize:11,color:'var(--text3)'}}>Precio Acum. = Total Venta Neta ÷ Total Galones</span>
           </div>
           <div style={{overflowX:'auto'}}>
             <table style={{width:'100%',borderCollapse:'collapse'}}>
@@ -896,7 +1291,7 @@ function Ventas({ data, setData }) {
             </table>
           </div>
           <div style={{padding:'8px 18px',fontSize:11,color:'var(--text3)',borderTop:'1px solid var(--border)'}}>
-            💡 Clic en una fila para filtrar el detalle arriba · <span style={{color:'var(--orange)'}}>●</span> Precio período &nbsp; <span style={{color:'var(--yellow)'}}>●</span> Precio acumulado
+            💡 Clic en una fila para filtrar el detalle
           </div>
         </div>
       )}
@@ -925,6 +1320,19 @@ function Ventas({ data, setData }) {
 }
 
 // ═══════════════════════════════════════════════════════
+// NOTA: Las siguientes funciones son IDÉNTICAS al original:
+// Planes, Pendientes, ApoyoCierre, exportarExcel, parsearExcel,
+// Asistente, LoginScreen, hexToRgb, DashboardLider, 
+// PresupuestoConsolidado, App (función principal)
+//
+// Cópialas exactamente desde tu archivo App.jsx original
+// desde la línea que empieza con:
+//   function Planes({ data, setData }) {
+// hasta el final del archivo (export default function App())
+// ═══════════════════════════════════════════════════════
+
+
+// ═══════════════════════════════════════════════════════
 // PLANES
 // ═══════════════════════════════════════════════════════
 function Planes({ data, setData }) {
@@ -942,12 +1350,11 @@ function Planes({ data, setData }) {
     Q4:['Octubre','Noviembre','Diciembre'],
   }
 
-  // Cada plan dentro del quarter tiene: nombre, tienePago, descripcionPago, condiciones
   const blankPlanItem = () => ({ id: Date.now()+Math.random(), nombre:'', tienePago:'No', descripcionPago:'', condiciones:'' })
 
   const blank = {
     distribuidor:'', anio:2026, quarter:'Q1', estado:'Activo',
-    planesItems: [blankPlanItem()],  // lista de planes con detalle
+    planesItems: [blankPlanItem()],
     metaMes1:'', metaMes2:'', metaMes3:'',
     metaGalonesMes1:'', metaGalonesMes2:'', metaGalonesMes3:'',
     tieneCVC:'No', montoCVC:'', detalleCVC:'',
@@ -964,7 +1371,6 @@ function Planes({ data, setData }) {
   const totalMetaGalones = f => (Number(f.metaGalonesMes1)||0)+(Number(f.metaGalonesMes2)||0)+(Number(f.metaGalonesMes3)||0)
   const mesesQ = q => MESES_Q[q]||['Mes 1','Mes 2','Mes 3']
 
-  // Actualizar un plan item
   const updatePlanItem = (idx, field, val) => {
     const items = form.planesItems.map((p,i)=>i===idx?{...p,[field]:val}:p)
     setForm({...form, planesItems:items})
@@ -1076,7 +1482,6 @@ function Planes({ data, setData }) {
                 </div>
               </div>
               <div style={{padding:'14px 18px',display:'flex',flexDirection:'column',gap:10,flex:1}}>
-                {/* Planes items */}
                 {items.filter(i=>i.nombre).length>0&&(
                   <div style={{display:'flex',flexDirection:'column',gap:6}}>
                     {items.filter(i=>i.nombre).map((item,i)=>(
@@ -1091,8 +1496,6 @@ function Planes({ data, setData }) {
                     ))}
                   </div>
                 )}
-
-                {/* Metas Q */}
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
                   <div style={{background:'var(--bg3)',borderRadius:8,padding:'8px 12px'}}>
                     <div style={{fontSize:10,color:'var(--text3)',marginBottom:2}}>META VENTA Q</div>
@@ -1105,7 +1508,6 @@ function Planes({ data, setData }) {
                     {metaGal>0&&<div style={{fontSize:10,color:'var(--text2)',marginTop:2}}>Real: {num(galonesReal)} ({cumplGal.toFixed(0)}%)</div>}
                   </div>
                 </div>
-
                 {metaVta>0&&(
                   <div>
                     <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'var(--text3)',marginBottom:3}}>
@@ -1117,12 +1519,11 @@ function Planes({ data, setData }) {
                     </div>
                   </div>
                 )}
-
                 {(p.tieneCVC==='Sí'||p.tienePromotora==='Sí')&&(
                   <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>
                     {p.tieneCVC==='Sí'&&<div style={{background:'rgba(6,182,212,0.08)',border:'1px solid rgba(6,182,212,0.2)',borderRadius:6,padding:'5px 10px',fontSize:11}}>
                       <span style={{color:'#06b6d4',fontWeight:600}}>CVC </span>
-                      <span style={{color:'var(--text2)'}}>{p.montoCVC?cop(Number(p.montoCVC)):''}  {p.detalleCVC}</span>
+                      <span style={{color:'var(--text2)'}}>{p.montoCVC?cop(Number(p.montoCVC)):''} {p.detalleCVC}</span>
                     </div>}
                     {p.tienePromotora==='Sí'&&<div style={{background:'rgba(168,139,250,0.08)',border:'1px solid rgba(168,139,250,0.2)',borderRadius:6,padding:'5px 10px',fontSize:11}}>
                       <span style={{color:'#a78bfa',fontWeight:600}}>Promotora: </span>
@@ -1130,7 +1531,6 @@ function Planes({ data, setData }) {
                     </div>}
                   </div>
                 )}
-
                 <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:'var(--text2)'}}>
                   <span>Inversión acumulada:</span>
                   <span style={{fontFamily:'var(--mono)',color:'var(--accent2)',fontWeight:600}}>{cop(invTotal)}</span>
@@ -1142,105 +1542,63 @@ function Planes({ data, setData }) {
         })}
       </div>
 
-      {/* ── Modal nuevo/editar ── */}
       {modal&&(
         <Modal title={editId?'Editar plan':'Nuevo plan'} onClose={()=>{setModal(false);setEditId(null)}} wide>
           <div style={{display:'flex',flexDirection:'column',gap:18}}>
-
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
               <Field label="Distribuidor *" span>
                 <input list="dist-plan" value={form.distribuidor} onChange={e=>setForm({...form,distribuidor:e.target.value})} placeholder="Nombre del distribuidor"/>
                 <datalist id="dist-plan">{distribuidores.map(d=><option key={d} value={d}/>)}</datalist>
               </Field>
-              <Field label="Año">
-                <input type="number" value={form.anio} onChange={e=>setForm({...form,anio:e.target.value})}/>
-              </Field>
-              <Field label="Quarter *">
-                <select value={form.quarter} onChange={e=>setForm({...form,quarter:e.target.value})}>
-                  {QUARTERS.map(q=><option key={q}>{q}</option>)}
-                </select>
-              </Field>
-              <Field label="Estado">
-                <select value={form.estado} onChange={e=>setForm({...form,estado:e.target.value})}>
-                  {ESTADOS_PLAN.map(s=><option key={s}>{s}</option>)}
-                </select>
-              </Field>
+              <Field label="Año"><input type="number" value={form.anio} onChange={e=>setForm({...form,anio:e.target.value})}/></Field>
+              <Field label="Quarter *"><select value={form.quarter} onChange={e=>setForm({...form,quarter:e.target.value})}>{QUARTERS.map(q=><option key={q}>{q}</option>)}</select></Field>
+              <Field label="Estado"><select value={form.estado} onChange={e=>setForm({...form,estado:e.target.value})}>{ESTADOS_PLAN.map(s=><option key={s}>{s}</option>)}</select></Field>
             </div>
-
-            {/* ── Planes del quarter ── */}
             <div>
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
                 <span style={{fontSize:12,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Planes del {form.quarter}</span>
-                <button onClick={addPlanItem} style={{...S.btn('var(--accent-soft)','var(--accent2)'),fontSize:12,padding:'4px 12px',border:'1px solid rgba(108,99,255,0.25)'}}>
-                  <PlusCircle size={13}/> Agregar plan
-                </button>
+                <button onClick={addPlanItem} style={{...S.btn('var(--accent-soft)','var(--accent2)'),fontSize:12,padding:'4px 12px',border:'1px solid rgba(108,99,255,0.25)'}}><PlusCircle size={13}/> Agregar plan</button>
               </div>
-
               <div style={{display:'flex',flexDirection:'column',gap:10}}>
                 {form.planesItems.map((item,idx)=>(
                   <div key={item.id||idx} style={{background:'var(--bg3)',borderRadius:12,padding:'14px 16px',border:'1px solid var(--border2)',position:'relative'}}>
                     {form.planesItems.length>1&&(
-                      <button onClick={()=>removePlanItem(idx)}
-                        style={{position:'absolute',top:10,right:10,...S.btn('var(--red-soft)','var(--red)'),padding:'3px 7px',fontSize:11}}>
-                        <X size={12}/>
-                      </button>
+                      <button onClick={()=>removePlanItem(idx)} style={{position:'absolute',top:10,right:10,...S.btn('var(--red-soft)','var(--red)'),padding:'3px 7px',fontSize:11}}><X size={12}/></button>
                     )}
                     <div style={{display:'flex',flexDirection:'column',gap:10}}>
-                      {/* Nombre del plan */}
                       <Field label={'Plan '+(idx+1)+' — Nombre *'}>
-                        <input value={item.nombre} onChange={e=>updatePlanItem(idx,'nombre',e.target.value)}
-                          placeholder="Ej: Prolub acelera tu crecimiento, Sell out Q2..."/>
+                        <input value={item.nombre} onChange={e=>updatePlanItem(idx,'nombre',e.target.value)} placeholder="Ej: Prolub acelera tu crecimiento..."/>
                       </Field>
-
-                      {/* ¿Tiene pago? */}
                       <div style={{display:'flex',alignItems:'center',gap:12}}>
                         <span style={{fontSize:12,color:'var(--text2)',fontWeight:500}}>¿Tiene pago?</span>
                         <div style={{display:'flex',gap:7}}>
                           {['Sí','No'].map(v=>(
                             <button key={v} onClick={()=>updatePlanItem(idx,'tienePago',v)}
-                              style={{...S.btn(item.tienePago===v?'var(--green-soft)':'var(--bg4)',item.tienePago===v?'var(--green)':'var(--text2)'),padding:'4px 14px',fontSize:12,border:item.tienePago===v?'1px solid rgba(61,214,140,0.3)':'1px solid var(--border2)'}}>
-                              {v}
-                            </button>
+                              style={{...S.btn(item.tienePago===v?'var(--green-soft)':'var(--bg4)',item.tienePago===v?'var(--green)':'var(--text2)'),padding:'4px 14px',fontSize:12,border:item.tienePago===v?'1px solid rgba(61,214,140,0.3)':'1px solid var(--border2)'}}>{v}</button>
                           ))}
                         </div>
                       </div>
-
-                      {/* Descripción del pago */}
                       {item.tienePago==='Sí'&&(
-                        <Field label="¿Qué incluye el pago? (promotoras, productos, promociones...)">
-                          <textarea value={item.descripcionPago} onChange={e=>updatePlanItem(idx,'descripcionPago',e.target.value)}
-                            rows={2} style={{resize:'vertical'}}
-                            placeholder="Ej: Promotora $1.5M/mes + Producto plan expreso + Bono cumplimiento $500k..."/>
+                        <Field label="¿Qué incluye el pago?">
+                          <textarea value={item.descripcionPago} onChange={e=>updatePlanItem(idx,'descripcionPago',e.target.value)} rows={2} style={{resize:'vertical'}} placeholder="Ej: Promotora $1.5M/mes..."/>
                         </Field>
                       )}
-
-                      {/* Condiciones del plan */}
                       <Field label="Condiciones del plan">
-                        <textarea value={item.condiciones} onChange={e=>updatePlanItem(idx,'condiciones',e.target.value)}
-                          rows={2} style={{resize:'vertical'}}
-                          placeholder="Ej: Condicionado a compra mínima 400 gal/mes, meta de sell out..."/>
+                        <textarea value={item.condiciones} onChange={e=>updatePlanItem(idx,'condiciones',e.target.value)} rows={2} style={{resize:'vertical'}} placeholder="Condicionado a compra mínima..."/>
                       </Field>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
-
-            {/* ── Metas por mes ── */}
             <div>
-              <div style={{fontSize:12,fontWeight:600,color:'var(--text2)',marginBottom:10,textTransform:'uppercase',letterSpacing:'0.05em'}}>
-                Metas por mes — {form.quarter} ({mesesQ(form.quarter).join(' · ')})
-              </div>
+              <div style={{fontSize:12,fontWeight:600,color:'var(--text2)',marginBottom:10,textTransform:'uppercase',letterSpacing:'0.05em'}}>Metas por mes — {form.quarter} ({mesesQ(form.quarter).join(' · ')})</div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}>
                 {mesesQ(form.quarter).map((mes,i)=>(
                   <div key={mes} style={{background:'var(--bg3)',borderRadius:10,padding:'12px 14px',display:'flex',flexDirection:'column',gap:8}}>
                     <div style={{fontSize:12,fontWeight:600,color:'var(--accent2)'}}>{mes}</div>
-                    <Field label="Meta Venta (COP)">
-                      <input type="number" value={form['metaMes'+(i+1)]} onChange={e=>setForm({...form,['metaMes'+(i+1)]:e.target.value})} placeholder="0"/>
-                    </Field>
-                    <Field label="Meta Galones">
-                      <input type="number" value={form['metaGalonesMes'+(i+1)]} onChange={e=>setForm({...form,['metaGalonesMes'+(i+1)]:e.target.value})} placeholder="0"/>
-                    </Field>
+                    <Field label="Meta Venta (COP)"><input type="number" value={form['metaMes'+(i+1)]} onChange={e=>setForm({...form,['metaMes'+(i+1)]:e.target.value})} placeholder="0"/></Field>
+                    <Field label="Meta Galones"><input type="number" value={form['metaGalonesMes'+(i+1)]} onChange={e=>setForm({...form,['metaGalonesMes'+(i+1)]:e.target.value})} placeholder="0"/></Field>
                   </div>
                 ))}
               </div>
@@ -1249,72 +1607,50 @@ function Planes({ data, setData }) {
                 <span style={{fontSize:13,color:'var(--text2)'}}>Galones: <strong style={{color:'var(--accent2)',fontFamily:'var(--mono)'}}>{num(totalMetaGalones(form))}</strong></span>
               </div>
             </div>
-
-            {/* ── CVC ── */}
             <div style={{background:'var(--bg3)',borderRadius:10,padding:'14px 16px',display:'flex',flexDirection:'column',gap:10}}>
               <div style={{display:'flex',alignItems:'center',gap:12}}>
                 <span style={{fontSize:13,fontWeight:600,color:'#06b6d4'}}>¿Tiene CVC?</span>
                 <div style={{display:'flex',gap:8}}>
                   {['Sí','No'].map(v=>(
                     <button key={v} onClick={()=>setForm({...form,tieneCVC:v})}
-                      style={{...S.btn(form.tieneCVC===v?'rgba(6,182,212,0.2)':'var(--bg4)',form.tieneCVC===v?'#06b6d4':'var(--text2)'),padding:'5px 16px',fontSize:13,border:form.tieneCVC===v?'1px solid rgba(6,182,212,0.4)':'1px solid var(--border2)'}}>
-                      {v}
-                    </button>
+                      style={{...S.btn(form.tieneCVC===v?'rgba(6,182,212,0.2)':'var(--bg4)',form.tieneCVC===v?'#06b6d4':'var(--text2)'),padding:'5px 16px',fontSize:13,border:form.tieneCVC===v?'1px solid rgba(6,182,212,0.4)':'1px solid var(--border2)'}}>{v}</button>
                   ))}
                 </div>
               </div>
               {form.tieneCVC==='Sí'&&(
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-                  <Field label="Monto CVC (COP)">
-                    <input type="number" value={form.montoCVC} onChange={e=>setForm({...form,montoCVC:e.target.value})} placeholder="0"/>
-                  </Field>
-                  <Field label="Detalle">
-                    <input value={form.detalleCVC} onChange={e=>setForm({...form,detalleCVC:e.target.value})} placeholder="Descripción del CVC..."/>
-                  </Field>
+                  <Field label="Monto CVC (COP)"><input type="number" value={form.montoCVC} onChange={e=>setForm({...form,montoCVC:e.target.value})} placeholder="0"/></Field>
+                  <Field label="Detalle"><input value={form.detalleCVC} onChange={e=>setForm({...form,detalleCVC:e.target.value})} placeholder="Descripción del CVC..."/></Field>
                 </div>
               )}
             </div>
-
-            {/* ── Promotora ── */}
             <div style={{background:'var(--bg3)',borderRadius:10,padding:'14px 16px',display:'flex',flexDirection:'column',gap:10}}>
               <div style={{display:'flex',alignItems:'center',gap:12}}>
                 <span style={{fontSize:13,fontWeight:600,color:'#a78bfa'}}>¿Tiene Promotora?</span>
                 <div style={{display:'flex',gap:8}}>
                   {['Sí','No'].map(v=>(
                     <button key={v} onClick={()=>setForm({...form,tienePromotora:v})}
-                      style={{...S.btn(form.tienePromotora===v?'rgba(168,139,250,0.2)':'var(--bg4)',form.tienePromotora===v?'#a78bfa':'var(--text2)'),padding:'5px 16px',fontSize:13,border:form.tienePromotora===v?'1px solid rgba(168,139,250,0.4)':'1px solid var(--border2)'}}>
-                      {v}
-                    </button>
+                      style={{...S.btn(form.tienePromotora===v?'rgba(168,139,250,0.2)':'var(--bg4)',form.tienePromotora===v?'#a78bfa':'var(--text2)'),padding:'5px 16px',fontSize:13,border:form.tienePromotora===v?'1px solid rgba(168,139,250,0.4)':'1px solid var(--border2)'}}>{v}</button>
                   ))}
                 </div>
               </div>
               {form.tienePromotora==='Sí'&&(
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-                  <Field label="Nombre de la promotora">
-                    <input value={form.nombrePromotora} onChange={e=>setForm({...form,nombrePromotora:e.target.value})} placeholder="Nombre completo..."/>
-                  </Field>
-                  <Field label="Monto mensual (COP)">
-                    <input type="number" value={form.montoPromotora} onChange={e=>setForm({...form,montoPromotora:e.target.value})} placeholder="0"/>
-                  </Field>
+                  <Field label="Nombre de la promotora"><input value={form.nombrePromotora} onChange={e=>setForm({...form,nombrePromotora:e.target.value})} placeholder="Nombre completo..."/></Field>
+                  <Field label="Monto mensual (COP)"><input type="number" value={form.montoPromotora} onChange={e=>setForm({...form,montoPromotora:e.target.value})} placeholder="0"/></Field>
                 </div>
               )}
             </div>
-
-            {/* Condiciones generales y notas */}
             <Field label="Condiciones generales del acuerdo">
-              <textarea value={form.condicionesGenerales||form.condiciones||''} onChange={e=>setForm({...form,condicionesGenerales:e.target.value})} rows={2} style={{resize:'vertical'}}
-                placeholder="Condiciones generales que aplican a todos los planes..."/>
+              <textarea value={form.condicionesGenerales||form.condiciones||''} onChange={e=>setForm({...form,condicionesGenerales:e.target.value})} rows={2} style={{resize:'vertical'}} placeholder="Condiciones generales..."/>
             </Field>
             <Field label="Acuerdos especiales">
-              <textarea value={form.acuerdos} onChange={e=>setForm({...form,acuerdos:e.target.value})} rows={2} style={{resize:'vertical'}}
-                placeholder="Bonificaciones, descuentos adicionales..."/>
+              <textarea value={form.acuerdos} onChange={e=>setForm({...form,acuerdos:e.target.value})} rows={2} style={{resize:'vertical'}} placeholder="Bonificaciones, descuentos adicionales..."/>
             </Field>
             <Field label="Notas internas">
-              <textarea value={form.notas} onChange={e=>setForm({...form,notas:e.target.value})} rows={2} style={{resize:'vertical'}}
-                placeholder="Alertas, oportunidades, observaciones privadas..."/>
+              <textarea value={form.notas} onChange={e=>setForm({...form,notas:e.target.value})} rows={2} style={{resize:'vertical'}} placeholder="Alertas, oportunidades..."/>
             </Field>
           </div>
-
           <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:20}}>
             <button onClick={()=>{setModal(false);setEditId(null)}} style={S.btn('var(--bg3)','var(--text2)')}>Cancelar</button>
             <button onClick={submit} style={S.btn('var(--accent)','#fff')}><Check size={15}/> Guardar plan</button>
@@ -1322,7 +1658,6 @@ function Planes({ data, setData }) {
         </Modal>
       )}
 
-      {/* ── Modal hoja de vida ── */}
       {modalHoja&&(
         <Modal title={'Hoja de vida — '+modalHoja.distribuidor} onClose={()=>{setModalHoja(null);setNuevaNota('')}} wide>
           <div style={{display:'flex',flexDirection:'column',gap:16}}>
@@ -1332,8 +1667,6 @@ function Planes({ data, setData }) {
               {modalHoja.tieneCVC==='Sí'&&<span style={{background:'rgba(6,182,212,0.15)',color:'#06b6d4',fontSize:11,fontWeight:600,padding:'3px 10px',borderRadius:6}}>CVC</span>}
               {modalHoja.tienePromotora==='Sí'&&<span style={{background:'rgba(168,139,250,0.15)',color:'#a78bfa',fontSize:11,fontWeight:600,padding:'3px 10px',borderRadius:6}}>Promotora</span>}
             </div>
-
-            {/* Planes detalle */}
             {(modalHoja.planesItems||[]).filter(i=>i.nombre).length>0&&(
               <div>
                 <div style={{fontSize:11,color:'var(--text3)',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.05em'}}>Planes del {modalHoja.quarter}</div>
@@ -1344,25 +1677,13 @@ function Planes({ data, setData }) {
                         <span style={{fontWeight:600,fontSize:13,color:'var(--accent2)'}}>{item.nombre}</span>
                         {item.tienePago==='Sí'&&<span style={{fontSize:11,background:'var(--green-soft)',color:'var(--green)',padding:'2px 8px',borderRadius:5,fontWeight:600}}>✓ Con pago</span>}
                       </div>
-                      {item.descripcionPago&&(
-                        <div style={{marginBottom:item.condiciones?8:0}}>
-                          <span style={{fontSize:11,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.04em'}}>Pago incluye: </span>
-                          <span style={{fontSize:12,color:'var(--text)'}}>{item.descripcionPago}</span>
-                        </div>
-                      )}
-                      {item.condiciones&&(
-                        <div>
-                          <span style={{fontSize:11,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.04em'}}>Condiciones: </span>
-                          <span style={{fontSize:12,color:'var(--text2)'}}>{item.condiciones}</span>
-                        </div>
-                      )}
+                      {item.descripcionPago&&<div style={{marginBottom:item.condiciones?8:0}}><span style={{fontSize:11,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.04em'}}>Pago incluye: </span><span style={{fontSize:12,color:'var(--text)'}}>{item.descripcionPago}</span></div>}
+                      {item.condiciones&&<div><span style={{fontSize:11,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.04em'}}>Condiciones: </span><span style={{fontSize:12,color:'var(--text2)'}}>{item.condiciones}</span></div>}
                     </div>
                   ))}
                 </div>
               </div>
             )}
-
-            {/* Metas */}
             <div>
               <div style={{fontSize:11,color:'var(--text3)',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.05em'}}>Metas por mes</div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
@@ -1374,44 +1695,12 @@ function Planes({ data, setData }) {
                   </div>
                 ))}
               </div>
-              <div style={{display:'flex',gap:20,marginTop:8,padding:'8px 12px',background:'var(--accent-soft)',borderRadius:8}}>
-                <span style={{fontSize:12,color:'var(--text2)'}}>Total Q Venta: <strong style={{color:'var(--accent2)',fontFamily:'var(--mono)'}}>{cop(modalHoja.metaVenta)}</strong></span>
-                <span style={{fontSize:12,color:'var(--text2)'}}>Galones: <strong style={{color:'var(--accent2)',fontFamily:'var(--mono)'}}>{num(modalHoja.metaGalones)}</strong></span>
-              </div>
             </div>
-
-            {modalHoja.tieneCVC==='Sí'&&(
-              <div style={{background:'rgba(6,182,212,0.08)',border:'1px solid rgba(6,182,212,0.2)',borderRadius:10,padding:'12px 16px'}}>
-                <div style={{fontSize:12,fontWeight:600,color:'#06b6d4',marginBottom:4}}>CVC</div>
-                <div style={{fontSize:13}}>{modalHoja.montoCVC?cop(Number(modalHoja.montoCVC)):''} {modalHoja.detalleCVC}</div>
-              </div>
-            )}
-            {modalHoja.tienePromotora==='Sí'&&(
-              <div style={{background:'rgba(168,139,250,0.08)',border:'1px solid rgba(168,139,250,0.2)',borderRadius:10,padding:'12px 16px'}}>
-                <div style={{fontSize:12,fontWeight:600,color:'#a78bfa',marginBottom:4}}>Promotora</div>
-                <div style={{fontSize:13}}>{modalHoja.nombrePromotora}{modalHoja.montoPromotora&&' — '+cop(Number(modalHoja.montoPromotora))+'/mes'}</div>
-              </div>
-            )}
-            {(modalHoja.condicionesGenerales||modalHoja.condiciones)&&(
-              <div>
-                <div style={{fontSize:11,color:'var(--text3)',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.05em'}}>Condiciones generales</div>
-                <div style={{background:'var(--bg3)',borderRadius:10,padding:'12px 16px',fontSize:13,lineHeight:1.6}}>{modalHoja.condicionesGenerales||modalHoja.condiciones}</div>
-              </div>
-            )}
-            {modalHoja.acuerdos&&(
-              <div>
-                <div style={{fontSize:11,color:'var(--text3)',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.05em'}}>Acuerdos especiales</div>
-                <div style={{background:'var(--green-soft)',border:'1px solid rgba(61,214,140,0.2)',borderRadius:10,padding:'12px 16px',fontSize:13,lineHeight:1.6}}>{modalHoja.acuerdos}</div>
-              </div>
-            )}
-            {modalHoja.notas&&(
-              <div>
-                <div style={{fontSize:11,color:'var(--text3)',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.05em'}}>Notas internas</div>
-                <div style={{background:'var(--yellow-soft)',border:'1px solid rgba(255,209,102,0.2)',borderRadius:10,padding:'12px 16px',fontSize:13,lineHeight:1.6}}>{modalHoja.notas}</div>
-              </div>
-            )}
-
-            {/* Historial */}
+            {modalHoja.tieneCVC==='Sí'&&<div style={{background:'rgba(6,182,212,0.08)',border:'1px solid rgba(6,182,212,0.2)',borderRadius:10,padding:'12px 16px'}}><div style={{fontSize:12,fontWeight:600,color:'#06b6d4',marginBottom:4}}>CVC</div><div style={{fontSize:13}}>{modalHoja.montoCVC?cop(Number(modalHoja.montoCVC)):''} {modalHoja.detalleCVC}</div></div>}
+            {modalHoja.tienePromotora==='Sí'&&<div style={{background:'rgba(168,139,250,0.08)',border:'1px solid rgba(168,139,250,0.2)',borderRadius:10,padding:'12px 16px'}}><div style={{fontSize:12,fontWeight:600,color:'#a78bfa',marginBottom:4}}>Promotora</div><div style={{fontSize:13}}>{modalHoja.nombrePromotora}{modalHoja.montoPromotora&&' — '+cop(Number(modalHoja.montoPromotora))+'/mes'}</div></div>}
+            {(modalHoja.condicionesGenerales||modalHoja.condiciones)&&<div><div style={{fontSize:11,color:'var(--text3)',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.05em'}}>Condiciones generales</div><div style={{background:'var(--bg3)',borderRadius:10,padding:'12px 16px',fontSize:13,lineHeight:1.6}}>{modalHoja.condicionesGenerales||modalHoja.condiciones}</div></div>}
+            {modalHoja.acuerdos&&<div><div style={{fontSize:11,color:'var(--text3)',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.05em'}}>Acuerdos especiales</div><div style={{background:'var(--green-soft)',border:'1px solid rgba(61,214,140,0.2)',borderRadius:10,padding:'12px 16px',fontSize:13,lineHeight:1.6}}>{modalHoja.acuerdos}</div></div>}
+            {modalHoja.notas&&<div><div style={{fontSize:11,color:'var(--text3)',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.05em'}}>Notas internas</div><div style={{background:'var(--yellow-soft)',border:'1px solid rgba(255,209,102,0.2)',borderRadius:10,padding:'12px 16px',fontSize:13,lineHeight:1.6}}>{modalHoja.notas}</div></div>}
             <div>
               <div style={{fontSize:11,color:'var(--text3)',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.05em'}}>Historial de seguimiento</div>
               <div style={{display:'flex',flexDirection:'column',gap:7,marginBottom:10}}>
@@ -1424,327 +1713,10 @@ function Planes({ data, setData }) {
                 ))}
               </div>
               <div style={{display:'flex',gap:10}}>
-                <input value={nuevaNota} onChange={e=>setNuevaNota(e.target.value)}
-                  onKeyDown={e=>e.key==='Enter'&&agregarNota(modalHoja.id)}
-                  placeholder="Agregar nota de seguimiento..." style={{flex:1}}/>
+                <input value={nuevaNota} onChange={e=>setNuevaNota(e.target.value)} onKeyDown={e=>e.key==='Enter'&&agregarNota(modalHoja.id)} placeholder="Agregar nota de seguimiento..." style={{flex:1}}/>
                 <button onClick={()=>agregarNota(modalHoja.id)} style={S.btn('var(--accent)','#fff')}>Agregar</button>
               </div>
             </div>
-          </div>
-        </Modal>
-      )}
-    </div>
-  )
-}
-
-// ═══════════════════════════════════════════════════════
-// PRESUPUESTO — Hoja tipo Excel + Ejecutado vs Presupuesto
-// ═══════════════════════════════════════════════════════
-function Presupuesto({ data, setData }) {
-  const [filtroMes, setFiltroMes] = useState('')
-  const [filtroAnio, setFiltroAnio] = useState('2026')
-  const [busqueda, setBusqueda] = useState('')
-  const [seleccionados, setSeleccionados] = useState(new Set())
-  const [editCell, setEditCell] = useState(null)
-  const [editVal, setEditVal] = useState('')
-  const [modalPres, setModalPres] = useState(false)
-  const [formP, setFormP] = useState({ mes:'', anio:2026, monto:'' })
-  const inputRef = useRef(null)
-  const COLS_G = [
-    {key:'mes',          label:'Mes',                    w:85},
-    {key:'gasto',        label:'Gasto (Nom. Producto, Cliente)', w:260},
-    {key:'valorFactura', label:'Valor Factura',           w:125},
-    {key:'canal',        label:'Canal',                   w:80},
-    {key:'observacion',  label:'Observación (ATJ)',       w:180},
-    {key:'estado',       label:'Estado',                  w:100},
-    {key:'centroCostos', label:'Centro de Costos',        w:120},
-    {key:'ordenCompra',  label:'Orden de Compra',         w:110},
-    {key:'nitProveedor', label:'NIT Proveedor',           w:110},
-    {key:'nomProveedor', label:'Nom. Proveedor',          w:140},
-    {key:'docCargado',   label:'Doc. Cargado',            w:90},
-    {key:'obsKatherine', label:'Obs. Katherine',          w:160},
-  ]
-  const ESTADOS_G = ['Pendiente','Ingresado','Aprobado','Pagado','Rechazado']
-  const anios = [...new Set([...(data.gastosPresupuesto||[]).map(g=>g.anio),...data.presupuestos.map(p=>p.anio)])].sort()
-
-  const gastos = (data.gastosPresupuesto||[]).filter(g=>
-    (!filtroMes||g.mes===filtroMes) &&
-    (!filtroAnio||g.anio===Number(filtroAnio)) &&
-    (!busqueda||[g.gasto,g.observacion,g.estado,g.centroCostos,g.canal].some(v=>String(v||'').toLowerCase().includes(busqueda.toLowerCase())))
-  ).sort((a,b)=>{ const mi=MESES.indexOf(a.mes),mj=MESES.indexOf(b.mes); if(mi===-1&&mj===-1) return 0; if(mi===-1) return 1; if(mj===-1) return -1; return mi-mj })
-
-  const totalGastado = gastos.reduce((s,g)=>s+(Number(g.valorFactura)||0),0)
-  const presAsignado = data.presupuestos.filter(p=>(!filtroMes||p.mes===filtroMes)&&(!filtroAnio||p.anio===Number(filtroAnio))).reduce((s,p)=>s+(Number(p.monto)||0),0)
-  const ejec = presAsignado>0?(totalGastado/presAsignado)*100:0
-  const disponible = presAsignado - totalGastado
-
-  // Selección
-  const toggleSel = id => setSeleccionados(prev=>{const n=new Set(prev);n.has(id)?n.delete(id):n.add(id);return n})
-  const toggleTodos = () => setSeleccionados(prev=>prev.size===gastos.length&&gastos.length>0?new Set():new Set(gastos.map(g=>g.id)))
-  const eliminarSel = () => {
-    if(!seleccionados.size||!confirm('¿Eliminar '+seleccionados.size+' gastos?')) return
-    const nd={...data,gastosPresupuesto:(data.gastosPresupuesto||[]).filter(g=>!seleccionados.has(g.id))}
-    setData(nd);save(nd);setSeleccionados(new Set())
-  }
-
-  // Edición inline
-  const startEdit = (id,field,val) => { setEditCell({id,field});setEditVal(String(val||''));setTimeout(()=>inputRef.current?.focus(),20) }
-  const commitEdit = () => {
-    if(!editCell) return
-    const {id,field}=editCell
-    const gastosPresupuesto=(data.gastosPresupuesto||[]).map(g=>{
-      if(g.id!==id) return g
-      const val=field==='valorFactura'?(Number(editVal)||0):editVal
-      return {...g,[field]:val}
-    })
-    const nd={...data,gastosPresupuesto};setData(nd);save(nd);setEditCell(null)
-  }
-  const onKD = e => { if(e.key==='Enter'){commitEdit();e.preventDefault()} else if(e.key==='Escape') setEditCell(null); else if(e.key==='Tab'){commitEdit();e.preventDefault()} }
-
-  // Añadir fila
-  const addFila = () => {
-    const n={id:Date.now(),anio:Number(filtroAnio)||2026,mes:filtroMes||'',gasto:'',valorFactura:0,canal:'',observacion:'',estado:'Pendiente',centroCostos:'',notas:''}
-    const nd={...data,gastosPresupuesto:[...(data.gastosPresupuesto||[]),n]};setData(nd);save(nd,{insertar:n,tipo:'gastosPresupuesto'})
-    setTimeout(()=>startEdit(n.id,'gasto',''),60)
-  }
-
-  // Pegar desde Excel
-  const handlePaste = e => {
-    const text=e.clipboardData.getData('text')
-    if(!text.includes('\t')&&!text.includes('\n')) return
-    e.preventDefault()
-    const rows=text.trim().split('\n').map(r=>r.split('\t'))
-    const nuevas=rows.filter(r=>r[0]||r[1]).map((r,i)=>({
-      id:Date.now()+i, anio:Number(filtroAnio)||2026,
-      mes:r[0]||filtroMes||'', gasto:r[1]||'',
-      valorFactura:parseN(r[2]||0), canal:r[3]||'',
-      observacion:r[4]||'', estado:r[5]||'Pendiente',
-      centroCostos:r[6]||'', notas:''
-    })).filter(r=>r.gasto||r.mes)
-    if(nuevas.length){
-      const nd={...data,gastosPresupuesto:[...(data.gastosPresupuesto||[]),...nuevas]};setData(nd);save(nd)
-      alert('✅ '+nuevas.length+' filas pegadas')
-    }
-  }
-
-  const celda = (id,field) => ({
-    padding:'6px 10px',fontSize:12,
-    borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)',
-    cursor:'cell',whiteSpace:'nowrap',overflow:'hidden',maxWidth:300,
-    background:editCell?.id===id&&editCell?.field===field?'rgba(108,99,255,0.18)':seleccionados.has(id)?'rgba(108,99,255,0.07)':'transparent',
-    outline:editCell?.id===id&&editCell?.field===field?'2px solid var(--accent)':'none',
-    outlineOffset:'-1px',
-  })
-
-  // Resumen por mes
-  const resumenMeses = MESES.map(m=>{
-    const gastado=(data.gastosPresupuesto||[]).filter(g=>g.mes===m&&(!filtroAnio||g.anio===Number(filtroAnio))).reduce((s,g)=>s+(Number(g.valorFactura)||0),0)
-    const asignado=data.presupuestos.filter(p=>p.mes===m&&(!filtroAnio||p.anio===Number(filtroAnio))).reduce((s,p)=>s+(Number(p.monto)||0),0)
-    return {mes:m,gastado,asignado,ejec:asignado>0?(gastado/asignado)*100:0,disponible:asignado-gastado}
-  }).filter(r=>r.gastado>0||r.asignado>0)
-
-  const submitPres = () => {
-    if(!formP.mes||!formP.monto) return
-    const entry={id:Date.now(),mes:formP.mes,anio:Number(formP.anio),monto:Number(formP.monto)}
-    const nd={...data,presupuestos:[...data.presupuestos,entry]};setData(nd);save(nd,{insertar:entry,tipo:'presupuestos'});setModalPres(false);setFormP({mes:'',anio:2026,monto:''})
-  }
-  const delPres = id => { const nd={...data,presupuestos:data.presupuestos.filter(p=>p.id!==id)};setData(nd);save(nd,{eliminar:id,tipo:'presupuestos'}) }
-
-  return (
-    <div style={{display:'flex',flexDirection:'column',gap:18}}>
-      {/* Toolbar */}
-      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
-        <div style={{position:'relative',display:'flex',alignItems:'center'}}>
-          <Search size={13} style={{position:'absolute',left:9,color:'var(--text3)',pointerEvents:'none'}}/>
-          <input value={busqueda} onChange={e=>setBusqueda(e.target.value)} placeholder="Buscar gasto..." style={{paddingLeft:30,width:190,fontSize:13}}/>
-        </div>
-        <select value={filtroAnio} onChange={e=>setFiltroAnio(e.target.value)} style={{width:100}}>
-          <option value="">Año</option>{anios.map(a=><option key={a}>{a}</option>)}
-        </select>
-        <select value={filtroMes} onChange={e=>setFiltroMes(e.target.value)} style={{width:140}}>
-          <option value="">Todos los meses</option>{MESES.map(m=><option key={m}>{m}</option>)}
-        </select>
-        {(filtroMes||busqueda)&&<button onClick={()=>{setFiltroMes('');setBusqueda('')}} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:12}}>✕</button>}
-        <div style={{marginLeft:'auto',display:'flex',gap:8,flexWrap:'wrap'}}>
-          {seleccionados.size>0&&<button onClick={eliminarSel} style={{...S.btn('var(--red-soft)','var(--red)'),fontSize:12}}><Trash2 size={13}/> Eliminar {seleccionados.size}</button>}
-          <button onClick={()=>setModalPres(true)} style={{...S.btn('var(--bg3)','var(--text2)'),border:'1px solid var(--border2)',fontSize:12}}><DollarSign size={13}/> Asignar presupuesto</button>
-          <button onClick={addFila} style={{...S.btn('var(--green-soft)','var(--green)'),fontSize:12,border:'1px solid rgba(61,214,140,0.2)'}}><PlusCircle size={14}/> Añadir fila</button>
-        </div>
-      </div>
-
-      {/* KPIs */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
-        <KpiCard icon={DollarSign} label="Presupuesto asignado" value={cop(presAsignado)} sub={filtroMes||(filtroAnio||'')+'  Total período'}/>
-        <KpiCard icon={TrendingUp} label="Total ejecutado" value={cop(totalGastado)} sub={gastos.length+' registros'} accent="var(--accent2)"/>
-        <KpiCard icon={BarChart2} label="% Ejecutado" value={ejec.toFixed(1)+'%'} sub={ejec>100?'Excedido':ejec>80?'Casi al límite':'Dentro del presupuesto'} accent={ejec>100?'var(--red)':ejec>80?'var(--yellow)':'var(--green)'}/>
-        <KpiCard icon={DollarSign} label={disponible>=0?'Disponible':'Excedido'} value={cop(Math.abs(disponible))} accent={disponible>=0?'var(--green)':'var(--red)'}/>
-      </div>
-
-      {/* Resumen por mes — siempre visible */}
-      {resumenMeses.length>0&&(
-        <div style={S.card}>
-          <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-            <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Ejecutado vs Presupuesto por mes</h4>
-            <span style={{fontSize:11,color:'var(--text3)'}}>Clic en un mes para filtrar el detalle</span>
-          </div>
-          <table style={{width:'100%',borderCollapse:'collapse'}}>
-            <thead><tr>{['Mes','Presupuesto asignado','Ejecutado','Disponible','% Ejec.','Barra',''].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
-            <tbody>
-              {resumenMeses.map((r,i)=>(
-                <tr key={i} onClick={()=>setFiltroMes(filtroMes===r.mes?'':r.mes)} style={{cursor:'pointer',background:filtroMes===r.mes?'rgba(108,99,255,0.07)':'transparent'}}>
-                  <td style={{...S.td,fontWeight:600,color:filtroMes===r.mes?'var(--accent2)':'var(--text)'}}>{r.mes}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--text2)'}}>{cop(r.asignado)}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:500}}>{cop(r.gastado)}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',color:r.disponible>=0?'var(--green)':'var(--red)',fontWeight:500}}>{r.disponible>=0?'':'-'}{cop(Math.abs(r.disponible))}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:600,color:r.ejec>100?'var(--red)':r.ejec>80?'var(--yellow)':'var(--green)'}}>{r.ejec.toFixed(1)}%</td>
-                  <td style={{...S.td,minWidth:120}}>
-                    <div style={{height:6,background:'var(--bg4)',borderRadius:3}}>
-                      <div style={{width:Math.min(r.ejec,100)+'%',height:'100%',background:r.ejec>100?'var(--red)':r.ejec>80?'var(--yellow)':'var(--green)',borderRadius:3}}/>
-                    </div>
-                  </td>
-                  <td style={{...S.td,fontSize:11,color:'var(--text3)'}}>{filtroMes===r.mes?'◀ Filtrando':'Ver →'}</td>
-                </tr>
-              ))}
-              <tr style={{borderTop:'2px solid var(--border2)',background:'var(--bg3)'}}>
-                <td style={{...S.td,fontWeight:700}}>TOTAL</td>
-                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--text2)'}}>{cop(resumenMeses.reduce((s,r)=>s+r.asignado,0))}</td>
-                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--accent2)'}}>{cop(resumenMeses.reduce((s,r)=>s+r.gastado,0))}</td>
-                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:resumenMeses.reduce((s,r)=>s+r.disponible,0)>=0?'var(--green)':'var(--red)'}}>{cop(resumenMeses.reduce((s,r)=>s+r.disponible,0))}</td>
-                <td colSpan={3} style={S.td}/>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <div style={{fontSize:11,color:'var(--text3)',display:'flex',gap:20,flexWrap:'wrap'}}>
-        <span>💡 Clic en celda para editar · Enter confirma · Tab siguiente</span>
-        <span>📋 Ctrl+V para pegar desde Excel (Mes, Gasto, Valor, Canal, Observación, Estado)</span>
-        <span>☑️ Checkbox para seleccionar y eliminar en bloque</span>
-      </div>
-
-      {/* Tabla tipo Excel */}
-      <div style={S.card}>
-        <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-          <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>
-            Detalle de gastos {filtroMes&&'— '+filtroMes} · {gastos.length} registros
-          </h4>
-          {filtroMes&&<button onClick={()=>setFiltroMes('')} style={{...S.btn('var(--bg3)','var(--text2)'),fontSize:11,padding:'3px 10px'}}>← Ver todos</button>}
-        </div>
-        <div style={{overflowX:'auto'}} onPaste={handlePaste}>
-          <table style={{borderCollapse:'collapse',tableLayout:'fixed',minWidth:'100%'}}>
-            <thead>
-              <tr style={{background:'var(--bg3)'}}>
-                <th style={{...S.th,width:36,textAlign:'center',padding:'8px 6px'}}>
-                  <input type="checkbox" checked={seleccionados.size===gastos.length&&gastos.length>0} onChange={toggleTodos} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
-                </th>
-                <th style={{...S.th,width:36,padding:'8px 4px',textAlign:'center',fontSize:10}}>#</th>
-                <th style={{...S.th,width:36}}></th>
-                {COLS_G.map(c=><th key={c.key} style={{...S.th,width:c.w}}>{c.label}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {gastos.length===0&&(
-                <tr><td colSpan={COLS_G.length+2} style={{padding:48,textAlign:'center',color:'var(--text3)',fontSize:13}}>
-                  No hay gastos. <strong>Añadir fila</strong>, importar Excel, o pegar con <strong>Ctrl+V</strong>.
-                </td></tr>
-              )}
-              {gastos.map((g,idx)=>(
-                <tr key={g.id} style={{background:seleccionados.has(g.id)?'rgba(108,99,255,0.06)':'transparent'}}>
-                  <td style={{padding:'6px',textAlign:'center',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>
-                    <input type="checkbox" checked={seleccionados.has(g.id)} onChange={e=>{setSeleccionados(prev=>{const n=new Set(prev);n.has(g.id)?n.delete(g.id):n.add(g.id);return n})}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
-                  </td>
-                  <td style={{padding:'6px 4px',textAlign:'center',fontSize:10,color:'var(--text3)',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>{idx+1}</td>
-                  <td style={{padding:'4px',borderTop:'1px solid var(--border)',textAlign:'center',width:36}}>
-                    <button onClick={()=>{if(window.confirm('¿Eliminar?')){const nd={...data,gastosPresupuesto:(data.gastosPresupuesto||[]).filter(x=>x.id!==g.id)};setData(nd);save(nd)}}} style={{background:'var(--red-soft)',color:'var(--red)',border:'none',borderRadius:6,padding:'2px 8px',cursor:'pointer',fontSize:13,fontWeight:700,lineHeight:1}}>✕</button>
-                  </td>
-                  {COLS_G.map(col=>(
-                    <td key={col.key} style={celda(g.id,col.key)} onClick={()=>startEdit(g.id,col.key,g[col.key])}>
-                      {editCell?.id===g.id&&editCell?.field===col.key ? (
-                        col.key==='mes'?(
-                          <select defaultValue={editVal} onChange={e=>{
-                            const v=e.target.value
-                            if(!editCell) return
-                            const {id,field}=editCell
-                            const gastosPresupuesto=(data.gastosPresupuesto||[]).map(g=>g.id!==id?g:{...g,[field]:v})
-                            const nd={...data,gastosPresupuesto};setData(nd);save(nd);setEditCell(null);setEditVal(v)
-                          }} ref={inputRef} autoFocus
-                            style={{background:'var(--bg2)',color:'var(--text)',border:'1px solid var(--accent)',borderRadius:4,fontSize:12,width:'100%',fontFamily:'var(--font)',padding:'2px'}}>
-                            <option value="">— Selecciona mes —</option>{MESES.map(m=><option key={m} value={m}>{m}</option>)}
-                          </select>
-                        ):col.key==='estado'?(
-                          <select defaultValue={editVal} onChange={e=>{
-                            const v=e.target.value
-                            if(!editCell) return
-                            const {id,field}=editCell
-                            const gastosPresupuesto=(data.gastosPresupuesto||[]).map(g=>g.id!==id?g:{...g,[field]:v})
-                            const nd={...data,gastosPresupuesto};setData(nd);save(nd);setEditCell(null);setEditVal(v)
-                          }} ref={inputRef} autoFocus
-                            style={{background:'var(--bg2)',color:'var(--text)',border:'1px solid var(--accent)',borderRadius:4,fontSize:12,width:'100%',fontFamily:'var(--font)',padding:'2px'}}>
-                            {ESTADOS_G.map(s=><option key={s} value={s}>{s}</option>)}
-                          </select>
-                        ):(
-                          <input ref={inputRef} value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={commitEdit} onKeyDown={onKD}
-                            type={col.key==='valorFactura'?'number':'text'}
-                            style={{background:'transparent',color:'var(--text)',border:'none',outline:'none',fontSize:12,width:'100%',fontFamily:col.key==='valorFactura'?'var(--mono)':'var(--font)'}}/>
-                        )
-                      ):(
-                        <span style={{fontFamily:col.key==='valorFactura'?'var(--mono)':'inherit',color:col.key==='valorFactura'?'var(--accent2)':col.key==='gasto'?'var(--text)':'var(--text2)',fontWeight:col.key==='valorFactura'?500:400}}>
-                          {col.key==='valorFactura'?cop(Number(g[col.key])||0):col.key==='estado'?(<Badge label={g[col.key]}/>):(g[col.key]||'')}
-                        </span>
-                      )}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-              {gastos.length>0&&(
-                <tr style={{background:'var(--bg3)',borderTop:'2px solid var(--border2)'}}>
-                  <td colSpan={2} style={{padding:'8px 10px'}}/>
-                  <td colSpan={2} style={{padding:'8px 12px',fontWeight:700,fontSize:12,color:'var(--text2)'}}>TOTAL {filtroMes&&'— '+filtroMes}</td>
-                  <td style={{padding:'8px 12px',fontFamily:'var(--mono)',fontWeight:700,fontSize:13,color:'var(--accent2)'}}>{cop(totalGastado)}</td>
-                  <td colSpan={4} style={{padding:'8px 10px'}}/>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Presupuestos asignados */}
-      <div style={S.card}>
-        <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}><h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Presupuestos asignados por mes</h4></div>
-        <table style={{width:'100%',borderCollapse:'collapse'}}>
-          <thead><tr>{['Año','Mes','Monto asignado','Ejecutado','Disponible',''].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
-          <tbody>
-            {data.presupuestos.length===0&&<tr><td colSpan={6} style={{...S.td,textAlign:'center',color:'var(--text3)',padding:28}}>No hay presupuestos. Usa "Asignar presupuesto".</td></tr>}
-            {[...data.presupuestos].sort((a,b)=>a.anio!==b.anio?b.anio-a.anio:MESES.indexOf(a.mes)-MESES.indexOf(b.mes)).map(p=>{
-              const ejec2=(data.gastosPresupuesto||[]).filter(g=>g.mes===p.mes&&g.anio===p.anio).reduce((s,g)=>s+(Number(g.valorFactura)||0),0)
-              return (
-                <tr key={p.id}>
-                  <td style={{...S.td,color:'var(--text2)'}}>{p.anio}</td>
-                  <td style={{...S.td,fontWeight:500}}>{p.mes}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--text2)'}}>{cop(p.monto)}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--accent2)'}}>{cop(ejec2)}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',color:p.monto-ejec2>=0?'var(--green)':'var(--red)'}}>{cop(p.monto-ejec2)}</td>
-                  <td style={S.td}><button onClick={()=>delPres(p.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'4px 8px'}}><Trash2 size={13}/></button></td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Modal asignar presupuesto */}
-      {modalPres&&(
-        <Modal title="Asignar presupuesto mensual" onClose={()=>setModalPres(false)}>
-          <div style={{display:'flex',flexDirection:'column',gap:14}}>
-            <Field label="Año"><input type="number" value={formP.anio} onChange={e=>setFormP({...formP,anio:e.target.value})} placeholder="2026"/></Field>
-            <Field label="Mes *"><select value={formP.mes} onChange={e=>setFormP({...formP,mes:e.target.value})}><option value="">Selecciona...</option>{MESES.map(m=><option key={m}>{m}</option>)}</select></Field>
-            <Field label="Monto (COP) *"><input type="number" value={formP.monto} onChange={e=>setFormP({...formP,monto:e.target.value})} placeholder="0"/></Field>
-          </div>
-          <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:20}}>
-            <button onClick={()=>setModalPres(false)} style={S.btn('var(--bg3)','var(--text2)')}>Cancelar</button>
-            <button onClick={submitPres} style={S.btn('var(--accent)','#fff')}><Check size={15}/> Guardar</button>
           </div>
         </Modal>
       )}
@@ -1825,18 +1797,10 @@ function Pendientes({ data, setData }) {
               <datalist id="dist-pend">{distribuidores.map(d=><option key={d} value={d}/>)}</datalist>
             </Field>
             <Field label="Tarea *" span><input value={form.tarea} onChange={e=>setForm({...form,tarea:e.target.value})} placeholder="Describe la tarea..."/></Field>
-            <Field label="Categoría"><input value={form.categoria} onChange={e=>setForm({...form,categoria:e.target.value})} placeholder="Ej: Seguimiento, Diseño..."/></Field>
+            <Field label="Categoría"><input value={form.categoria} onChange={e=>setForm({...form,categoria:e.target.value})} placeholder="Ej: Seguimiento..."/></Field>
             <Field label="Fecha límite"><input type="date" value={form.fechaLimite} onChange={e=>setForm({...form,fechaLimite:e.target.value})}/></Field>
-            <Field label="Prioridad">
-              <select value={form.prioridad} onChange={e=>setForm({...form,prioridad:e.target.value})}>
-                {PRIORIDADES.map(p=><option key={p}>{p}</option>)}
-              </select>
-            </Field>
-            <Field label="Estado">
-              <select value={form.estado} onChange={e=>setForm({...form,estado:e.target.value})}>
-                {ESTADOS_PEND.map(s=><option key={s}>{s}</option>)}
-              </select>
-            </Field>
+            <Field label="Prioridad"><select value={form.prioridad} onChange={e=>setForm({...form,prioridad:e.target.value})}>{PRIORIDADES.map(p=><option key={p}>{p}</option>)}</select></Field>
+            <Field label="Estado"><select value={form.estado} onChange={e=>setForm({...form,estado:e.target.value})}>{ESTADOS_PEND.map(s=><option key={s}>{s}</option>)}</select></Field>
             <Field label="Responsable"><input value={form.responsable} onChange={e=>setForm({...form,responsable:e.target.value})} placeholder="Nombre..."/></Field>
             <Field label="Notas" span><textarea value={form.notas} onChange={e=>setForm({...form,notas:e.target.value})} rows={2} style={{resize:'vertical'}} placeholder="Detalles adicionales..."/></Field>
           </div>
@@ -1855,7 +1819,7 @@ function Pendientes({ data, setData }) {
 // ═══════════════════════════════════════════════════════
 function ApoyoCierre({ data, setData }) {
   const [mesActivo, setMesActivo] = useState('')
-  const [comercialDetalle, setComercialDetalle] = useState(null) // comercial expandido
+  const [comercialDetalle, setComercialDetalle] = useState(null)
   const [comercialActivo, setComercialActivo] = useState(null)
   const [modalAsignacion, setModalAsignacion] = useState(false)
   const [modalRedencion, setModalRedencion] = useState(false)
@@ -1865,7 +1829,6 @@ function ApoyoCierre({ data, setData }) {
 
   const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzgSB5bZEo-3JgBbTySp8GOVB0VpYl8ki3J2EM-daQrB42HiAguVzqWZUCoFovx5rTF/exec'
 
-  // Emails por comercial
   const EMAILS = {
     'Cristian':  'cblanco@prolub.com.co',
     'Mauricio':  'oramirez@prolub.com.co',
@@ -1915,7 +1878,6 @@ function ApoyoCierre({ data, setData }) {
     setModalRedencion(false)
     setFormRed({ cliente:'', producto:'', valor:'', notas:'' })
 
-    // Enviar correo via Google Apps Script
     const emailDest = EMAILS[comercialActivo.comercial]
     if(emailDest) {
       setEnviandoEmail(true)
@@ -1946,16 +1908,13 @@ function ApoyoCierre({ data, setData }) {
   const delAsig = id => { const nd={...data,apoyoCierre:apoyos.filter(a=>a.id!==id)};setData(nd);save(nd) }
   const delRed = id => { const nd={...data,redenciones:redenciones.filter(r=>r.id!==id)};setData(nd);save(nd) }
 
-  // Resumen por comercial
   const resumenComerciales = comerciales.map(c=>{
     const asigRows = mesActivo ? apoyos.filter(a=>a.comercial===c&&a.mes===mesActivo) : apoyos.filter(a=>a.comercial===c)
     const redsRows = mesActivo ? redenciones.filter(r=>r.comercial===c&&r.mes===mesActivo) : redenciones.filter(r=>r.comercial===c)
     const meses_c = [...new Set(asigRows.map(a=>a.mes))]
     const totalAsig = asigRows.reduce((s,a)=>s+(Number(a.monto)||0),0)
     const totalRedim = redsRows.reduce((s,r)=>s+(Number(r.valor)||0),0)
-    // Clientes únicos que han redimido
-    const clientesRed = [...new Set(redsRows.map(r=>r.cliente||r.distribuidor).filter(Boolean))]
-    return { comercial:c, meses:meses_c, totalAsig, totalRedim, saldo:totalAsig-totalRedim, redsRows, asigRows, clientesRed }
+    return { comercial:c, meses:meses_c, totalAsig, totalRedim, saldo:totalAsig-totalRedim, redsRows, asigRows }
   }).filter(c=>!mesActivo||c.asigRows.length>0)
 
   const totalAsig = apoyosFiltrados.reduce((s,a)=>s+(Number(a.monto)||0),0)
@@ -1964,8 +1923,6 @@ function ApoyoCierre({ data, setData }) {
   return (
     <div style={{display:'flex',flexDirection:'column',gap:18}}>
       {enviandoEmail&&<div style={{position:'fixed',top:70,right:24,background:'var(--accent)',color:'#fff',padding:'10px 18px',borderRadius:10,fontSize:13,zIndex:400}}>✉️ Enviando correo...</div>}
-
-      {/* Toolbar */}
       <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
         <select value={mesActivo} onChange={e=>setMesActivo(e.target.value)} style={{width:160}}>
           <option value="">Todos los meses</option>
@@ -1976,29 +1933,21 @@ function ApoyoCierre({ data, setData }) {
           <PlusCircle size={15}/> Asignar apoyo
         </button>
       </div>
-
-      {/* KPIs */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}>
         <KpiCard icon={DollarSign} label="Total asignado" value={cop(totalAsig)} sub={mesActivo||'Todos los meses'}/>
         <KpiCard icon={TrendingUp} label="Total redimido" value={cop(totalRedim)} accent="var(--orange)"/>
         <KpiCard icon={BarChart2} label="Saldo disponible" value={cop(totalAsig-totalRedim)} accent={totalAsig-totalRedim<0?'var(--red)':'var(--green)'}/>
       </div>
-
-      {/* Tarjetas por comercial */}
       <div style={{display:'flex',flexDirection:'column',gap:12}}>
         {resumenComerciales.length===0&&(
-          <div style={{...S.card,padding:40,textAlign:'center',color:'var(--text3)'}}>
-            No hay apoyos registrados. Usa <strong>Asignar apoyo</strong>.
-          </div>
+          <div style={{...S.card,padding:40,textAlign:'center',color:'var(--text3)'}}>No hay apoyos registrados. Usa <strong>Asignar apoyo</strong>.</div>
         )}
         {resumenComerciales.map((c,i)=>{
           const pct = c.totalAsig>0?(c.totalRedim/c.totalAsig)*100:0
           const expandido = comercialDetalle===c.comercial
           return (
             <div key={i} style={{...S.card}}>
-              {/* Header comercial */}
-              <div style={{padding:'14px 20px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}}
-                onClick={()=>setComercialDetalle(expandido?null:c.comercial)}>
+              <div style={{padding:'14px 20px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}} onClick={()=>setComercialDetalle(expandido?null:c.comercial)}>
                 <div style={{width:40,height:40,borderRadius:10,background:'var(--accent-soft)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,fontWeight:700,color:'var(--accent2)',flexShrink:0}}>
                   {c.comercial[0]}
                 </div>
@@ -2008,7 +1957,6 @@ function ApoyoCierre({ data, setData }) {
                     {EMAILS[c.comercial]&&<span style={{fontSize:11,color:'var(--text3)'}}>{EMAILS[c.comercial]}</span>}
                     <span style={{fontSize:11,background:'var(--bg4)',color:'var(--text2)',padding:'2px 8px',borderRadius:5}}>{c.meses.join(' · ')}</span>
                   </div>
-                  {/* Barra progreso inline */}
                   <div style={{display:'flex',alignItems:'center',gap:10}}>
                     <div style={{flex:1,height:6,background:'var(--bg4)',borderRadius:3}}>
                       <div style={{width:Math.min(pct,100)+'%',height:'100%',background:pct>100?'var(--red)':pct>80?'var(--yellow)':'var(--orange)',borderRadius:3}}/>
@@ -2027,14 +1975,11 @@ function ApoyoCierre({ data, setData }) {
                   }} style={{...S.btn('var(--orange)','#fff'),fontSize:12,padding:'6px 14px'}}>
                     + Redención
                   </button>
-                  <span style={{fontSize:14,color:'var(--text3)',transition:'transform 0.2s',transform:expandido?'rotate(180deg)':'rotate(0deg)'}}>▼</span>
+                  <span style={{fontSize:14,color:'var(--text3)',transform:expandido?'rotate(180deg)':'rotate(0deg)'}}>▼</span>
                 </div>
               </div>
-
-              {/* Detalle expandido */}
               {expandido&&(
                 <div style={{borderTop:'1px solid var(--border)',padding:'16px 20px',display:'flex',flexDirection:'column',gap:14}}>
-                  {/* Asignaciones por mes */}
                   <div>
                     <div style={{fontSize:10,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:8}}>Asignaciones</div>
                     <div style={{display:'flex',flexDirection:'column',gap:5}}>
@@ -2052,14 +1997,9 @@ function ApoyoCierre({ data, setData }) {
                       ))}
                     </div>
                   </div>
-
-                  {/* Redenciones por cliente */}
                   {c.redsRows.length>0&&(
                     <div>
-                      <div style={{fontSize:10,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:8}}>
-                        Redenciones por cliente
-                      </div>
-                      {/* Agrupar por cliente */}
+                      <div style={{fontSize:10,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:8}}>Redenciones por cliente</div>
                       {[...new Set(c.redsRows.map(r=>r.cliente||r.distribuidor||'Sin cliente'))].map(cliente=>{
                         const redsCliente = c.redsRows.filter(r=>(r.cliente||r.distribuidor||'Sin cliente')===cliente)
                         const totalCliente = redsCliente.reduce((s,r)=>s+(Number(r.valor)||0),0)
@@ -2095,7 +2035,6 @@ function ApoyoCierre({ data, setData }) {
         })}
       </div>
 
-      {/* Modal asignar apoyo */}
       {modalAsignacion&&(
         <Modal title="Asignar apoyo de cierre" onClose={()=>setModalAsignacion(false)}>
           <div style={{display:'flex',flexDirection:'column',gap:14}}>
@@ -2103,24 +2042,15 @@ function ApoyoCierre({ data, setData }) {
               <input list="comerciales-list" value={formAsig.comercial} onChange={e=>setFormAsig({...formAsig,comercial:e.target.value})} placeholder="Nombre del comercial"/>
               <datalist id="comerciales-list">{comerciales.map(c=><option key={c} value={c}/>)}</datalist>
             </Field>
-            <Field label="Distribuidor (para quién es el apoyo)">
+            <Field label="Distribuidor">
               <input list="dist-apoyo" value={formAsig.distribuidor} onChange={e=>setFormAsig({...formAsig,distribuidor:e.target.value})} placeholder="Ej: LUBRICAFE S.A.S."/>
               <datalist id="dist-apoyo">{distribuidores.map(d=><option key={d} value={d}/>)}</datalist>
             </Field>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-              <Field label="Mes *">
-                <select value={formAsig.mes} onChange={e=>setFormAsig({...formAsig,mes:e.target.value})}>
-                  <option value="">Selecciona...</option>
-                  {MESES.map(m=><option key={m}>{m}</option>)}
-                </select>
-              </Field>
-              <Field label="Año">
-                <input type="number" value={formAsig.anio} onChange={e=>setFormAsig({...formAsig,anio:e.target.value})} placeholder="2026"/>
-              </Field>
+              <Field label="Mes *"><select value={formAsig.mes} onChange={e=>setFormAsig({...formAsig,mes:e.target.value})}><option value="">Selecciona...</option>{MESES.map(m=><option key={m}>{m}</option>)}</select></Field>
+              <Field label="Año"><input type="number" value={formAsig.anio} onChange={e=>setFormAsig({...formAsig,anio:e.target.value})} placeholder="2026"/></Field>
             </div>
-            <Field label="Monto asignado (COP) *">
-              <input type="number" value={formAsig.monto} onChange={e=>setFormAsig({...formAsig,monto:e.target.value})} placeholder="Ej: 1200000"/>
-            </Field>
+            <Field label="Monto asignado (COP) *"><input type="number" value={formAsig.monto} onChange={e=>setFormAsig({...formAsig,monto:e.target.value})} placeholder="Ej: 1200000"/></Field>
           </div>
           <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:20}}>
             <button onClick={()=>setModalAsignacion(false)} style={S.btn('var(--bg3)','var(--text2)')}>Cancelar</button>
@@ -2129,32 +2059,22 @@ function ApoyoCierre({ data, setData }) {
         </Modal>
       )}
 
-      {/* Modal redención */}
       {modalRedencion&&comercialActivo&&(
         <Modal title={'Registrar redención — '+comercialActivo.comercial} onClose={()=>setModalRedencion(false)}>
           <div style={{padding:'10px 14px',background:'var(--bg3)',borderRadius:8,marginBottom:14,fontSize:12,color:'var(--text2)',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
             <span>Comercial: <strong>{comercialActivo.comercial}</strong></span>
             {(mesActivo||comercialActivo.mes)&&<span>· Mes: <strong>{mesActivo||comercialActivo.mes}</strong></span>}
-            {(()=>{
-              const s = getSaldo(comercialActivo.comercial, mesActivo||comercialActivo.mes)
-              return s.asignado>0 ? <span>· Saldo: <strong style={{color:s.saldo<0?'var(--red)':'var(--green)'}}>{cop(s.saldo)}</strong></span> : null
-            })()}
+            {(()=>{ const s = getSaldo(comercialActivo.comercial, mesActivo||comercialActivo.mes); return s.asignado>0 ? <span>· Saldo: <strong style={{color:s.saldo<0?'var(--red)':'var(--green)'}}>{cop(s.saldo)}</strong></span> : null })()}
             {EMAILS[comercialActivo.comercial]&&<span style={{color:'var(--text3)'}}>· ✉️ {EMAILS[comercialActivo.comercial]}</span>}
           </div>
           <div style={{display:'flex',flexDirection:'column',gap:14}}>
             <Field label="Cliente que redime *">
-              <input list="clientes-red" value={formRed.cliente} onChange={e=>setFormRed({...formRed,cliente:e.target.value})} placeholder="Ej: LUBRICAFE S.A.S., MAQUINAGRO..."/>
+              <input list="clientes-red" value={formRed.cliente} onChange={e=>setFormRed({...formRed,cliente:e.target.value})} placeholder="Ej: LUBRICAFE S.A.S...."/>
               <datalist id="clientes-red">{distribuidores.map(d=><option key={d} value={d}/>)}</datalist>
             </Field>
-            <Field label="Producto / Concepto redimido *">
-              <input value={formRed.producto} onChange={e=>setFormRed({...formRed,producto:e.target.value})} placeholder="Ej: Producto Plan Expreso, Bono cumplimiento..."/>
-            </Field>
-            <Field label="Valor redimido (COP) *">
-              <input type="number" value={formRed.valor} onChange={e=>setFormRed({...formRed,valor:e.target.value})} placeholder="0"/>
-            </Field>
-            <Field label="Notas">
-              <textarea value={formRed.notas} onChange={e=>setFormRed({...formRed,notas:e.target.value})} rows={2} style={{resize:'vertical'}} placeholder="Observaciones..."/>
-            </Field>
+            <Field label="Producto / Concepto redimido *"><input value={formRed.producto} onChange={e=>setFormRed({...formRed,producto:e.target.value})} placeholder="Ej: Producto Plan Expreso..."/></Field>
+            <Field label="Valor redimido (COP) *"><input type="number" value={formRed.valor} onChange={e=>setFormRed({...formRed,valor:e.target.value})} placeholder="0"/></Field>
+            <Field label="Notas"><textarea value={formRed.notas} onChange={e=>setFormRed({...formRed,notas:e.target.value})} rows={2} style={{resize:'vertical'}} placeholder="Observaciones..."/></Field>
           </div>
           <div style={{background:'rgba(255,159,67,0.08)',border:'1px solid rgba(255,159,67,0.2)',borderRadius:8,padding:'8px 12px',fontSize:11,color:'var(--orange)',marginTop:14}}>
             ✉️ Al registrar se enviará correo automático a <strong>{EMAILS[comercialActivo.comercial]||'comercial'}</strong> con copia a Paola
@@ -2180,7 +2100,7 @@ function exportarExcel(data) {
   const ws2 = XLSX.utils.json_to_sheet(data.ventas.map(v=>({ 'Año':v.anio, Mes:v.mes, Distribuidor:v.distribuidor, Galones:v.galones, 'Venta Neta COP':v.ventaNeta, 'Precio por Galón':v.galones>0?Math.round(v.ventaNeta/v.galones):0 })))
   ws2['!cols']=[8,12,25,12,16,16].map(w=>({wch:w}))
   XLSX.utils.book_append_sheet(wb,ws2,'Ventas')
-  const ws3 = XLSX.utils.json_to_sheet(data.presupuestos.map(p=>{ const inv=data.inversiones.filter(i=>i.mes===p.mes&&i.anio===p.anio).reduce((s,i)=>s+(i.inversion||0),0); return {'Año':p.anio,Mes:p.mes,'Presupuesto COP':p.monto,'Invertido COP':inv,'Diferencia':inv-p.monto,'% Ejec':p.monto>0?((inv/p.monto)*100).toFixed(1)+'%':'0%'} }))
+  const ws3 = XLSX.utils.json_to_sheet(data.presupuestos.map(p=>{ const inv=data.inversiones.filter(i=>normMes(i.mes)===normMes(p.mes)&&i.anio===p.anio).reduce((s,i)=>s+(i.inversion||0),0); return {'Año':p.anio,Mes:p.mes,'Presupuesto COP':p.monto,'Invertido COP':inv,'Diferencia':inv-p.monto,'% Ejec':p.monto>0?((inv/p.monto)*100).toFixed(1)+'%':'0%'} }))
   ws3['!cols']=[8,12,16,14,14,10].map(w=>({wch:w}))
   XLSX.utils.book_append_sheet(wb,ws3,'Presupuesto')
   const ws4 = XLSX.utils.json_to_sheet(data.planes.map(p=>({ Distribuidor:p.distribuidor, 'Año':p.anio, Quarter:p.quarter, Estado:p.estado, 'Tipos de Plan':(p.tiposPlan||[]).join(', '), 'Meta Galones':p.metaGalones, 'Meta Venta COP':p.metaVenta, Condiciones:p.condiciones, Acuerdos:p.acuerdos, Notas:p.notas })))
@@ -2210,16 +2130,14 @@ function parsearExcel(file, data, setData, onDone) {
       }
       const primeraRows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {defval:''})
       const cols0 = primeraRows[0] ? Object.keys(primeraRows[0]) : []
-      // Detect sheet type by columns
       const esInv   = cols0.some(c=>c.toLowerCase().includes('distribuidor'))
       const esGasto = cols0.some(c=>c.toLowerCase().includes('gasto')||c.toLowerCase().includes('nom. producto')||c.toLowerCase().includes('valor factura'))
 
-      // Inversiones
       const invRows = leer('Inversiones') || (esInv && !esGasto ? primeraRows : null)
       if(invRows?.length) {
         const nuevas=invRows.filter(r=>r['Distribuidor']||r['distribuidor']).map((r,i)=>({
           id:Date.now()+i, fecha:String(r['Fecha']||''),
-          anio:Number(r['Año']||r['Ano']||r['año']||2026), mes:String(r['Mes']||'').trim(),
+          anio:Number(r['Año']||r['Ano']||r['año']||2026), mes:normMes(String(r['Mes']||'').trim()),
           distribuidor:String(r['Distribuidor']||r['distribuidor']||'').trim(),
           tipoPlan:String(r['Tipo Plan']||'').trim(), concepto:String(r['Concepto']||'').trim(),
           inversion:parseN(r['Inversión COP']||r['Inversion COP']||r['Inversión']||r['Inversion']||0),
@@ -2228,13 +2146,12 @@ function parsearExcel(file, data, setData, onDone) {
         }))
         if(nuevas.length){data={...data,inversiones:[...data.inversiones,...nuevas]};importados.Inversiones=nuevas.length}
       }
-      // Ventas
       const ventRows = leer('Ventas') || leer('Hoja2')
       if(ventRows?.length) {
         const nuevas=ventRows.filter(r=>r['Distribuidor']||r['distribuidor']).map((r,i)=>({
           id:Date.now()+10000+i,
           anio:Number(r['Año']||r['Ano']||r['año']||2026),
-          mes:String(r['Mes']||r['mes']||'').trim(),
+          mes:normMes(String(r['Mes']||r['mes']||'').trim()),
           distribuidor:String(r['Distribuidor']||r['distribuidor']||'').trim(),
           galones:parseN(r['Galones']||r['galones']||0),
           ventaNeta:parseN(r['Venta Neta']||r['Venta Neta COP']||r['ventaNeta']||0),
@@ -2242,16 +2159,14 @@ function parsearExcel(file, data, setData, onDone) {
         }))
         if(nuevas.length){data={...data,ventas:[...data.ventas,...nuevas]};importados.Ventas=nuevas.length}
       }
-      // Presupuesto mensual
       const presRows = leer('Presupuesto')
       if(presRows?.length) {
         const nuevas=presRows.filter(r=>r['Mes']||r['mes']).map((r,i)=>({
           id:Date.now()+20000+i, anio:Number(r['Año']||r['Ano']||2026),
-          mes:String(r['Mes']||r['mes']||'').trim(), monto:parseN(r['Presupuesto COP']||r['Presupuesto']||0),
+          mes:normMes(String(r['Mes']||r['mes']||'').trim()), monto:parseN(r['Presupuesto COP']||r['Presupuesto']||0),
         }))
         if(nuevas.length){data={...data,presupuestos:[...data.presupuestos,...nuevas]};importados.Presupuesto=nuevas.length}
       }
-      // Planes
       const planRows = leer('Planes')
       if(planRows?.length) {
         const nuevas=planRows.filter(r=>r['Distribuidor']||r['distribuidor']).map((r,i)=>({
@@ -2264,7 +2179,6 @@ function parsearExcel(file, data, setData, onDone) {
         }))
         if(nuevas.length){data={...data,planes:[...data.planes,...nuevas]};importados.Planes=nuevas.length}
       }
-      // Pendientes
       const pendRows = leer('Pendientes')
       if(pendRows?.length) {
         const nuevas=pendRows.filter(r=>r['Distribuidor']||r['distribuidor']).map((r,i)=>({
@@ -2277,7 +2191,6 @@ function parsearExcel(file, data, setData, onDone) {
         }))
         if(nuevas.length){data={...data,pendientes:[...data.pendientes,...nuevas]};importados.Pendientes=nuevas.length}
       }
-      // Gastos de presupuesto
       const gastosRows = leer('Presupuesto Mercadeo') || leer('Presupuesto Gastos') || leer('Control Presupuesto') || (esGasto ? primeraRows : null)
       if(gastosRows?.length) {
         const nuevas=gastosRows
@@ -2298,7 +2211,7 @@ function parsearExcel(file, data, setData, onDone) {
             return {
               id: Date.now()+50000+i,
               anio: Number(r['Año']||r['Ano']||2026),
-              mes: String(r['Mes']||'Sin mes').trim(),
+              mes: normMes(String(r['Mes']||'Sin mes').trim()),
               gasto: String(r['Gasto (Nom. Producto, Cliente)']||r['Gasto']||'').trim(),
               valorFactura,
               canal: String(r['Canal']||'').trim(),
@@ -2318,7 +2231,6 @@ function parsearExcel(file, data, setData, onDone) {
           importados['Presupuesto gastos']=nuevas.length
         }
       }
-
       setData(data);save(data)
       onDone({importados,errores:[]})
     } catch(err) { onDone({importados:{},errores:['Error: '+err.message]}) }
@@ -2355,12 +2267,12 @@ function Asistente({ data, setData, onClose }) {
         return '✅ Pendiente creado: **'+nuevo.tarea+'** para '+nuevo.distribuidor
       }
       if(obj.tipo==='crear_inversion'){
-        const nueva={id:Date.now(),fecha:obj.fecha||new Date().toISOString().slice(0,10),anio:Number(obj.anio||new Date().getFullYear()),mes:obj.mes||'',distribuidor:obj.distribuidor||'',tipoPlan:obj.tipoPlan||'',concepto:obj.concepto||'',inversion:Number(obj.inversion||0),galonesPlan:obj.galonesPlan||'',notas:obj.notas||''}
+        const nueva={id:Date.now(),fecha:obj.fecha||new Date().toISOString().slice(0,10),anio:Number(obj.anio||new Date().getFullYear()),mes:normMes(obj.mes||''),distribuidor:obj.distribuidor||'',tipoPlan:obj.tipoPlan||'',concepto:obj.concepto||'',inversion:Number(obj.inversion||0),galonesPlan:obj.galonesPlan||'',notas:obj.notas||''}
         const nd={...currentData,inversiones:[...currentData.inversiones,nueva]}; setData(nd); save(nd)
         return '✅ Inversión registrada: '+nueva.distribuidor+' — '+cop(nueva.inversion)
       }
       if(obj.tipo==='crear_presupuesto'){
-        const nuevo={id:Date.now(),anio:Number(obj.anio||new Date().getFullYear()),mes:obj.mes||'',monto:Number(obj.monto||0)}
+        const nuevo={id:Date.now(),anio:Number(obj.anio||new Date().getFullYear()),mes:normMes(obj.mes||''),monto:Number(obj.monto||0)}
         const nd={...currentData,presupuestos:[...currentData.presupuestos,nuevo]}; setData(nd); save(nd)
         return '✅ Presupuesto creado: '+nuevo.mes+' '+nuevo.anio+' — '+cop(nuevo.monto)
       }
@@ -2441,20 +2353,6 @@ Responde en español, conciso y útil.`
 }
 
 // ═══════════════════════════════════════════════════════
-// APP PRINCIPAL
-// ═══════════════════════════════════════════════════════
-const TABS = [
-  {id:'dashboard',  label:'Dashboard',   icon:LayoutDashboard},
-  {id:'inversiones',label:'Inversiones', icon:TrendingUp},
-  {id:'ventas',     label:'Ventas',      icon:ShoppingCart},
-  {id:'planes',     label:'Planes Q',    icon:BookOpen},
-  {id:'presupuesto',label:'Presupuesto', icon:DollarSign},
-  {id:'pendientes', label:'Pendientes',  icon:ListTodo},
-  {id:'apoyocierre', label:'Apoyo Cierre', icon:DollarSign},
-]
-
-
-// ═══════════════════════════════════════════════════════
 // SISTEMA DE USUARIOS
 // ═══════════════════════════════════════════════════════
 const USUARIOS = [
@@ -2470,6 +2368,11 @@ const getStorageKey = uid => 'tracker_v3_'+uid
 
 function getSessionUser() {
   try { const s=localStorage.getItem(AUTH_KEY); return s?JSON.parse(s):null } catch { return null }
+}
+
+function hexToRgb(hex) {
+  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16)
+  return r+','+g+','+b
 }
 
 function LoginScreen({ onLogin }) {
@@ -2494,7 +2397,6 @@ function LoginScreen({ onLogin }) {
           <h1 style={{fontSize:22,fontWeight:700,letterSpacing:'-0.02em',marginBottom:6}}>Prolub Trade Marketing</h1>
           <p style={{fontSize:13,color:'var(--text3)'}}>Selecciona tu unidad y accede</p>
         </div>
-
         <div style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:16,padding:28,display:'flex',flexDirection:'column',gap:16}}>
           <div>
             <label style={{fontSize:11,color:'var(--text2)',fontWeight:500,textTransform:'uppercase',letterSpacing:'0.05em',display:'block',marginBottom:10}}>Unidad de negocio</label>
@@ -2510,21 +2412,14 @@ function LoginScreen({ onLogin }) {
               ))}
             </div>
           </div>
-
           {selUser&&(
             <div style={{display:'flex',flexDirection:'column',gap:10}}>
               <div>
                 <label style={{fontSize:11,color:'var(--text2)',fontWeight:500,textTransform:'uppercase',letterSpacing:'0.05em',display:'block',marginBottom:6}}>Contraseña</label>
-                <input type="password" value={pass} onChange={e=>setPass(e.target.value)}
-                  onKeyDown={e=>e.key==='Enter'&&intentar()}
-                  placeholder="Ingresa tu contraseña" autoFocus
-                  style={{width:'100%',padding:'10px 14px',fontSize:14,borderRadius:10}}/>
+                <input type="password" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==='Enter'&&intentar()} placeholder="Ingresa tu contraseña" autoFocus style={{width:'100%',padding:'10px 14px',fontSize:14,borderRadius:10}}/>
               </div>
               {error&&<div style={{fontSize:12,color:'var(--red)',textAlign:'center'}}>{error}</div>}
-              <button onClick={intentar}
-                style={{background:'var(--accent)',color:'#fff',border:'none',borderRadius:10,padding:'11px',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>
-                Entrar →
-              </button>
+              <button onClick={intentar} style={{background:'var(--accent)',color:'#fff',border:'none',borderRadius:10,padding:'11px',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'var(--font)'}}>Entrar →</button>
             </div>
           )}
         </div>
@@ -2533,13 +2428,9 @@ function LoginScreen({ onLogin }) {
   )
 }
 
-// Helper para convertir hex a rgb
-function hexToRgb(hex) {
-  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16)
-  return r+','+g+','+b
-}
-
-// Dashboard consolidado para Líder
+// ═══════════════════════════════════════════════════════
+// DASHBOARD CONSOLIDADO — LÍDER
+// ═══════════════════════════════════════════════════════
 function DashboardLider() {
   const [tabLider, setTabLider] = useState('dashboard')
   const [filtroUnidad, setFiltroUnidad] = useState('')
@@ -2547,7 +2438,6 @@ function DashboardLider() {
   const [modalPendiente, setModalPendiente] = useState(false)
   const [formPend, setFormPend] = useState({unidad:'', distribuidor:'', tarea:'', categoria:'', fechaLimite:'', prioridad:'Media', estado:'Pendiente', responsable:'', notas:''})
 
-  // Cargar datos de todas las unidades normales
   const unidades = USUARIOS.filter(u=>u.rol==='normal')
   const allData = unidades.map(u=>{
     try { const d=localStorage.getItem(getStorageKey(u.id)); return d?{...JSON.parse(d),_id:u.id,_unidad:u.nombre,_color:u.color}:{inversiones:[],ventas:[],planes:[],presupuestos:[],pendientes:[],gastosPresupuesto:[],_id:u.id,_unidad:u.nombre,_color:u.color} } catch { return {inversiones:[],ventas:[],planes:[],presupuestos:[],pendientes:[],gastosPresupuesto:[],_id:u.id,_unidad:u.nombre,_color:u.color} }
@@ -2555,56 +2445,45 @@ function DashboardLider() {
 
   const filtered = filtroUnidad ? allData.filter(d=>d._id===filtroUnidad) : allData
 
-  // KPIs globales
-  const totalInv = filtered.reduce((s,d)=>s+d.inversiones.filter(i=>!filtroMes||i.mes===filtroMes).reduce((ss,i)=>ss+(Number(i.inversion)||0),0),0)
-  const totalVenta = filtered.reduce((s,d)=>s+d.ventas.filter(v=>!filtroMes||v.mes===filtroMes).reduce((ss,v)=>ss+(Number(v.ventaNeta)||0),0),0)
-  const totalPres = filtered.reduce((s,d)=>s+d.presupuestos.filter(p=>!filtroMes||p.mes===filtroMes).reduce((ss,p)=>ss+(Number(p.monto)||0),0),0)
-  const totalGastos = filtered.reduce((s,d)=>s+(d.gastosPresupuesto||[]).filter(g=>!filtroMes||g.mes===filtroMes).reduce((ss,g)=>ss+(Number(g.valorFactura)||0),0),0)
+  const totalInv = filtered.reduce((s,d)=>s+d.inversiones.filter(i=>!filtroMes||normMes(i.mes)===normMes(filtroMes)).reduce((ss,i)=>ss+(Number(i.inversion)||0),0),0)
+  const totalVenta = filtered.reduce((s,d)=>s+d.ventas.filter(v=>!filtroMes||normMes(v.mes)===normMes(filtroMes)).reduce((ss,v)=>ss+(Number(v.ventaNeta)||0),0),0)
+  const totalPres = filtered.reduce((s,d)=>s+d.presupuestos.filter(p=>!filtroMes||normMes(p.mes)===normMes(filtroMes)).reduce((ss,p)=>ss+(Number(p.monto)||0),0),0)
+  const totalGastos = filtered.reduce((s,d)=>s+(d.gastosPresupuesto||[]).filter(g=>!filtroMes||normMes(g.mes)===normMes(filtroMes)).reduce((ss,g)=>ss+(Number(g.valorFactura)||0),0),0)
   const roiPct = totalVenta>0?(totalInv/totalVenta)*100:0
 
-  // Por unidad
   const porUnidad = filtered.map(d=>{
-    const inv=d.inversiones.filter(i=>!filtroMes||i.mes===filtroMes).reduce((s,i)=>s+(Number(i.inversion)||0),0)
-    const venta=d.ventas.filter(v=>!filtroMes||v.mes===filtroMes).reduce((s,v)=>s+(Number(v.ventaNeta)||0),0)
-    const pres=d.presupuestos.filter(p=>!filtroMes||p.mes===filtroMes).reduce((s,p)=>s+(Number(p.monto)||0),0)
-    const gastos=(d.gastosPresupuesto||[]).filter(g=>!filtroMes||g.mes===filtroMes).reduce((s,g)=>s+(Number(g.valorFactura)||0),0)
+    const inv=d.inversiones.filter(i=>!filtroMes||normMes(i.mes)===normMes(filtroMes)).reduce((s,i)=>s+(Number(i.inversion)||0),0)
+    const venta=d.ventas.filter(v=>!filtroMes||normMes(v.mes)===normMes(filtroMes)).reduce((s,v)=>s+(Number(v.ventaNeta)||0),0)
+    const pres=d.presupuestos.filter(p=>!filtroMes||normMes(p.mes)===normMes(filtroMes)).reduce((s,p)=>s+(Number(p.monto)||0),0)
+    const gastos=(d.gastosPresupuesto||[]).filter(g=>!filtroMes||normMes(g.mes)===normMes(filtroMes)).reduce((s,g)=>s+(Number(g.valorFactura)||0),0)
     return {unidad:d._unidad,color:d._color,id:d._id,inv,venta,pres,gastos,pctInv:venta>0?(inv/venta)*100:0,pctEjec:pres>0?(gastos/pres)*100:0,pendientes:d.pendientes.filter(p=>p.estado!=='Listo'&&p.estado!=='Cancelado').length}
   })
 
-  // Por mes (para gráfica)
   const porMesChart = MESES.map(m=>({
     name:m.slice(0,3),
-    inv: filtered.reduce((s,d)=>s+d.inversiones.filter(i=>i.mes===m).reduce((ss,i)=>ss+(Number(i.inversion)||0),0),0),
-    venta: filtered.reduce((s,d)=>s+d.ventas.filter(v=>v.mes===m).reduce((ss,v)=>ss+(Number(v.ventaNeta)||0),0),0),
-    gastos: filtered.reduce((s,d)=>s+(d.gastosPresupuesto||[]).filter(g=>g.mes===m).reduce((ss,g)=>ss+(Number(g.valorFactura)||0),0),0),
+    inv: filtered.reduce((s,d)=>s+d.inversiones.filter(i=>normMes(i.mes)===m).reduce((ss,i)=>ss+(Number(i.inversion)||0),0),0),
+    venta: filtered.reduce((s,d)=>s+d.ventas.filter(v=>normMes(v.mes)===m).reduce((ss,v)=>ss+(Number(v.ventaNeta)||0),0),0),
+    gastos: filtered.reduce((s,d)=>s+(d.gastosPresupuesto||[]).filter(g=>normMes(g.mes)===m).reduce((ss,g)=>ss+(Number(g.valorFactura)||0),0),0),
   })).filter(m=>m.inv>0||m.venta>0||m.gastos>0)
 
-  // Top clientes/distribuidores por inversión
   const clientesMap = {}
   filtered.forEach(d=>{
-    d.inversiones.filter(i=>!filtroMes||i.mes===filtroMes).forEach(i=>{
-      const k = i.distribuidor
-      if(!k) return
+    d.inversiones.filter(i=>!filtroMes||normMes(i.mes)===normMes(filtroMes)).forEach(i=>{
+      const k = i.distribuidor; if(!k) return
       if(!clientesMap[k]) clientesMap[k]={nombre:k,inv:0,venta:0,unidad:d._unidad,color:d._color}
       clientesMap[k].inv += Number(i.inversion)||0
     })
-    d.ventas.filter(v=>!filtroMes||v.mes===filtroMes).forEach(v=>{
-      const k = v.distribuidor
-      if(!k) return
+    d.ventas.filter(v=>!filtroMes||normMes(v.mes)===normMes(filtroMes)).forEach(v=>{
+      const k = v.distribuidor; if(!k) return
       if(!clientesMap[k]) clientesMap[k]={nombre:k,inv:0,venta:0,unidad:d._unidad,color:d._color}
       clientesMap[k].venta += Number(v.ventaNeta)||0
     })
   })
   const topClientes = Object.values(clientesMap).sort((a,b)=>b.inv-a.inv).slice(0,15)
 
-  // Todas las actividades/pendientes
-  const todasActividades = filtered.flatMap(d=>
-    d.pendientes.map(p=>({...p,_unidad:d._unidad,_color:d._color,_uid:d._id}))
-  ).sort((a,b)=>['Alta','Media','Baja'].indexOf(a.prioridad)-['Alta','Media','Baja'].indexOf(b.prioridad))
-
+  const todasActividades = filtered.flatMap(d=>d.pendientes.map(p=>({...p,_unidad:d._unidad,_color:d._color,_uid:d._id}))).sort((a,b)=>['Alta','Media','Baja'].indexOf(a.prioridad)-['Alta','Media','Baja'].indexOf(b.prioridad))
   const actFiltradas = todasActividades.filter(a=>!filtroUnidad||a._uid===filtroUnidad)
 
-  // Guardar pendiente en unidad destino
   const crearPendiente = () => {
     if(!formPend.unidad||!formPend.tarea) return
     const u = USUARIOS.find(u=>u.id===formPend.unidad)
@@ -2623,7 +2502,7 @@ function DashboardLider() {
     } catch(e) { alert('Error: '+e.message) }
   }
 
-  const CT = ({active,payload,label}) => {
+  const CT2 = ({active,payload,label}) => {
     if(!active||!payload?.length) return null
     return <div style={{background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:10,padding:'10px 14px',fontSize:12}}>
       <p style={{fontWeight:600,marginBottom:4}}>{label}</p>
@@ -2635,7 +2514,6 @@ function DashboardLider() {
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:20}}>
-      {/* Sub-navegación */}
       <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
         <div style={{display:'flex',gap:4,background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,padding:4}}>
           {TABS_L.map(t=>(
@@ -2655,13 +2533,10 @@ function DashboardLider() {
         </select>
         {(filtroUnidad||filtroMes)&&<button onClick={()=>{setFiltroUnidad('');setFiltroMes('')}} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:12}}>✕</button>}
         {tabLider==='actividades'&&(
-          <button onClick={()=>setModalPendiente(true)} style={{...S.btn('var(--accent)','#fff'),marginLeft:'auto'}}>
-            <PlusCircle size={14}/> Asignar actividad
-          </button>
+          <button onClick={()=>setModalPendiente(true)} style={{...S.btn('var(--accent)','#fff'),marginLeft:'auto'}}><PlusCircle size={14}/> Asignar actividad</button>
         )}
       </div>
 
-      {/* KPIs siempre visibles */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:12}}>
         <KpiCard icon={TrendingUp} label="Inversión total" value={cop(totalInv)} sub={filtroMes||'Acumulado'} accent="var(--accent2)"/>
         <KpiCard icon={ShoppingCart} label="Venta neta" value={cop(totalVenta)} accent="var(--green)"/>
@@ -2671,10 +2546,8 @@ function DashboardLider() {
         <KpiCard icon={ListTodo} label="Actividades abiertas" value={actFiltradas.filter(a=>a.estado!=='Listo'&&a.estado!=='Cancelado').length} accent="var(--yellow)"/>
       </div>
 
-      {/* ── DASHBOARD ── */}
       {tabLider==='dashboard'&&(
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          {/* Gráficas */}
           <div style={{display:'grid',gridTemplateColumns:'1.4fr 1fr',gap:16}}>
             <div style={{...S.card,padding:20}}>
               <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:14}}>Inversión vs Venta por mes</h4>
@@ -2682,7 +2555,7 @@ function DashboardLider() {
                 <BarChart data={porMesChart} barGap={3}>
                   <XAxis dataKey="name" tick={{fill:'var(--text3)',fontSize:11}} axisLine={false} tickLine={false}/>
                   <YAxis tickFormatter={v=>(v/1000000).toFixed(0)+'M'} tick={{fill:'var(--text3)',fontSize:10}} axisLine={false} tickLine={false}/>
-                  <Tooltip content={<CT/>}/>
+                  <Tooltip content={<CT2/>}/>
                   <Bar dataKey="venta" name="Venta neta" fill="var(--green)" radius={[4,4,0,0]} opacity={0.7}/>
                   <Bar dataKey="inv" name="Inversión" fill="var(--accent)" radius={[4,4,0,0]}/>
                   <Bar dataKey="gastos" name="Gastos presup." fill="var(--orange)" radius={[4,4,0,0]}/>
@@ -2702,8 +2575,6 @@ function DashboardLider() {
               </ResponsiveContainer>
             </div>
           </div>
-
-          {/* Tabla por unidad */}
           <div style={S.card}>
             <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}><h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Resumen por unidad de negocio</h4></div>
             <table style={{width:'100%',borderCollapse:'collapse'}}>
@@ -2737,7 +2608,6 @@ function DashboardLider() {
         </div>
       )}
 
-      {/* ── ACTIVIDADES ── */}
       {tabLider==='actividades'&&(
         <div style={S.card}>
           <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
@@ -2770,7 +2640,6 @@ function DashboardLider() {
         </div>
       )}
 
-      {/* ── POR CLIENTE ── */}
       {tabLider==='clientes'&&(
         <div style={S.card}>
           <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}><h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Inversión por cliente/distribuidor</h4></div>
@@ -2810,18 +2679,16 @@ function DashboardLider() {
         </div>
       )}
 
-      {/* ── PRESUPUESTO ── */}
       {tabLider==='presupuesto'&&(
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          {/* Por mes */}
           <div style={S.card}>
             <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}><h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Presupuesto ejecutado vs asignado por mes</h4></div>
             <table style={{width:'100%',borderCollapse:'collapse'}}>
               <thead><tr>{['Mes','Asignado','Ejecutado','Disponible','% Ejec.','Barra'].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
               <tbody>
                 {MESES.map(m=>{
-                  const pres=filtered.reduce((s,d)=>s+d.presupuestos.filter(p=>p.mes===m).reduce((ss,p)=>ss+(Number(p.monto)||0),0),0)
-                  const gastado=filtered.reduce((s,d)=>s+(d.gastosPresupuesto||[]).filter(g=>g.mes===m).reduce((ss,g)=>ss+(Number(g.valorFactura)||0),0),0)
+                  const pres=filtered.reduce((s,d)=>s+d.presupuestos.filter(p=>normMes(p.mes)===m).reduce((ss,p)=>ss+(Number(p.monto)||0),0),0)
+                  const gastado=filtered.reduce((s,d)=>s+(d.gastosPresupuesto||[]).filter(g=>normMes(g.mes)===m).reduce((ss,g)=>ss+(Number(g.valorFactura)||0),0),0)
                   if(pres===0&&gastado===0) return null
                   const ejec=pres>0?(gastado/pres)*100:0
                   return (
@@ -2845,16 +2712,14 @@ function DashboardLider() {
               </tbody>
             </table>
           </div>
-
-          {/* Por unidad */}
           <div style={S.card}>
             <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}><h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Por unidad de negocio</h4></div>
             <table style={{width:'100%',borderCollapse:'collapse'}}>
               <thead><tr>{['Unidad','Presupuesto','Ejecutado','Disponible','% Ejec.'].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
               <tbody>
                 {filtered.map((d,i)=>{
-                  const pres=d.presupuestos.filter(p=>!filtroMes||p.mes===filtroMes).reduce((s,p)=>s+(Number(p.monto)||0),0)
-                  const gastado=(d.gastosPresupuesto||[]).filter(g=>!filtroMes||g.mes===filtroMes).reduce((s,g)=>s+(Number(g.valorFactura)||0),0)
+                  const pres=d.presupuestos.filter(p=>!filtroMes||normMes(p.mes)===normMes(filtroMes)).reduce((s,p)=>s+(Number(p.monto)||0),0)
+                  const gastado=(d.gastosPresupuesto||[]).filter(g=>!filtroMes||normMes(g.mes)===normMes(filtroMes)).reduce((s,g)=>s+(Number(g.valorFactura)||0),0)
                   const ejec=pres>0?(gastado/pres)*100:0
                   return (
                     <tr key={i}>
@@ -2872,39 +2737,17 @@ function DashboardLider() {
         </div>
       )}
 
-      {/* Modal asignar actividad */}
       {modalPendiente&&(
         <Modal title="Asignar actividad a unidad" onClose={()=>setModalPendiente(false)} wide>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
-            <Field label="Unidad destino *">
-              <select value={formPend.unidad} onChange={e=>setFormPend({...formPend,unidad:e.target.value})}>
-                <option value="">Selecciona unidad...</option>
-                {unidades.map(u=><option key={u.id} value={u.id}>{u.nombre}</option>)}
-              </select>
-            </Field>
-            <Field label="Distribuidor (opcional)">
-              <input value={formPend.distribuidor} onChange={e=>setFormPend({...formPend,distribuidor:e.target.value})} placeholder="Nombre del distribuidor..."/>
-            </Field>
-            <Field label="Tarea / Actividad *" span>
-              <input value={formPend.tarea} onChange={e=>setFormPend({...formPend,tarea:e.target.value})} placeholder="Describe la actividad..."/>
-            </Field>
-            <Field label="Categoría">
-              <input value={formPend.categoria} onChange={e=>setFormPend({...formPend,categoria:e.target.value})} placeholder="Ej: Seguimiento, Diseño..."/>
-            </Field>
-            <Field label="Fecha límite">
-              <input type="date" value={formPend.fechaLimite} onChange={e=>setFormPend({...formPend,fechaLimite:e.target.value})}/>
-            </Field>
-            <Field label="Prioridad">
-              <select value={formPend.prioridad} onChange={e=>setFormPend({...formPend,prioridad:e.target.value})}>
-                {['Alta','Media','Baja'].map(p=><option key={p}>{p}</option>)}
-              </select>
-            </Field>
-            <Field label="Responsable">
-              <input value={formPend.responsable} onChange={e=>setFormPend({...formPend,responsable:e.target.value})} placeholder="Nombre..."/>
-            </Field>
-            <Field label="Notas" span>
-              <textarea value={formPend.notas} onChange={e=>setFormPend({...formPend,notas:e.target.value})} rows={2} style={{resize:'vertical'}} placeholder="Detalles adicionales..."/>
-            </Field>
+            <Field label="Unidad destino *"><select value={formPend.unidad} onChange={e=>setFormPend({...formPend,unidad:e.target.value})}><option value="">Selecciona unidad...</option>{unidades.map(u=><option key={u.id} value={u.id}>{u.nombre}</option>)}</select></Field>
+            <Field label="Distribuidor (opcional)"><input value={formPend.distribuidor} onChange={e=>setFormPend({...formPend,distribuidor:e.target.value})} placeholder="Nombre del distribuidor..."/></Field>
+            <Field label="Tarea / Actividad *" span><input value={formPend.tarea} onChange={e=>setFormPend({...formPend,tarea:e.target.value})} placeholder="Describe la actividad..."/></Field>
+            <Field label="Categoría"><input value={formPend.categoria} onChange={e=>setFormPend({...formPend,categoria:e.target.value})} placeholder="Ej: Seguimiento, Diseño..."/></Field>
+            <Field label="Fecha límite"><input type="date" value={formPend.fechaLimite} onChange={e=>setFormPend({...formPend,fechaLimite:e.target.value})}/></Field>
+            <Field label="Prioridad"><select value={formPend.prioridad} onChange={e=>setFormPend({...formPend,prioridad:e.target.value})}>{['Alta','Media','Baja'].map(p=><option key={p}>{p}</option>)}</select></Field>
+            <Field label="Responsable"><input value={formPend.responsable} onChange={e=>setFormPend({...formPend,responsable:e.target.value})} placeholder="Nombre..."/></Field>
+            <Field label="Notas" span><textarea value={formPend.notas} onChange={e=>setFormPend({...formPend,notas:e.target.value})} rows={2} style={{resize:'vertical'}} placeholder="Detalles adicionales..."/></Field>
           </div>
           <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:20}}>
             <button onClick={()=>setModalPendiente(false)} style={S.btn('var(--bg3)','var(--text2)')}>Cancelar</button>
@@ -2916,16 +2759,17 @@ function DashboardLider() {
   )
 }
 
+// ═══════════════════════════════════════════════════════
+// PRESUPUESTO CONSOLIDADO
+// ═══════════════════════════════════════════════════════
 function PresupuestoConsolidado() {
   const allData = USUARIOS.filter(u=>u.rol==='normal').map(u=>{
     try { const d=localStorage.getItem(getStorageKey(u.id)); return d?{...JSON.parse(d),_unidad:u.nombre,_color:u.color}:null } catch { return null }
   }).filter(Boolean)
 
-  const MESES_LISTA = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
-
-  const porMes = MESES_LISTA.map(m=>{
-    const pres = allData.reduce((s,d)=>s+d.presupuestos.filter(p=>p.mes===m).reduce((ss,p)=>ss+(Number(p.monto)||0),0),0)
-    const gastado = allData.reduce((s,d)=>s+(d.gastosPresupuesto||[]).filter(g=>g.mes===m).reduce((ss,g)=>ss+(Number(g.valorFactura)||0),0),0)
+  const porMes = MESES.map(m=>{
+    const pres = allData.reduce((s,d)=>s+d.presupuestos.filter(p=>normMes(p.mes)===m).reduce((ss,p)=>ss+(Number(p.monto)||0),0),0)
+    const gastado = allData.reduce((s,d)=>s+(d.gastosPresupuesto||[]).filter(g=>normMes(g.mes)===m).reduce((ss,g)=>ss+(Number(g.valorFactura)||0),0),0)
     return {mes:m,pres,gastado,ejec:pres>0?(gastado/pres)*100:0}
   }).filter(r=>r.pres>0||r.gastado>0)
 
@@ -2942,8 +2786,7 @@ function PresupuestoConsolidado() {
         <KpiCard icon={TrendingUp} label="Total ejecutado" value={cop(totalGastado)} accent="var(--accent2)"/>
         <KpiCard icon={BarChart2} label="% Ejecutado global" value={totalPres>0?((totalGastado/totalPres)*100).toFixed(1)+'%':'—'} accent={totalGastado>totalPres?'var(--red)':'var(--green)'}/>
       </div>
-
-      <div style={{...S.card}}>
+      <div style={S.card}>
         <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}><h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Ejecutado vs Presupuesto por mes — Consolidado</h4></div>
         <table style={{width:'100%',borderCollapse:'collapse'}}>
           <thead><tr>{['Mes','Presupuesto','Ejecutado','Disponible','% Ejec.','Barra'].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
@@ -2955,11 +2798,7 @@ function PresupuestoConsolidado() {
                 <td style={{...S.td,fontFamily:'var(--mono)'}}>{cop(r.gastado)}</td>
                 <td style={{...S.td,fontFamily:'var(--mono)',color:r.pres-r.gastado>=0?'var(--green)':'var(--red)'}}>{cop(r.pres-r.gastado)}</td>
                 <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:600,color:r.ejec>100?'var(--red)':r.ejec>80?'var(--yellow)':'var(--green)'}}>{r.ejec.toFixed(1)}%</td>
-                <td style={{...S.td,minWidth:120}}>
-                  <div style={{height:6,background:'var(--bg4)',borderRadius:3}}>
-                    <div style={{width:Math.min(r.ejec,100)+'%',height:'100%',background:r.ejec>100?'var(--red)':r.ejec>80?'var(--yellow)':'var(--green)',borderRadius:3}}/>
-                  </div>
-                </td>
+                <td style={{...S.td,minWidth:120}}><div style={{height:6,background:'var(--bg4)',borderRadius:3}}><div style={{width:Math.min(r.ejec,100)+'%',height:'100%',background:r.ejec>100?'var(--red)':r.ejec>80?'var(--yellow)':'var(--green)',borderRadius:3}}/></div></td>
               </tr>
             ))}
             <tr style={{borderTop:'2px solid var(--border2)',background:'var(--bg3)'}}>
@@ -2972,8 +2811,6 @@ function PresupuestoConsolidado() {
           </tbody>
         </table>
       </div>
-
-      {/* Por unidad */}
       <div style={S.card}>
         <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}><h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Por unidad de negocio</h4></div>
         <table style={{width:'100%',borderCollapse:'collapse'}}>
@@ -2985,12 +2822,7 @@ function PresupuestoConsolidado() {
               const ejec=pres>0?(gastado/pres)*100:0
               return (
                 <tr key={i}>
-                  <td style={{...S.td,fontWeight:600}}>
-                    <div style={{display:'flex',alignItems:'center',gap:8}}>
-                      <div style={{width:10,height:10,borderRadius:'50%',background:d._color}}/>
-                      {d._unidad}
-                    </div>
-                  </td>
+                  <td style={{...S.td,fontWeight:600}}><div style={{display:'flex',alignItems:'center',gap:8}}><div style={{width:10,height:10,borderRadius:'50%',background:d._color}}/>{d._unidad}</div></td>
                   <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--text2)'}}>{cop(pres)}</td>
                   <td style={{...S.td,fontFamily:'var(--mono)'}}>{cop(gastado)}</td>
                   <td style={{...S.td,fontFamily:'var(--mono)',color:pres-gastado>=0?'var(--green)':'var(--red)'}}>{cop(pres-gastado)}</td>
@@ -3005,16 +2837,17 @@ function PresupuestoConsolidado() {
   )
 }
 
+// ═══════════════════════════════════════════════════════
+// APP PRINCIPAL
+// ═══════════════════════════════════════════════════════
 export default function App() {
   const [usuario, setUsuario] = useState(getSessionUser)
   const [tab, setTab] = useState('dashboard')
   const [importResult, setImportResult] = useState(null)
   const [importando, setImportando] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
-
-  // Cargar datos del usuario actual
   const [sheetsLoading, setSheetsLoading] = useState(false)
-  const [sheetsSync, setSheetsSync] = useState(null) // 'syncing' | 'ok' | 'error'
+  const [sheetsSync, setSheetsSync] = useState(null)
 
   const loadUser = (uid) => {
     if(!uid) { _currentUserKey = STORAGE_KEY; return load() }
@@ -3023,18 +2856,15 @@ export default function App() {
   }
   const [data, setData] = useState(()=>loadUser(usuario?.id))
 
-  // Al cambiar usuario recargar sus datos + intentar cargar desde Sheets
   useEffect(()=>{
     if(!usuario) return
     setData(loadUser(usuario.id))
-    // Si es Distribución, intentar cargar desde Sheets
     if(SHEETS_CONFIG[usuario.id]?.enabled) {
       setSheetsLoading(true)
       setSheetsSync('syncing')
       cargarDesdeSheets(usuario.id).then(sheetData => {
         setSheetsLoading(false)
         if(sheetData) {
-          // Sheets es la fuente de verdad — reemplaza todo
           setData(sheetData)
           _currentUserKey = getStorageKey(usuario.id)
           localStorage.setItem(_currentUserKey, JSON.stringify(sheetData))
@@ -3050,7 +2880,6 @@ export default function App() {
     if(!usuario) return
     _currentUserKey = getStorageKey(usuario.id)
     localStorage.setItem(_currentUserKey, JSON.stringify(d))
-    // Solo sincronizar si se pasa una fila específica (insertar/eliminar)
     if(SHEETS_CONFIG[usuario.id]?.enabled && opts.insertar) {
       setSheetsSync('syncing')
       insertarFilaSheets(usuario.id, opts.tipo, opts.insertar)
@@ -3066,7 +2895,6 @@ export default function App() {
   }
 
   const setDataUser = (d, opts={}) => { setData(d); saveUser(d, opts) }
-  // Make global save() also sync to Sheets for current user
   window._sheetsSyncFn = (d, opts) => saveUser(d, opts)
 
   const cerrarSesion = () => { localStorage.removeItem(AUTH_KEY); setUsuario(null); setTab('dashboard') }
@@ -3084,12 +2912,8 @@ export default function App() {
   const esLider = usuario.rol==='lider'
   const esPresupuesto = usuario.rol==='presupuesto'
 
-  const TABS_LIDER = [
-    {id:'dashboard',label:'Dashboard Consolidado',icon:LayoutDashboard},
-  ]
-  const TABS_PRES = [
-    {id:'dashboard',label:'Presupuesto Consolidado',icon:DollarSign},
-  ]
+  const TABS_LIDER = [{id:'dashboard',label:'Dashboard Consolidado',icon:LayoutDashboard}]
+  const TABS_PRES = [{id:'dashboard',label:'Presupuesto Consolidado',icon:DollarSign}]
   const TABS_NORMAL = [
     {id:'dashboard',  label:'Dashboard',   icon:LayoutDashboard},
     {id:'inversiones',label:'Inversiones', icon:TrendingUp},
@@ -3099,7 +2923,6 @@ export default function App() {
     {id:'pendientes', label:'Pendientes',  icon:ListTodo},
     {id:'apoyocierre', label:'Apoyo Cierre', icon:DollarSign},
   ]
-
   const tabs = esLider?TABS_LIDER:esPresupuesto?TABS_PRES:TABS_NORMAL
 
   return (
@@ -3117,7 +2940,6 @@ export default function App() {
             </button>
           )})}
         </nav>
-        {/* Usuario badge */}
         <div style={{display:'flex',alignItems:'center',gap:10,marginLeft:8,flexShrink:0}}>
           <div style={{display:'flex',alignItems:'center',gap:7,background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:20,padding:'4px 12px'}}>
             <div style={{width:8,height:8,borderRadius:'50%',background:usuario.color}}/>
