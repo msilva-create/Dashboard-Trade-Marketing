@@ -27,7 +27,7 @@ const HOJA_MAP = {
 const CAMPOS_MAP = {
   inversiones:  { id:'id', fecha:'Fecha', anio:'Año', mes:'Mes', distribuidor:'Distribuidor', tipoPlan:'Tipo Plan', concepto:'Concepto', inversion:'Inversión', galonesPlan:'Gal. Plan', notas:'Notas' },
   ventas:       { id:'id', anio:'Año', mes:'Mes', distribuidor:'Distribuidor', galones:'Galones', ventaNeta:'Venta Neta', notas:'Notas' },
-  presupuestos: { id:'id', anio:'año', mes:'mes', monto:'monto' },
+  presupuestos: { id:'id', anio:'Año', mes:'Mes', monto:'Monto' },
   gastosPresupuesto: { id:'id', anio:'año', mes:'Mes', gasto:'Gasto (Nom. Producto, Cliente)', valorFactura:'Valor Factura', canal:'Canal', observacion:'Observación (ATJ)', estado:'Estado', centroCostos:'Centro de Costos', ordenCompra:'Orden de Compra', nitProveedor:'NIT Proveedor', nomProveedor:'Nom. Proveedor', docCargado:'Doc. Cargado', obsKatherine:'Obs. Katherine', notas:'notas' },
   planes:       { id:'id', distribuidor:'distribuidor', anio:'año', quarter:'quarter', estado:'estado', tiposPlan:'tipoPlan', metaGalones:'metaGalones', metaVenta:'metaVenta', condiciones:'condiciones', acuerdos:'acuerdos', notas:'notas' },
   apoyoCierre:  { id:'ID', anio:'AÑO', mes:'MES', comercial:'COMERCIAL', monto:'MONTO_ASIGNADO', distribuidor:'CLIENTE' },
@@ -58,12 +58,15 @@ function toSheetRow(tipo, obj) {
 function fromSheetRow(tipo, row) {
   const map = CAMPOS_MAP[tipo] || {}
   const obj = {}
+  // Índice case-insensitive para encontrar columnas sin importar capitalización
+  const rowCI = {}
+  Object.keys(row).forEach(k => { rowCI[k.toLowerCase()] = row[k] })
+
   Object.entries(map).forEach(([appKey, sheetKey]) => {
     let val = row[sheetKey]
-    if(val === undefined) val = row[sheetKey.toLowerCase()]
-    if(val === undefined) val = row[sheetKey.toUpperCase()]
+    if(val === undefined) val = rowCI[sheetKey.toLowerCase()]
     if(val === undefined || val === '') val = appKey === 'anio' ? 2026 : ''
-    // Normalizar mes
+    // Normalizar mes: "MAYO" / "mayo" → "Mayo"
     if(appKey === 'mes' && typeof val === 'string' && val.trim()) {
       val = normMes(val)
     }
@@ -295,8 +298,9 @@ function Dashboard({ data }) {
   const [filtroDist, setFiltroDist] = useState('')
 
   const anios = [...new Set([...data.inversiones.map(i=>i.anio),...data.ventas.map(v=>v.anio)])].sort()
-  const todosDistribuidores = [...new Set([...data.inversiones.map(i=>i.distribuidor),...data.ventas.map(v=>v.distribuidor)])].sort()
+  const todosDistribuidores = [...new Set([...data.inversiones.map(i=>i.distribuidor),...data.ventas.map(v=>v.distribuidor)])].filter(Boolean).sort()
 
+  // Inversiones filtradas por mes+año+distribuidor
   const invF = data.inversiones.filter(i=>
     (!filtroMes||normMes(i.mes)===normMes(filtroMes))&&
     (!filtroAnio||i.anio===Number(filtroAnio))&&
@@ -307,6 +311,7 @@ function Dashboard({ data }) {
     (!filtroAnio||v.anio===Number(filtroAnio))&&
     (!filtroDist||v.distribuidor===filtroDist)
   )
+  // Presupuesto: NO filtra por distribuidor (es global)
   const presF = data.presupuestos.filter(p=>
     (!filtroMes||normMes(p.mes)===normMes(filtroMes))&&
     (!filtroAnio||p.anio===Number(filtroAnio))
@@ -315,11 +320,16 @@ function Dashboard({ data }) {
   const totalInv = invF.reduce((s,i)=>s+(i.inversion||0),0)
   const totalVenta = ventF.reduce((s,v)=>s+(v.ventaNeta||0),0)
   const totalGalones = ventF.reduce((s,v)=>s+(v.galones||0),0)
-  const totalPres = filtroDist ? 0 : presF.reduce((s,p)=>s+(p.monto||0),0)
+  // Presupuesto siempre visible (no se oculta al filtrar por distribuidor)
+  const totalPres = presF.reduce((s,p)=>s+(p.monto||0),0)
   const roiPct = totalVenta>0 ? (totalInv/totalVenta)*100 : 0
 
-  const distribuidores = filtroDist ? [filtroDist] : [...new Set([...invF.map(i=>i.distribuidor),...ventF.map(v=>v.distribuidor)])]
-  const porDist = distribuidores.map(d => {
+  // Tabla por distribuidor
+  const distribuidoresEnFiltro = filtroDist
+    ? [filtroDist]
+    : [...new Set([...invF.map(i=>i.distribuidor),...ventF.map(v=>v.distribuidor)])].filter(Boolean)
+
+  const porDist = distribuidoresEnFiltro.map(d => {
     const inv = invF.filter(i=>i.distribuidor===d).reduce((s,i)=>s+(i.inversion||0),0)
     const venta = ventF.filter(v=>v.distribuidor===d).reduce((s,v)=>s+(v.ventaNeta||0),0)
     const galones = ventF.filter(v=>v.distribuidor===d).reduce((s,v)=>s+(v.galones||0),0)
@@ -327,30 +337,40 @@ function Dashboard({ data }) {
     return { name:d, inv, venta, galones, peso }
   }).sort((a,b)=>b.inv-a.inv)
 
+  // Gráfica por mes (respeta filtros)
   const porMes = MESES.map(m=>({
     name:m.slice(0,3),
     invertido: data.inversiones.filter(i=>normMes(i.mes)===m&&(!filtroAnio||i.anio===Number(filtroAnio))&&(!filtroDist||i.distribuidor===filtroDist)).reduce((s,i)=>s+(i.inversion||0),0),
     venta: data.ventas.filter(v=>normMes(v.mes)===m&&(!filtroAnio||v.anio===Number(filtroAnio))&&(!filtroDist||v.distribuidor===filtroDist)).reduce((s,v)=>s+(v.ventaNeta||0),0),
-    presupuesto: filtroDist ? 0 : data.presupuestos.filter(p=>normMes(p.mes)===m&&(!filtroAnio||p.anio===Number(filtroAnio))).reduce((s,p)=>s+(p.monto||0),0),
+    presupuesto: data.presupuestos.filter(p=>normMes(p.mes)===m&&(!filtroAnio||p.anio===Number(filtroAnio))).reduce((s,p)=>s+(p.monto||0),0),
   })).filter(m=>m.invertido>0||m.venta>0||m.presupuesto>0)
 
-  // ── FIX: gráfica por tipo de plan en vez de por concepto ──
-  const porTipoPlan = TIPOS_PLAN.map(t=>({name:t,value:invF.filter(i=>i.tipoPlan===t).reduce((s,i)=>s+(i.inversion||0),0)})).filter(t=>t.value>0)
+  // PieChart tipo de plan (sobre inversiones filtradas)
+  const porTipoPlan = TIPOS_PLAN.map(t=>({
+    name:t,
+    value:invF.filter(i=>i.tipoPlan===t).reduce((s,i)=>s+(i.inversion||0),0)
+  })).filter(t=>t.value>0)
 
-  const porConcepto = CONCEPTOS.map(c=>({name:c,value:invF.filter(i=>i.concepto===c).reduce((s,i)=>s+(i.inversion||0),0)})).filter(c=>c.value>0)
-
+  // Ventas por mes para el distribuidor seleccionado
   const ventasPorMes = filtroDist ? MESES.map(m=>({
     name:m.slice(0,3),
     galones: data.ventas.filter(v=>normMes(v.mes)===m&&v.distribuidor===filtroDist&&(!filtroAnio||v.anio===Number(filtroAnio))).reduce((s,v)=>s+(v.galones||0),0),
     venta: data.ventas.filter(v=>normMes(v.mes)===m&&v.distribuidor===filtroDist&&(!filtroAnio||v.anio===Number(filtroAnio))).reduce((s,v)=>s+(v.ventaNeta||0),0),
   })).filter(m=>m.galones>0||m.venta>0) : []
 
-  // Datos para barchart apilado por distribuidor+tipo
-  const distribuidoresConInv = [...new Set(invF.map(i=>i.distribuidor))].sort()
-  const datosDesglose = distribuidoresConInv.map(d=>({
+  // ── DESGLOSE: siempre visible, respeta el filtro de distribuidor ──
+  // Si hay distribuidor seleccionado, muestra solo ese (desglose por tipo)
+  // Si no hay, muestra todos los distribuidores
+  const distribuidoresDesglose = filtroDist
+    ? [filtroDist]
+    : [...new Set(invF.map(i=>i.distribuidor))].filter(Boolean).sort()
+
+  const datosDesglose = distribuidoresDesglose.map(d=>({
     name: d.length>16 ? d.slice(0,16)+'…' : d,
     fullName: d,
-    ...Object.fromEntries(TIPOS_PLAN.map(t=>[t, invF.filter(i=>i.distribuidor===d&&i.tipoPlan===t).reduce((s,i)=>s+(i.inversion||0),0)]))
+    ...Object.fromEntries(TIPOS_PLAN.map(t=>[t,
+      invF.filter(i=>i.distribuidor===d&&i.tipoPlan===t).reduce((s,i)=>s+(i.inversion||0),0)
+    ]))
   }))
 
   return (
@@ -365,11 +385,11 @@ function Dashboard({ data }) {
           <option value="">Todos los meses</option>
           {MESES.map(m=><option key={m}>{m}</option>)}
         </select>
-        <select value={filtroDist} onChange={e=>setFiltroDist(e.target.value)} style={{width:220}}>
+        <select value={filtroDist} onChange={e=>setFiltroDist(e.target.value)} style={{width:240}}>
           <option value="">Todos los distribuidores</option>
           {todosDistribuidores.map(d=><option key={d}>{d}</option>)}
         </select>
-        {(filtroMes||filtroAnio||filtroDist)&&(
+        {(filtroMes||filtroAnio!=='2026'||filtroDist)&&(
           <button onClick={()=>{setFiltroMes('');setFiltroAnio('2026');setFiltroDist('')}} style={{...S.btn('var(--bg3)','var(--text2)'),fontSize:12,padding:'5px 12px'}}>
             Limpiar filtros
           </button>
@@ -377,20 +397,20 @@ function Dashboard({ data }) {
         {filtroDist&&<span style={{fontSize:12,background:'var(--accent-soft)',color:'var(--accent2)',padding:'4px 12px',borderRadius:20,border:'1px solid rgba(108,99,255,0.2)'}}>📍 {filtroDist}</span>}
       </div>
 
-      {/* KPIs */}
+      {/* KPIs — presupuesto siempre visible */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(175px,1fr))',gap:13}}>
         <KpiCard icon={TrendingUp} label="Total invertido" value={cop(totalInv)} sub={`${invF.length} registros`} accent="var(--accent2)"/>
-        {!filtroDist&&<KpiCard icon={DollarSign} label="Presupuesto" value={cop(totalPres)} sub={totalPres>0?`${((totalInv/totalPres)*100).toFixed(1)}% ejecutado`:'Sin presupuesto'}/>}
+        <KpiCard icon={DollarSign} label="Presupuesto" value={cop(totalPres)} sub={totalPres>0?`${((totalInv/totalPres)*100).toFixed(1)}% ejecutado`:'Sin presupuesto'}/>
         <KpiCard icon={ShoppingCart} label="Venta neta" value={cop(totalVenta)} sub={`${num(totalGalones)} galones`} accent="var(--green)"/>
         <KpiCard icon={BarChart2} label="Inversión / Venta" value={`${roiPct.toFixed(1)}%`} sub="Peso inversión sobre venta" accent={roiPct>15?'var(--red)':roiPct>10?'var(--yellow)':'var(--green)'}/>
-        {filtroDist&&<KpiCard icon={DollarSign} label="Precio prom/galón" value={totalGalones>0?cop(totalVenta/totalGalones):'—'} accent="var(--orange)"/>}
+        {filtroDist&&totalGalones>0&&<KpiCard icon={DollarSign} label="Precio prom/galón" value={cop(totalVenta/totalGalones)} accent="var(--orange)"/>}
       </div>
 
       {/* Gráficas fila 1 */}
-      <div style={{display:'grid',gridTemplateColumns: filtroDist?'1fr 1fr':'1.3fr 1fr',gap:16}}>
+      <div style={{display:'grid',gridTemplateColumns:'1.3fr 1fr',gap:16}}>
         <div style={{...S.card,padding:20}}>
           <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:14}}>
-            {filtroDist ? `Inversión vs Venta — ${filtroDist.split(' ')[0]}` : 'Inversión vs Venta Neta por mes'}
+            {filtroDist ? `Inversión por mes — ${filtroDist.split(' ')[0]}` : 'Inversión vs Venta Neta por mes'}
           </h4>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={porMes} barGap={3}>
@@ -399,37 +419,25 @@ function Dashboard({ data }) {
               <Tooltip content={<CT/>}/>
               <Bar dataKey="venta" name="Venta neta" fill="var(--green)" radius={[4,4,0,0]} opacity={0.7}/>
               <Bar dataKey="invertido" name="Inversión" fill="var(--accent)" radius={[4,4,0,0]}/>
-              {!filtroDist&&<Bar dataKey="presupuesto" name="Presupuesto" fill="var(--bg4)" radius={[4,4,0,0]}/>}
+              <Bar dataKey="presupuesto" name="Presupuesto" fill="var(--bg4)" radius={[4,4,0,0]}/>
             </BarChart>
           </ResponsiveContainer>
         </div>
 
-        {filtroDist ? (
-          <div style={{...S.card,padding:20}}>
-            <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:14}}>Galones vendidos por mes</h4>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={ventasPorMes}>
-                <XAxis dataKey="name" tick={{fill:'var(--text3)',fontSize:11}} axisLine={false} tickLine={false}/>
-                <YAxis tick={{fill:'var(--text3)',fontSize:10}} axisLine={false} tickLine={false}/>
-                <Tooltip contentStyle={{background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:10,fontSize:12}}/>
-                <Bar dataKey="galones" name="Galones" fill="var(--orange)" radius={[4,4,0,0]}/>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        ) : (
-          <div style={{...S.card,padding:20}}>
-            <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:14}}>Inversión por tipo de plan</h4>
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie data={porTipoPlan} cx="50%" cy="50%" innerRadius={45} outerRadius={75} dataKey="value" nameKey="name" paddingAngle={3}>
-                  {porTipoPlan.map((_,i)=><Cell key={i} fill={COLORES[i%COLORES.length]}/>)}
-                </Pie>
-                <Tooltip formatter={v=>cop(v)} contentStyle={{background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:10,fontSize:11}}/>
-                <Legend iconSize={7} iconType="circle" wrapperStyle={{fontSize:10,color:'var(--text2)'}}/>
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        )}
+        <div style={{...S.card,padding:20}}>
+          <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:14}}>
+            {filtroDist ? `Desglose por tipo — ${filtroDist.split(' ')[0]}` : 'Inversión por tipo de plan'}
+          </h4>
+          <ResponsiveContainer width="100%" height={200}>
+            <PieChart>
+              <Pie data={porTipoPlan} cx="50%" cy="50%" innerRadius={45} outerRadius={75} dataKey="value" nameKey="name" paddingAngle={3}>
+                {porTipoPlan.map((_,i)=><Cell key={i} fill={COLORES[i%COLORES.length]}/>)}
+              </Pie>
+              <Tooltip formatter={v=>cop(v)} contentStyle={{background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:10,fontSize:11}}/>
+              <Legend iconSize={7} iconType="circle" wrapperStyle={{fontSize:10,color:'var(--text2)'}}/>
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       {/* Tabla distribuidor vs venta */}
@@ -480,25 +488,31 @@ function Dashboard({ data }) {
         {!filtroDist&&<div style={{padding:'8px 18px',fontSize:11,color:'var(--text3)',borderTop:'1px solid var(--border)'}}>💡 Clic en una fila para ver el detalle del distribuidor</div>}
       </div>
 
-      {/* ── NUEVO: Desglose por distribuidor y tipo de plan ── */}
-      {!filtroDist && invF.length > 0 && (
+      {/* ── DESGLOSE: siempre visible — filtra cuando seleccionas un distribuidor ── */}
+      {invF.length > 0 && (
         <div style={S.card}>
-          <div style={{padding:'14px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-            <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>
-              Desglose por distribuidor y tipo de plan {filtroMes && '— '+filtroMes}
-            </h4>
-            <span style={{fontSize:11,color:'var(--text3)'}}>Clic en fila para filtrar</span>
+          <div style={{padding:'14px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
+            <div>
+              <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:2}}>
+                {filtroDist
+                  ? `Desglose por tipo de plan — ${filtroDist}`
+                  : `Desglose por distribuidor y tipo de plan${filtroMes?' — '+filtroMes:''}`
+                }
+              </h4>
+              {filtroDist&&<span style={{fontSize:11,color:'var(--text3)'}}>Selecciona otro distribuidor arriba para comparar · Clic en "Limpiar filtros" para ver todos</span>}
+            </div>
+            {!filtroDist&&<span style={{fontSize:11,color:'var(--text3)'}}>Clic en fila para filtrar por distribuidor</span>}
           </div>
 
           {/* BarChart apilado horizontal */}
           {datosDesglose.length > 0 && (
             <div style={{padding:'16px 20px 0'}}>
-              <ResponsiveContainer width="100%" height={Math.max(180, datosDesglose.length * 42)}>
+              <ResponsiveContainer width="100%" height={Math.max(120, datosDesglose.length * 46)}>
                 <BarChart data={datosDesglose} layout="vertical" margin={{left:10,right:20,top:0,bottom:0}}>
                   <XAxis type="number" tickFormatter={v=>`${(v/1000000).toFixed(1)}M`} tick={{fill:'var(--text3)',fontSize:10}} axisLine={false} tickLine={false}/>
-                  <YAxis type="category" dataKey="name" tick={{fill:'var(--text2)',fontSize:11}} axisLine={false} tickLine={false} width={130}/>
+                  <YAxis type="category" dataKey="name" tick={{fill:'var(--text2)',fontSize:11}} axisLine={false} tickLine={false} width={140}/>
                   <Tooltip
-                    formatter={(v,name)=>[cop(v),name]}
+                    formatter={(v,name)=>v>0?[cop(v),name]:null}
                     contentStyle={{background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:10,fontSize:11}}
                   />
                   <Legend iconSize={7} iconType="circle" wrapperStyle={{fontSize:10,color:'var(--text2)'}}/>
@@ -513,22 +527,27 @@ function Dashboard({ data }) {
 
           {/* Tabla de desglose */}
           <div style={{overflowX:'auto'}}>
-            <table style={{width:'100%',borderCollapse:'collapse',minWidth:700}}>
+            <table style={{width:'100%',borderCollapse:'collapse',minWidth:650}}>
               <thead>
                 <tr style={{background:'var(--bg3)'}}>
                   <th style={S.th}>Distribuidor</th>
-                  {TIPOS_PLAN.map(t=><th key={t} style={{...S.th,fontSize:10}}>{t.length>22?t.slice(0,22)+'…':t}</th>)}
+                  {TIPOS_PLAN.map(t=><th key={t} style={{...S.th,fontSize:10}}>{t.length>20?t.slice(0,20)+'…':t}</th>)}
                   <th style={S.th}>Total</th>
                 </tr>
               </thead>
               <tbody>
-                {distribuidoresConInv.sort().map((d,idx)=>{
-                  const porTipo = TIPOS_PLAN.map(t=>invF.filter(i=>i.distribuidor===d&&i.tipoPlan===t).reduce((s,i)=>s+(i.inversion||0),0))
+                {distribuidoresDesglose.map((d,idx)=>{
+                  const porTipo = TIPOS_PLAN.map(t=>
+                    invF.filter(i=>i.distribuidor===d&&i.tipoPlan===t).reduce((s,i)=>s+(i.inversion||0),0)
+                  )
                   const totalDist = porTipo.reduce((s,v)=>s+v,0)
                   if(totalDist===0) return null
                   return (
-                    <tr key={idx} style={{cursor:'pointer'}} onClick={()=>setFiltroDist(d)}>
-                      <td style={{...S.td,fontWeight:500}}>{d}</td>
+                    <tr key={idx}
+                      style={{cursor:filtroDist?'default':'pointer',background:filtroDist===d?'rgba(108,99,255,0.06)':'transparent'}}
+                      onClick={()=>!filtroDist&&setFiltroDist(d)}
+                    >
+                      <td style={{...S.td,fontWeight:500,color:filtroDist===d?'var(--accent2)':'var(--text)'}}>{d}</td>
                       {porTipo.map((v,i)=>(
                         <td key={i} style={{...S.td,fontFamily:'var(--mono)',color:v>0?COLORES[i%COLORES.length]:'var(--text3)'}}>
                           {v>0?cop(v):'—'}
@@ -550,14 +569,16 @@ function Dashboard({ data }) {
             </table>
           </div>
           <div style={{padding:'8px 18px',fontSize:11,color:'var(--text3)',borderTop:'1px solid var(--border)'}}>
-            💡 Clic en fila para ver el detalle · Barras apiladas muestran la composición por tipo de plan
+            {filtroDist
+              ? `💡 Mostrando desglose de ${filtroDist} · Usa el selector de arriba para cambiar de distribuidor`
+              : '💡 Clic en una fila para filtrar todo el dashboard por ese distribuidor'
+            }
           </div>
         </div>
       )}
     </div>
   )
 }
-
 
 // ═══════════════════════════════════════════════════════
 // INVERSIONES — Tabla tipo Excel con fixes
