@@ -290,7 +290,7 @@ function CT({ active, payload, label }) {
 }
 
 // ═══════════════════════════════════════════════════════
-// DASHBOARD — con gráfica por tipo de plan y desglose por distribuidor
+// DASHBOARD
 // ═══════════════════════════════════════════════════════
 function Dashboard({ data }) {
   const [filtroMes, setFiltroMes] = useState('')
@@ -300,7 +300,9 @@ function Dashboard({ data }) {
   const anios = [...new Set([...data.inversiones.map(i=>i.anio),...data.ventas.map(v=>v.anio)])].sort()
   const todosDistribuidores = [...new Set([...data.inversiones.map(i=>i.distribuidor),...data.ventas.map(v=>v.distribuidor)])].filter(Boolean).sort()
 
-  // Inversiones filtradas por mes+año+distribuidor
+  // ── Todos los tipos que realmente existen en los datos ──
+  const todosTipos = [...new Set(data.inversiones.map(i=>i.tipoPlan).filter(Boolean))].sort()
+
   const invF = data.inversiones.filter(i=>
     (!filtroMes||normMes(i.mes)===normMes(filtroMes))&&
     (!filtroAnio||i.anio===Number(filtroAnio))&&
@@ -311,71 +313,80 @@ function Dashboard({ data }) {
     (!filtroAnio||v.anio===Number(filtroAnio))&&
     (!filtroDist||v.distribuidor===filtroDist)
   )
-  // Presupuesto: NO filtra por distribuidor (es global)
   const presF = data.presupuestos.filter(p=>
     (!filtroMes||normMes(p.mes)===normMes(filtroMes))&&
     (!filtroAnio||p.anio===Number(filtroAnio))
   )
 
-  const totalInv = invF.reduce((s,i)=>s+(i.inversion||0),0)
+  const totalInv   = invF.reduce((s,i)=>s+(i.inversion||0),0)
   const totalVenta = ventF.reduce((s,v)=>s+(v.ventaNeta||0),0)
   const totalGalones = ventF.reduce((s,v)=>s+(v.galones||0),0)
-  // Presupuesto siempre visible (no se oculta al filtrar por distribuidor)
-  const totalPres = presF.reduce((s,p)=>s+(p.monto||0),0)
-  const roiPct = totalVenta>0 ? (totalInv/totalVenta)*100 : 0
+  const totalPres  = presF.reduce((s,p)=>s+(p.monto||0),0)
+  const roiPct     = totalVenta>0 ? (totalInv/totalVenta)*100 : 0
 
-  // Tabla por distribuidor
-  const distribuidoresEnFiltro = filtroDist
+  // Tabla resumen por distribuidor
+  const distLista = filtroDist
     ? [filtroDist]
     : [...new Set([...invF.map(i=>i.distribuidor),...ventF.map(v=>v.distribuidor)])].filter(Boolean)
 
-  const porDist = distribuidoresEnFiltro.map(d => {
-    const inv = invF.filter(i=>i.distribuidor===d).reduce((s,i)=>s+(i.inversion||0),0)
-    const venta = ventF.filter(v=>v.distribuidor===d).reduce((s,v)=>s+(v.ventaNeta||0),0)
-    const galones = ventF.filter(v=>v.distribuidor===d).reduce((s,v)=>s+(v.galones||0),0)
-    const peso = venta>0 ? (inv/venta)*100 : 0
-    return { name:d, inv, venta, galones, peso }
+  const porDist = distLista.map(d=>{
+    const inv    = invF.filter(i=>i.distribuidor===d).reduce((s,i)=>s+(i.inversion||0),0)
+    const venta  = ventF.filter(v=>v.distribuidor===d).reduce((s,v)=>s+(v.ventaNeta||0),0)
+    const galones= ventF.filter(v=>v.distribuidor===d).reduce((s,v)=>s+(v.galones||0),0)
+    return { name:d, inv, venta, galones, peso: venta>0?(inv/venta)*100:0 }
   }).sort((a,b)=>b.inv-a.inv)
 
-  // Gráfica por mes (respeta filtros)
+  // Gráfica por mes
   const porMes = MESES.map(m=>({
     name:m.slice(0,3),
     invertido: data.inversiones.filter(i=>normMes(i.mes)===m&&(!filtroAnio||i.anio===Number(filtroAnio))&&(!filtroDist||i.distribuidor===filtroDist)).reduce((s,i)=>s+(i.inversion||0),0),
-    venta: data.ventas.filter(v=>normMes(v.mes)===m&&(!filtroAnio||v.anio===Number(filtroAnio))&&(!filtroDist||v.distribuidor===filtroDist)).reduce((s,v)=>s+(v.ventaNeta||0),0),
+    venta:     data.ventas.filter(v=>normMes(v.mes)===m&&(!filtroAnio||v.anio===Number(filtroAnio))&&(!filtroDist||v.distribuidor===filtroDist)).reduce((s,v)=>s+(v.ventaNeta||0),0),
     presupuesto: data.presupuestos.filter(p=>normMes(p.mes)===m&&(!filtroAnio||p.anio===Number(filtroAnio))).reduce((s,p)=>s+(p.monto||0),0),
   })).filter(m=>m.invertido>0||m.venta>0||m.presupuesto>0)
 
-  // PieChart tipo de plan (sobre inversiones filtradas)
-  const porTipoPlan = TIPOS_PLAN.map(t=>({
-    name:t,
-    value:invF.filter(i=>i.tipoPlan===t).reduce((s,i)=>s+(i.inversion||0),0)
-  })).filter(t=>t.value>0)
+  // ── PieChart: TODOS los tipos reales en los datos filtrados ──
+  const tiposEnFiltro = [...new Set(invF.map(i=>i.tipoPlan).filter(Boolean))].sort()
+  const porTipo = tiposEnFiltro.map((t,i)=>({
+    name: t,
+    value: invF.filter(i2=>i2.tipoPlan===t).reduce((s,i2)=>s+(i2.inversion||0),0),
+    color: COLORES[i%COLORES.length],
+  })).filter(t=>t.value>0).sort((a,b)=>b.value-a.value)
 
-  // Ventas por mes para el distribuidor seleccionado
-  const ventasPorMes = filtroDist ? MESES.map(m=>({
-    name:m.slice(0,3),
-    galones: data.ventas.filter(v=>normMes(v.mes)===m&&v.distribuidor===filtroDist&&(!filtroAnio||v.anio===Number(filtroAnio))).reduce((s,v)=>s+(v.galones||0),0),
-    venta: data.ventas.filter(v=>normMes(v.mes)===m&&v.distribuidor===filtroDist&&(!filtroAnio||v.anio===Number(filtroAnio))).reduce((s,v)=>s+(v.ventaNeta||0),0),
-  })).filter(m=>m.galones>0||m.venta>0) : []
+  // ── Navegación cliente por cliente ──
+  const distribuidoresOrdenados = [...new Set(invF.map(i=>i.distribuidor))].filter(Boolean).sort()
+  const idxActual = filtroDist ? distribuidoresOrdenados.indexOf(filtroDist) : -1
+  const irAnterior = () => {
+    if(idxActual<=0) setFiltroDist(distribuidoresOrdenados[distribuidoresOrdenados.length-1])
+    else setFiltroDist(distribuidoresOrdenados[idxActual-1])
+  }
+  const irSiguiente = () => {
+    if(idxActual>=distribuidoresOrdenados.length-1) setFiltroDist(distribuidoresOrdenados[0])
+    else setFiltroDist(distribuidoresOrdenados[idxActual+1])
+  }
 
-  // ── DESGLOSE: siempre visible, respeta el filtro de distribuidor ──
-  // Si hay distribuidor seleccionado, muestra solo ese (desglose por tipo)
-  // Si no hay, muestra todos los distribuidores
+  // ── Desglose del distribuidor seleccionado (barra horizontal multicolor) ──
+  // Muestra todos los tipos reales de ese distribuidor
+  const tiposDelDist = filtroDist
+    ? [...new Set(invF.filter(i=>i.distribuidor===filtroDist).map(i=>i.tipoPlan).filter(Boolean))].sort()
+    : tiposEnFiltro
+  const invDistTotal = invF.filter(i=>!filtroDist||i.distribuidor===filtroDist).reduce((s,i)=>s+(i.inversion||0),0)
+
+  // Datos para el barchart de desglose (un registro por distribuidor con campos por tipo)
   const distribuidoresDesglose = filtroDist
     ? [filtroDist]
     : [...new Set(invF.map(i=>i.distribuidor))].filter(Boolean).sort()
 
   const datosDesglose = distribuidoresDesglose.map(d=>({
-    name: d.length>16 ? d.slice(0,16)+'…' : d,
+    name: d.length>18 ? d.slice(0,18)+'…' : d,
     fullName: d,
-    ...Object.fromEntries(TIPOS_PLAN.map(t=>[t,
+    ...Object.fromEntries(todosTipos.map(t=>[t,
       invF.filter(i=>i.distribuidor===d&&i.tipoPlan===t).reduce((s,i)=>s+(i.inversion||0),0)
     ]))
   }))
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:20}}>
-      {/* Filtros */}
+      {/* ── Filtros con navegación cliente a cliente ── */}
       <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
         <select value={filtroAnio} onChange={e=>setFiltroAnio(e.target.value)} style={{width:110}}>
           <option value="">Todos los años</option>
@@ -389,25 +400,45 @@ function Dashboard({ data }) {
           <option value="">Todos los distribuidores</option>
           {todosDistribuidores.map(d=><option key={d}>{d}</option>)}
         </select>
+
+        {/* Navegación ← → cliente a cliente */}
+        {filtroDist&&(
+          <div style={{display:'flex',gap:4,alignItems:'center'}}>
+            <button onClick={irAnterior}
+              style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:13,fontWeight:700}}>‹</button>
+            <span style={{fontSize:11,color:'var(--text3)',minWidth:60,textAlign:'center'}}>
+              {idxActual+1}/{distribuidoresOrdenados.length}
+            </span>
+            <button onClick={irSiguiente}
+              style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:13,fontWeight:700}}>›</button>
+          </div>
+        )}
+
         {(filtroMes||filtroAnio!=='2026'||filtroDist)&&(
-          <button onClick={()=>{setFiltroMes('');setFiltroAnio('2026');setFiltroDist('')}} style={{...S.btn('var(--bg3)','var(--text2)'),fontSize:12,padding:'5px 12px'}}>
+          <button onClick={()=>{setFiltroMes('');setFiltroAnio('2026');setFiltroDist('')}}
+            style={{...S.btn('var(--bg3)','var(--text2)'),fontSize:12,padding:'5px 12px'}}>
             Limpiar filtros
           </button>
         )}
-        {filtroDist&&<span style={{fontSize:12,background:'var(--accent-soft)',color:'var(--accent2)',padding:'4px 12px',borderRadius:20,border:'1px solid rgba(108,99,255,0.2)'}}>📍 {filtroDist}</span>}
+        {filtroDist&&(
+          <span style={{fontSize:12,background:'var(--accent-soft)',color:'var(--accent2)',padding:'4px 12px',borderRadius:20,border:'1px solid rgba(108,99,255,0.2)'}}>
+            📍 {filtroDist}
+          </span>
+        )}
       </div>
 
-      {/* KPIs — presupuesto siempre visible */}
+      {/* KPIs */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(175px,1fr))',gap:13}}>
-        <KpiCard icon={TrendingUp} label="Total invertido" value={cop(totalInv)} sub={`${invF.length} registros`} accent="var(--accent2)"/>
-        <KpiCard icon={DollarSign} label="Presupuesto" value={cop(totalPres)} sub={totalPres>0?`${((totalInv/totalPres)*100).toFixed(1)}% ejecutado`:'Sin presupuesto'}/>
-        <KpiCard icon={ShoppingCart} label="Venta neta" value={cop(totalVenta)} sub={`${num(totalGalones)} galones`} accent="var(--green)"/>
-        <KpiCard icon={BarChart2} label="Inversión / Venta" value={`${roiPct.toFixed(1)}%`} sub="Peso inversión sobre venta" accent={roiPct>15?'var(--red)':roiPct>10?'var(--yellow)':'var(--green)'}/>
+        <KpiCard icon={TrendingUp} label="Total invertido"    value={cop(totalInv)}    sub={`${invF.length} registros`} accent="var(--accent2)"/>
+        <KpiCard icon={DollarSign} label="Presupuesto"        value={cop(totalPres)}   sub={totalPres>0?`${((totalInv/totalPres)*100).toFixed(1)}% ejecutado`:'Sin presupuesto'}/>
+        <KpiCard icon={ShoppingCart} label="Venta neta"       value={cop(totalVenta)}  sub={`${num(totalGalones)} galones`} accent="var(--green)"/>
+        <KpiCard icon={BarChart2}  label="Inversión / Venta"  value={`${roiPct.toFixed(1)}%`} sub="Peso inversión sobre venta" accent={roiPct>15?'var(--red)':roiPct>10?'var(--yellow)':'var(--green)'}/>
         {filtroDist&&totalGalones>0&&<KpiCard icon={DollarSign} label="Precio prom/galón" value={cop(totalVenta/totalGalones)} accent="var(--orange)"/>}
       </div>
 
       {/* Gráficas fila 1 */}
       <div style={{display:'grid',gridTemplateColumns:'1.3fr 1fr',gap:16}}>
+        {/* Inversión vs Venta por mes */}
         <div style={{...S.card,padding:20}}>
           <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:14}}>
             {filtroDist ? `Inversión por mes — ${filtroDist.split(' ')[0]}` : 'Inversión vs Venta Neta por mes'}
@@ -417,26 +448,30 @@ function Dashboard({ data }) {
               <XAxis dataKey="name" tick={{fill:'var(--text3)',fontSize:11}} axisLine={false} tickLine={false}/>
               <YAxis tickFormatter={v=>`${(v/1000000).toFixed(0)}M`} tick={{fill:'var(--text3)',fontSize:10}} axisLine={false} tickLine={false}/>
               <Tooltip content={<CT/>}/>
-              <Bar dataKey="venta" name="Venta neta" fill="var(--green)" radius={[4,4,0,0]} opacity={0.7}/>
-              <Bar dataKey="invertido" name="Inversión" fill="var(--accent)" radius={[4,4,0,0]}/>
-              <Bar dataKey="presupuesto" name="Presupuesto" fill="var(--bg4)" radius={[4,4,0,0]}/>
+              <Bar dataKey="venta"       name="Venta neta"   fill="var(--green)"  radius={[4,4,0,0]} opacity={0.7}/>
+              <Bar dataKey="invertido"   name="Inversión"    fill="var(--accent)" radius={[4,4,0,0]}/>
+              <Bar dataKey="presupuesto" name="Presupuesto"  fill="var(--bg4)"    radius={[4,4,0,0]}/>
             </BarChart>
           </ResponsiveContainer>
         </div>
 
+        {/* PieChart TODOS los tipos reales */}
         <div style={{...S.card,padding:20}}>
           <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:14}}>
-            {filtroDist ? `Desglose por tipo — ${filtroDist.split(' ')[0]}` : 'Inversión por tipo de plan'}
+            {filtroDist ? `Composición — ${filtroDist.split(' ')[0]}` : 'Inversión por tipo de plan'}
           </h4>
-          <ResponsiveContainer width="100%" height={200}>
-            <PieChart>
-              <Pie data={porTipoPlan} cx="50%" cy="50%" innerRadius={45} outerRadius={75} dataKey="value" nameKey="name" paddingAngle={3}>
-                {porTipoPlan.map((_,i)=><Cell key={i} fill={COLORES[i%COLORES.length]}/>)}
-              </Pie>
-              <Tooltip formatter={v=>cop(v)} contentStyle={{background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:10,fontSize:11}}/>
-              <Legend iconSize={7} iconType="circle" wrapperStyle={{fontSize:10,color:'var(--text2)'}}/>
-            </PieChart>
-          </ResponsiveContainer>
+          {porTipo.length===0
+            ? <div style={{height:200,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text3)',fontSize:13}}>Sin inversiones en el período</div>
+            : <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie data={porTipo} cx="50%" cy="50%" innerRadius={45} outerRadius={75} dataKey="value" nameKey="name" paddingAngle={3}>
+                    {porTipo.map((t,i)=><Cell key={i} fill={t.color}/>)}
+                  </Pie>
+                  <Tooltip formatter={v=>cop(v)} contentStyle={{background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:10,fontSize:11}}/>
+                  <Legend iconSize={7} iconType="circle" wrapperStyle={{fontSize:10,color:'var(--text2)'}}/>
+                </PieChart>
+              </ResponsiveContainer>
+          }
         </div>
       </div>
 
@@ -460,7 +495,7 @@ function Dashboard({ data }) {
                 <td style={{...S.td,fontFamily:'var(--mono)'}}>{cop(d.inv)}</td>
                 <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--green)'}}>{cop(d.venta)}</td>
                 <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--text2)'}}>{num(d.galones)}</td>
-                <td style={{...S.td}}>
+                <td style={S.td}>
                   <span style={{fontFamily:'var(--mono)',fontWeight:600,color:d.peso>15?'var(--red)':d.peso>10?'var(--yellow)':'var(--green)'}}>{d.peso.toFixed(1)}%</span>
                 </td>
                 <td style={{...S.td,minWidth:140}}>
@@ -485,83 +520,131 @@ function Dashboard({ data }) {
             )}
           </tbody>
         </table>
-        {!filtroDist&&<div style={{padding:'8px 18px',fontSize:11,color:'var(--text3)',borderTop:'1px solid var(--border)'}}>💡 Clic en una fila para ver el detalle del distribuidor</div>}
+        {!filtroDist&&<div style={{padding:'8px 18px',fontSize:11,color:'var(--text3)',borderTop:'1px solid var(--border)'}}>
+          💡 Clic en una fila para ver el detalle del distribuidor · usa ‹ › para navegar cliente a cliente
+        </div>}
       </div>
 
-      {/* ── DESGLOSE: siempre visible — filtra cuando seleccionas un distribuidor ── */}
-      {invF.length > 0 && (
+      {/* ── DESGLOSE: barra horizontal multicolor por tipo de inversión ── */}
+      {invF.length>0 && (
         <div style={S.card}>
+          {/* Header con navegación si hay distribuidor seleccionado */}
           <div style={{padding:'14px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
             <div>
-              <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:2}}>
+              <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:filtroDist?3:0}}>
                 {filtroDist
-                  ? `Desglose por tipo de plan — ${filtroDist}`
-                  : `Desglose por distribuidor y tipo de plan${filtroMes?' — '+filtroMes:''}`
+                  ? `Desglose por tipo de inversión — ${filtroDist}`
+                  : `Desglose por distribuidor y tipo de inversión${filtroMes?' — '+filtroMes:''}`
                 }
               </h4>
-              {filtroDist&&<span style={{fontSize:11,color:'var(--text3)'}}>Selecciona otro distribuidor arriba para comparar · Clic en "Limpiar filtros" para ver todos</span>}
+              {filtroDist&&(
+                <div style={{display:'flex',alignItems:'center',gap:10}}>
+                  <button onClick={irAnterior} style={{...S.btn('var(--bg4)','var(--text2)'),padding:'3px 10px',fontSize:12,fontWeight:700}}>‹ Anterior</button>
+                  <span style={{fontSize:11,color:'var(--text3)'}}>{idxActual+1} de {distribuidoresOrdenados.length}</span>
+                  <button onClick={irSiguiente} style={{...S.btn('var(--bg4)','var(--text2)'),padding:'3px 10px',fontSize:12,fontWeight:700}}>Siguiente ›</button>
+                  <button onClick={()=>setFiltroDist('')} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'3px 10px',fontSize:11}}>✕ Ver todos</button>
+                </div>
+              )}
             </div>
-            {!filtroDist&&<span style={{fontSize:11,color:'var(--text3)'}}>Clic en fila para filtrar por distribuidor</span>}
+            {!filtroDist&&<span style={{fontSize:11,color:'var(--text3)'}}>Clic en fila para ver desglose individual</span>}
           </div>
 
-          {/* BarChart apilado horizontal */}
-          {datosDesglose.length > 0 && (
+          {/* Barra de participación por tipo (cuando hay un distribuidor seleccionado) */}
+          {filtroDist&&invDistTotal>0&&(
+            <div style={{padding:'16px 20px',borderBottom:'1px solid var(--border)'}}>
+              {/* Barra multicolor proporcional */}
+              <div style={{display:'flex',height:28,borderRadius:8,overflow:'hidden',marginBottom:12}}>
+                {todosTipos.map((t,i)=>{
+                  const v=invF.filter(inv=>inv.distribuidor===filtroDist&&inv.tipoPlan===t).reduce((s,inv)=>s+(inv.inversion||0),0)
+                  if(v===0) return null
+                  const pct=(v/invDistTotal)*100
+                  return (
+                    <div key={t} style={{width:pct+'%',background:COLORES[i%COLORES.length],position:'relative',display:'flex',alignItems:'center',justifyContent:'center',minWidth:pct>8?'auto':0}}
+                      title={`${t}: ${cop(v)} (${pct.toFixed(1)}%)`}>
+                      {pct>10&&<span style={{fontSize:10,fontWeight:600,color:'#fff',textShadow:'0 1px 2px rgba(0,0,0,0.5)',padding:'0 4px',whiteSpace:'nowrap',overflow:'hidden'}}>{pct.toFixed(0)}%</span>}
+                    </div>
+                  )
+                })}
+              </div>
+              {/* Leyenda */}
+              <div style={{display:'flex',flexWrap:'wrap',gap:10}}>
+                {todosTipos.map((t,i)=>{
+                  const v=invF.filter(inv=>inv.distribuidor===filtroDist&&inv.tipoPlan===t).reduce((s,inv)=>s+(inv.inversion||0),0)
+                  if(v===0) return null
+                  return (
+                    <div key={t} style={{display:'flex',alignItems:'center',gap:5}}>
+                      <div style={{width:10,height:10,borderRadius:3,background:COLORES[i%COLORES.length],flexShrink:0}}/>
+                      <span style={{fontSize:11,color:'var(--text2)'}}>{t}</span>
+                      <span style={{fontSize:11,fontFamily:'var(--mono)',color:COLORES[i%COLORES.length],fontWeight:600}}>{cop(v)}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* BarChart apilado horizontal (todos los distribuidores o el seleccionado) */}
+          {datosDesglose.length>0&&(
             <div style={{padding:'16px 20px 0'}}>
-              <ResponsiveContainer width="100%" height={Math.max(120, datosDesglose.length * 46)}>
+              <ResponsiveContainer width="100%" height={Math.max(80, datosDesglose.length*46)}>
                 <BarChart data={datosDesglose} layout="vertical" margin={{left:10,right:20,top:0,bottom:0}}>
                   <XAxis type="number" tickFormatter={v=>`${(v/1000000).toFixed(1)}M`} tick={{fill:'var(--text3)',fontSize:10}} axisLine={false} tickLine={false}/>
-                  <YAxis type="category" dataKey="name" tick={{fill:'var(--text2)',fontSize:11}} axisLine={false} tickLine={false} width={140}/>
+                  <YAxis type="category" dataKey="name" tick={{fill:'var(--text2)',fontSize:11}} axisLine={false} tickLine={false} width={150}/>
                   <Tooltip
                     formatter={(v,name)=>v>0?[cop(v),name]:null}
                     contentStyle={{background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:10,fontSize:11}}
                   />
                   <Legend iconSize={7} iconType="circle" wrapperStyle={{fontSize:10,color:'var(--text2)'}}/>
-                  {TIPOS_PLAN.map((t,i)=>(
+                  {todosTipos.map((t,i)=>(
                     <Bar key={t} dataKey={t} name={t} stackId="a" fill={COLORES[i%COLORES.length]}
-                      radius={i===TIPOS_PLAN.length-1?[0,4,4,0]:[0,0,0,0]}/>
+                      radius={i===todosTipos.length-1?[0,4,4,0]:[0,0,0,0]}/>
                   ))}
                 </BarChart>
               </ResponsiveContainer>
             </div>
           )}
 
-          {/* Tabla de desglose */}
+          {/* Tabla detalle con TODOS los tipos reales */}
           <div style={{overflowX:'auto'}}>
-            <table style={{width:'100%',borderCollapse:'collapse',minWidth:650}}>
+            <table style={{width:'100%',borderCollapse:'collapse',minWidth:600}}>
               <thead>
                 <tr style={{background:'var(--bg3)'}}>
                   <th style={S.th}>Distribuidor</th>
-                  {TIPOS_PLAN.map(t=><th key={t} style={{...S.th,fontSize:10}}>{t.length>20?t.slice(0,20)+'…':t}</th>)}
+                  {todosTipos.map((t,i)=>(
+                    <th key={t} style={{...S.th,fontSize:10,color:COLORES[i%COLORES.length]}}>
+                      {t.length>18?t.slice(0,18)+'…':t}
+                    </th>
+                  ))}
                   <th style={S.th}>Total</th>
                 </tr>
               </thead>
               <tbody>
                 {distribuidoresDesglose.map((d,idx)=>{
-                  const porTipo = TIPOS_PLAN.map(t=>
+                  const porTipoRow = todosTipos.map(t=>
                     invF.filter(i=>i.distribuidor===d&&i.tipoPlan===t).reduce((s,i)=>s+(i.inversion||0),0)
                   )
-                  const totalDist = porTipo.reduce((s,v)=>s+v,0)
-                  if(totalDist===0) return null
+                  const totalRow = porTipoRow.reduce((s,v)=>s+v,0)
+                  if(totalRow===0) return null
                   return (
                     <tr key={idx}
-                      style={{cursor:filtroDist?'default':'pointer',background:filtroDist===d?'rgba(108,99,255,0.06)':'transparent'}}
-                      onClick={()=>!filtroDist&&setFiltroDist(d)}
+                      style={{cursor:filtroDist?'default':'pointer',background:filtroDist===d?'rgba(108,99,255,0.07)':'transparent'}}
+                      onClick={()=>{if(!filtroDist) setFiltroDist(d)}}
                     >
                       <td style={{...S.td,fontWeight:500,color:filtroDist===d?'var(--accent2)':'var(--text)'}}>{d}</td>
-                      {porTipo.map((v,i)=>(
-                        <td key={i} style={{...S.td,fontFamily:'var(--mono)',color:v>0?COLORES[i%COLORES.length]:'var(--text3)'}}>
+                      {porTipoRow.map((v,i)=>(
+                        <td key={i} style={{...S.td,fontFamily:'var(--mono)',fontSize:12,color:v>0?COLORES[i%COLORES.length]:'var(--text3)'}}>
                           {v>0?cop(v):'—'}
                         </td>
                       ))}
-                      <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--accent2)'}}>{cop(totalDist)}</td>
+                      <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--accent2)'}}>{cop(totalRow)}</td>
                     </tr>
                   )
                 })}
                 <tr style={{borderTop:'2px solid var(--border2)',background:'var(--bg3)'}}>
                   <td style={{...S.td,fontWeight:700}}>TOTAL</td>
-                  {TIPOS_PLAN.map((t,i)=>{
-                    const total = invF.filter(i2=>i2.tipoPlan===t).reduce((s,i2)=>s+(i2.inversion||0),0)
-                    return <td key={i} style={{...S.td,fontFamily:'var(--mono)',fontWeight:600,color:total>0?COLORES[i%COLORES.length]:'var(--text3)'}}>{total>0?cop(total):'—'}</td>
+                  {todosTipos.map((t,i)=>{
+                    const v=invF.filter(i2=>i2.tipoPlan===t).reduce((s,i2)=>s+(i2.inversion||0),0)
+                    return <td key={i} style={{...S.td,fontFamily:'var(--mono)',fontWeight:600,color:v>0?COLORES[i%COLORES.length]:'var(--text3)'}}>{v>0?cop(v):'—'}</td>
                   })}
                   <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--accent2)'}}>{cop(totalInv)}</td>
                 </tr>
@@ -570,8 +653,8 @@ function Dashboard({ data }) {
           </div>
           <div style={{padding:'8px 18px',fontSize:11,color:'var(--text3)',borderTop:'1px solid var(--border)'}}>
             {filtroDist
-              ? `💡 Mostrando desglose de ${filtroDist} · Usa el selector de arriba para cambiar de distribuidor`
-              : '💡 Clic en una fila para filtrar todo el dashboard por ese distribuidor'
+              ? `💡 ${filtroDist} · ${idxActual+1}/${distribuidoresOrdenados.length} · Usa ‹ › para navegar entre clientes`
+              : '💡 Clic en una fila para ver el desglose individual del distribuidor'
             }
           </div>
         </div>
@@ -579,6 +662,7 @@ function Dashboard({ data }) {
     </div>
   )
 }
+
 
 // ═══════════════════════════════════════════════════════
 // INVERSIONES — Tabla tipo Excel con fixes
