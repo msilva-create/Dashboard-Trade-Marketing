@@ -29,7 +29,7 @@ const CAMPOS_MAP = {
   ventas:       { id:'id', anio:'Año', mes:'Mes', distribuidor:'Distribuidor', galones:'Galones', ventaNeta:'Venta Neta', notas:'Notas' },
   presupuestos: { id:'id', anio:'Año', mes:'Mes', monto:'Monto' },
   gastosPresupuesto: { id:'id', anio:'año', mes:'Mes', gasto:'Gasto (Nom. Producto, Cliente)', valorFactura:'Valor Factura', canal:'Canal', observacion:'Observación (ATJ)', estado:'Estado', centroCostos:'Centro de Costos', ordenCompra:'Orden de Compra', nitProveedor:'NIT Proveedor', nomProveedor:'Nom. Proveedor', docCargado:'Doc. Cargado', obsKatherine:'Obs. Katherine', notas:'notas' },
-  planes:       { id:'id', distribuidor:'distribuidor', anio:'año', quarter:'quarter', estado:'estado', tiposPlan:'tipoPlan', metaGalones:'metaGalones', metaVenta:'metaVenta', condiciones:'condiciones', acuerdos:'acuerdos', notas:'notas' },
+  planes:       { id:'id', distribuidor:'distribuidor', anio:'año', quarter:'quarter', estado:'estado', tiposPlan:'tipoPlan', metaGalones:'metaGalones', metaVenta:'metaVenta', condiciones:'condiciones', acuerdos:'acuerdos', notas:'notas', metaMes1:'metaMes1', metaMes2:'metaMes2', metaMes3:'metaMes3', metaGalonesMes1:'metaGalonesMes1', metaGalonesMes2:'metaGalonesMes2', metaGalonesMes3:'metaGalonesMes3', tieneCVC:'tieneCVC', montoCVC:'montoCVC', detalleCVC:'detalleCVC', tienePromotora:'tienePromotora', nombrePromotora:'nombrePromotora', montoPromotora:'montoPromotora', condicionesGenerales:'condicionesGenerales' },
   apoyoCierre:  { id:'ID', anio:'AÑO', mes:'MES', comercial:'COMERCIAL', monto:'MONTO_ASIGNADO', distribuidor:'CLIENTE' },
   redenciones:  { id:'ID', fecha:'FECHA', anio:'AÑO', mes:'MES', comercial:'COMERCIAL', cliente:'CLIENTE', producto:'PRODUCTO', valor:'VALOR_REDIMIDO', notas:'OBSERVACION' },
   pendientes:   { id:'id', distribuidor:'distribuidor', tarea:'tarea', categoria:'categoria', fechaLimite:'fechaLimite', prioridad:'prioridad', estado:'estado', responsable:'responsable', notas:'notas' },
@@ -48,9 +48,29 @@ function toSheetRow(tipo, obj) {
   Object.entries(map).forEach(([appKey, sheetKey]) => {
     let val = obj[appKey]
     if(val === undefined) val = ''
-    if(Array.isArray(val)) val = val.join(', ')
+    if(Array.isArray(val)) {
+      // Arrays de strings → "a, b, c"
+      // Arrays de objetos → JSON string
+      if(val.length > 0 && typeof val[0] === 'object') {
+        val = JSON.stringify(val)
+      } else {
+        val = val.join(', ')
+      }
+    }
     row[sheetKey] = val
   })
+  // Para planes: serializar planesItems como texto legible en columna existente
+  if(tipo === 'planes' && obj.planesItems && obj.planesItems.length > 0) {
+    const resumen = obj.planesItems
+      .filter(p=>p.nombre)
+      .map(p=>{
+        let s = p.nombre
+        if(p.tienePago==='Sí' && p.descripcionPago) s += ': '+p.descripcionPago
+        if(p.condiciones) s += ' ['+p.condiciones+']'
+        return s
+      }).join(' | ')
+    row['condiciones'] = resumen || row['condiciones']
+  }
   return row
 }
 
@@ -65,6 +85,10 @@ function fromSheetRow(tipo, row) {
   Object.entries(map).forEach(([appKey, sheetKey]) => {
     let val = row[sheetKey]
     if(val === undefined) val = rowCI[sheetKey.toLowerCase()]
+    // Manejo especial para 'año' / 'ano' / 'Año' / 'year'
+    if(val === undefined && appKey === 'anio') {
+      val = row['año'] ?? row['Año'] ?? row['ANO'] ?? row['ano'] ?? row['year'] ?? rowCI['año'] ?? rowCI['ano']
+    }
     if(val === undefined || val === '') val = appKey === 'anio' ? 2026 : ''
     // Normalizar mes: "MAYO" / "mayo" → "Mayo"
     if(appKey === 'mes' && typeof val === 'string' && val.trim()) {
@@ -78,6 +102,19 @@ function fromSheetRow(tipo, row) {
     }
     obj[appKey] = val
   })
+  // Para planes: restaurar planesItems desde JSON si existe en la fila
+  if(tipo === 'planes') {
+    try {
+      const pi = row['planesItems'] || rowCI['planesitems']
+      if(pi && typeof pi === 'string' && pi.startsWith('[')) {
+        obj.planesItems = JSON.parse(pi)
+      }
+    } catch(e) {}
+    // Asegurar valores numéricos en metas
+    ;['metaMes1','metaMes2','metaMes3','metaGalonesMes1','metaGalonesMes2','metaGalonesMes3','montoCVC','montoPromotora'].forEach(k=>{
+      if(obj[k]!==undefined) obj[k] = obj[k]===''?'':Number(obj[k])||0
+    })
+  }
   if(!obj.id) obj.id = Date.now() + Math.random()
   return obj
 }
@@ -1498,10 +1535,22 @@ function Planes({ data, setData }) {
       historial: form.historial||[],
     }
     const planes = editId ? data.planes.map(p=>p.id===editId?entry:p) : [...data.planes,entry]
-    const nd={...data,planes};setData(nd);save(nd);setModal(false);setEditId(null);setForm(blank)
+    const nd={...data,planes}
+    setData(nd)
+    if(editId) {
+      save(nd, {eliminar:editId, tipo:'planes'})
+      setTimeout(()=>save(nd, {insertar:entry, tipo:'planes'}), 500)
+    } else {
+      save(nd, {insertar:entry, tipo:'planes'})
+    }
+    setModal(false);setEditId(null);setForm(blank)
   }
 
-  const del = id => { const nd={...data,planes:data.planes.filter(p=>p.id!==id)};setData(nd);save(nd) }
+  const del = id => {
+    const nd={...data,planes:data.planes.filter(p=>p.id!==id)}
+    setData(nd)
+    save(nd, {eliminar:id, tipo:'planes'})
+  }
 
   const edit = p => {
     const items = p.planesItems?.length>0 ? p.planesItems :
