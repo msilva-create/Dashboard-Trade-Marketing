@@ -130,7 +130,7 @@ async function cargarDesdeSheets(uid) {
     return {
       inversiones:      (d.inversiones      ||[]).map(r=>fromSheetRow('inversiones',r)),
       ventas:           (d.ventas           ||[]).map(r=>fromSheetRow('ventas',r)),
-      presupuestos:     (d.presupuestos     ||[]).map(r=>fromSheetRow('presupuestos',r)),
+      presupuestos:     (d.presupuestos || d.presupuesto || d.PRESUPUESTO || []).map(r=>fromSheetRow('presupuestos',r)),
       planes:           (d.planes           ||[]).map(r=>fromSheetRow('planes',r)),
       apoyoCierre:      (d.apoyo_cierre     ||[]).map(r=>fromSheetRow('apoyoCierre',r)),
       redenciones:      (d.redenciones_apoyo||[]).map(r=>fromSheetRow('redenciones',r)),
@@ -3019,6 +3019,13 @@ export default function App() {
       cargarDesdeSheets(usuario.id).then(sheetData => {
         setSheetsLoading(false)
         if(sheetData) {
+          // Salvaguarda: si Sheets devuelve presupuestos vacío pero localmente
+          // ya teníamos datos, conservar los locales (evita pérdida por
+          // desajuste de nombres de columna en el backend de Sheets)
+          const localActual = loadUser(usuario.id)
+          if((!sheetData.presupuestos || sheetData.presupuestos.length===0) && localActual.presupuestos?.length>0) {
+            sheetData.presupuestos = localActual.presupuestos
+          }
           setData(sheetData)
           _currentUserKey = getStorageKey(usuario.id)
           localStorage.setItem(_currentUserKey, JSON.stringify(sheetData))
