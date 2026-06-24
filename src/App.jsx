@@ -1998,6 +1998,15 @@ function ApoyoCierre({ data, setData }) {
   }
   const EMAIL_JEFE = 'cgil@prolub.com.co'
 
+  // Emails por unidad para notificaciones de tareas
+  const EMAILS_UNIDAD = {
+    industria:    'epabon@gulfcolombia.com',
+    distribucion: 'msilva@prolub.com.co',
+    zonas:        'msilva@prolub.com.co',
+    diseno:       'aalvarado@gulfcolombia.com',
+    lider:        'cgil@prolub.com.co',
+  }
+
   const apoyos = data.apoyoCierre || []
   const redenciones = data.redenciones || []
   const distribuidores = [...new Set(data.inversiones.map(i=>i.distribuidor))].sort()
@@ -2646,6 +2655,14 @@ function DashboardLider() {
   const todasActividades = filtered.flatMap(d=>d.pendientes.map(p=>({...p,_unidad:d._unidad,_color:d._color,_uid:d._id}))).sort((a,b)=>['Alta','Media','Baja'].indexOf(a.prioridad)-['Alta','Media','Baja'].indexOf(b.prioridad))
   const actFiltradas = todasActividades.filter(a=>!filtroUnidad||a._uid===filtroUnidad)
 
+  const EMAILS_UNIDAD_LIDER = {
+    industria:    'epabon@gulfcolombia.com',
+    distribucion: 'msilva@prolub.com.co',
+    zonas:        'msilva@prolub.com.co',
+    diseno:       'aalvarado@gulfcolombia.com',
+  }
+  const SHEETS_URL_LIDER = 'https://script.google.com/macros/s/AKfycbzgSB5bZEo-3JgBbTySp8GOVB0VpYl8ki3J2EM-daQrB42HiAguVzqWZUCoFovx5rTF/exec'
+
   const crearPendiente = () => {
     if(!formPend.unidad||!formPend.tarea) return
     const u = USUARIOS.find(u=>u.id===formPend.unidad)
@@ -2658,9 +2675,36 @@ function DashboardLider() {
       delete nuevo.unidad
       ud.pendientes = [...(ud.pendientes||[]), nuevo]
       localStorage.setItem(key, JSON.stringify(ud))
+
+      // Enviar correo de notificación a la unidad destino
+      const emailDest = EMAILS_UNIDAD_LIDER[u.id]
+      if(emailDest) {
+        try {
+          fetch(SHEETS_URL_LIDER, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+              accion: 'enviar_correo',
+              destinatario: emailDest,
+              copia: 'cgil@prolub.com.co',
+              asunto: '📋 Nueva actividad asignada — ' + nuevo.tarea,
+              comercial: u.nombre,
+              producto: nuevo.tarea,
+              cliente: nuevo.distribuidor || '',
+              notas: nuevo.notas || '',
+              mes: nuevo.fechaLimite || '',
+              fecha: new Date().toLocaleDateString('es-CO'),
+              valorRedimido: 0,
+              nuevoSaldo: 0,
+            })
+          })
+        } catch(e) { console.error('Error notificacion email:', e) }
+      }
+
       setModalPendiente(false)
       setFormPend({unidad:'',distribuidor:'',tarea:'',categoria:'',fechaLimite:'',prioridad:'Media',estado:'Pendiente',responsable:'',notas:''})
-      alert('✅ Actividad asignada a '+u.nombre)
+      alert('✅ Actividad asignada a '+u.nombre+' — se envió notificación por correo')
     } catch(e) { alert('Error: '+e.message) }
   }
 
@@ -3127,6 +3171,20 @@ export default function App() {
           {esPresupuesto && <PresupuestoConsolidado/>}
           {!esLider&&!esPresupuesto&&(
             <>
+              {(()=>{
+                const tareasLider = (data.pendientes||[]).filter(p=>p.asignadoPor==='Líder de Mercadeo'&&p.estado!=='Listo'&&p.estado!=='Cancelado')
+                if(tareasLider.length===0) return null
+                return (
+                  <div style={{background:'rgba(91,82,240,0.08)',border:'1px solid rgba(91,82,240,0.25)',borderRadius:12,padding:'12px 18px',marginBottom:8,display:'flex',alignItems:'center',gap:12,cursor:'pointer'}} onClick={()=>setTab('pendientes')}>
+                    <div style={{width:32,height:32,borderRadius:8,background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>📋</div>
+                    <div style={{flex:1}}>
+                      <div style={{fontWeight:600,fontSize:13,color:'var(--accent2)'}}>Tienes {tareasLider.length} actividad{tareasLider.length>1?'es':''} asignada{tareasLider.length>1?'s':''} por el Líder de Mercadeo</div>
+                      <div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>{tareasLider.map(t=>t.tarea).slice(0,2).join(' · ')}{tareasLider.length>2?' · ...':''} — Clic para ver</div>
+                    </div>
+                    <span style={{fontSize:20,color:'var(--accent2)'}}>→</span>
+                  </div>
+                )
+              })()}
               {tab==='dashboard'   &&<Dashboard    data={data}/>}
               {tab==='inversiones' &&<Inversiones  data={data} setData={setDataUser}/>}
               {tab==='ventas'      &&<Ventas       data={data} setData={setDataUser}/>}
