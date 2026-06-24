@@ -10,7 +10,15 @@ const SHEETS_CONFIG = {
   distribucion: {
     url: 'https://script.google.com/macros/s/AKfycbzgSB5bZEo-3JgBbTySp8GOVB0VpYl8ki3J2EM-daQrB42HiAguVzqWZUCoFovx5rTF/exec',
     enabled: true,
-  }
+  },
+  industria: {
+    url: 'https://script.google.com/macros/s/AKfycbzu5sO8QA5DjziQ1ZE78Te73PeNtKgw_9BLgwAsdpdkDrdrge_n22jL_-xHdnY41d3Ghg/exec',
+    enabled: true,
+  },
+  zonas: {
+    url: 'https://script.google.com/macros/s/AKfycbz6Yg6s6ZOdjfv4iOrnPf4Jjo01NrCbGyXOaemmHFgcuousNQ6OuyiJDjwGkjLm_uVL/exec',
+    enabled: true,
+  },
 }
 
 const HOJA_MAP = {
