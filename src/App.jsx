@@ -2523,6 +2523,94 @@ Responde en español, conciso y útil.`
   )
 }
 
+
+// ═══════════════════════════════════════════════════════
+// TAREAS ASIGNADAS — vista del canal
+// ═══════════════════════════════════════════════════════
+function TareasAsignadas({ data, setData, usuario }) {
+  const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzgSB5bZEo-3JgBbTySp8GOVB0VpYl8ki3J2EM-daQrB42HiAguVzqWZUCoFovx5rTF/exec'
+  const save = nd => { localStorage.setItem(getStorageKey(usuario.id), JSON.stringify(nd)) }
+
+  const tareas = (data.pendientes||[]).filter(p=>p.asignadoPor==='Líder de Mercadeo')
+  const abiertas = tareas.filter(t=>t.estado!=='Listo'&&t.estado!=='Cancelado')
+  const cerradas = tareas.filter(t=>t.estado==='Listo'||t.estado==='Cancelado')
+
+  const PRIORIDAD_COLOR = { Alta:'var(--red)', Media:'var(--orange)', Baja:'var(--green)' }
+  const ESTADO_COLOR    = { Pendiente:'var(--yellow)', 'En curso':'var(--accent)', Listo:'var(--green)', Cancelado:'var(--text3)' }
+
+  const cambiarEstado = (tarea) => {
+    const ciclo = { Pendiente:'En curso', 'En curso':'Listo', Listo:'Pendiente' }
+    const nuevo = { ...tarea, estado: ciclo[tarea.estado] || 'Pendiente' }
+    const pendientes = data.pendientes.map(p => p.id===tarea.id ? nuevo : p)
+    const nd = { ...data, pendientes }
+    setData(nd); save(nd)
+  }
+
+  const eliminar = (id) => {
+    if(!window.confirm('¿Marcar como cancelada esta tarea?')) return
+    const pendientes = data.pendientes.map(p => p.id===id ? {...p, estado:'Cancelado'} : p)
+    const nd = { ...data, pendientes }
+    setData(nd); save(nd)
+  }
+
+  const TarjetaTarea = ({ t }) => (
+    <div style={{...S.card, padding:'16px 20px', display:'flex', gap:14, alignItems:'flex-start', borderLeft:'3px solid '+PRIORIDAD_COLOR[t.prioridad]}}>
+      <div style={{flex:1, minWidth:0}}>
+        <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginBottom:6}}>
+          <span style={{fontWeight:600, fontSize:14, color:'var(--text)', textDecoration:t.estado==='Cancelado'?'line-through':'none'}}>{t.tarea}</span>
+          <span style={{fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:5, background:'rgba(91,82,240,0.1)', color:'var(--accent2)'}}>📋 Líder</span>
+          <span style={{fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:5, color:PRIORIDAD_COLOR[t.prioridad], background:'var(--bg3)', border:'1px solid '+PRIORIDAD_COLOR[t.prioridad]}}>{t.prioridad}</span>
+        </div>
+        <div style={{display:'flex', gap:14, fontSize:12, color:'var(--text2)', flexWrap:'wrap'}}>
+          {t.distribuidor&&<span>🏢 {t.distribuidor}</span>}
+          {t.categoria&&<span>🏷️ {t.categoria}</span>}
+          {t.fechaLimite&&<span style={{color:new Date(t.fechaLimite)<new Date()&&t.estado!=='Listo'?'var(--red)':'var(--text2)'}}>📅 {t.fechaLimite}</span>}
+          {t.responsable&&<span>👤 {t.responsable}</span>}
+        </div>
+        {t.notas&&<p style={{margin:'6px 0 0', fontSize:12, color:'var(--text3)', borderLeft:'2px solid var(--border2)', paddingLeft:8}}>{t.notas}</p>}
+      </div>
+      <div style={{display:'flex', flexDirection:'column', gap:6, alignItems:'flex-end', flexShrink:0}}>
+        <button onClick={()=>cambiarEstado(t)} style={{...S.btn('var(--bg3)','var(--text)'), fontSize:11, padding:'4px 10px', border:'1px solid '+ESTADO_COLOR[t.estado], color:ESTADO_COLOR[t.estado], fontWeight:600}}>
+          {t.estado}
+        </button>
+        {t.estado!=='Listo'&&<button onClick={()=>eliminar(t.id)} style={{...S.btn('var(--red-soft)','var(--red)'), padding:'3px 8px', fontSize:11}}>Cancelar</button>}
+      </div>
+    </div>
+  )
+
+  return (
+    <div style={{display:'flex', flexDirection:'column', gap:18}}>
+      <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:12}}>
+        <KpiCard icon={ListTodo} label="Total asignadas" value={tareas.length} accent="var(--accent2)"/>
+        <KpiCard icon={ListTodo} label="Abiertas" value={abiertas.length} accent="var(--yellow)"/>
+        <KpiCard icon={Check}    label="Completadas" value={cerradas.filter(t=>t.estado==='Listo').length} accent="var(--green)"/>
+      </div>
+
+      {abiertas.length===0&&cerradas.length===0&&(
+        <div style={{...S.card, padding:48, textAlign:'center', color:'var(--text3)'}}>
+          <div style={{fontSize:32, marginBottom:12}}>📋</div>
+          <div style={{fontWeight:600, fontSize:15, marginBottom:6}}>Sin tareas asignadas</div>
+          <div style={{fontSize:13}}>El Líder de Mercadeo aún no ha asignado tareas a tu unidad</div>
+        </div>
+      )}
+
+      {abiertas.length>0&&(
+        <div style={{display:'flex', flexDirection:'column', gap:10}}>
+          <div style={{fontSize:11, fontWeight:600, color:'var(--text2)', textTransform:'uppercase', letterSpacing:'0.05em'}}>Pendientes · {abiertas.length}</div>
+          {abiertas.sort((a,b)=>['Alta','Media','Baja'].indexOf(a.prioridad)-['Alta','Media','Baja'].indexOf(b.prioridad)).map((t,i)=><TarjetaTarea key={i} t={t}/>)}
+        </div>
+      )}
+
+      {cerradas.length>0&&(
+        <div style={{display:'flex', flexDirection:'column', gap:10}}>
+          <div style={{fontSize:11, fontWeight:600, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'0.05em'}}>Completadas / Canceladas · {cerradas.length}</div>
+          {cerradas.map((t,i)=><TarjetaTarea key={i} t={t}/>)}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ═══════════════════════════════════════════════════════
 // SISTEMA DE USUARIOS
 // ═══════════════════════════════════════════════════════
@@ -3127,6 +3215,7 @@ export default function App() {
 
   const TABS_LIDER = [{id:'dashboard',label:'Dashboard Consolidado',icon:LayoutDashboard}]
   const TABS_PRES = [{id:'dashboard',label:'Presupuesto Consolidado',icon:DollarSign}]
+  const tareasAsignadasCount = !esLider&&!esPresupuesto ? (data.pendientes||[]).filter(p=>p.asignadoPor==='Líder de Mercadeo'&&p.estado!=='Listo'&&p.estado!=='Cancelado').length : 0
   const TABS_NORMAL = [
     {id:'dashboard',  label:'Dashboard',   icon:LayoutDashboard},
     {id:'inversiones',label:'Inversiones', icon:TrendingUp},
@@ -3135,6 +3224,7 @@ export default function App() {
     {id:'presupuesto',label:'Presupuesto', icon:DollarSign},
     {id:'pendientes', label:'Pendientes',  icon:ListTodo},
     {id:'apoyocierre', label:'Apoyo Cierre', icon:DollarSign},
+    {id:'tareasasignadas', label:'Tareas Asignadas', icon:ListTodo, badge:tareasAsignadasCount},
   ]
   const tabs = esLider?TABS_LIDER:esPresupuesto?TABS_PRES:TABS_NORMAL
 
@@ -3148,8 +3238,9 @@ export default function App() {
         </div>
         <nav style={{display:'flex',gap:2,marginLeft:'auto',overflowX:'auto'}}>
           {tabs.map(t=>{ const Icon=t.icon; const active=tab===t.id; return (
-            <button key={t.id} onClick={()=>setTab(t.id)} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 12px',borderRadius:8,fontSize:12,fontWeight:active?500:400,background:active?'var(--accent-soft)':'transparent',color:active?'var(--accent2)':'var(--text2)',border:'none',cursor:'pointer',fontFamily:'var(--font)',whiteSpace:'nowrap'}}>
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 12px',borderRadius:8,fontSize:12,fontWeight:active?500:400,background:active?'var(--accent-soft)':'transparent',color:active?'var(--accent2)':'var(--text2)',border:'none',cursor:'pointer',fontFamily:'var(--font)',whiteSpace:'nowrap',position:'relative'}}>
               <Icon size={14}/>{t.label}
+              {t.badge>0&&<span style={{background:'var(--accent)',color:'#fff',borderRadius:10,fontSize:9,fontWeight:700,padding:'1px 5px',marginLeft:2}}>{t.badge}</span>}
             </button>
           )})}
         </nav>
@@ -3175,7 +3266,7 @@ export default function App() {
                 const tareasLider = (data.pendientes||[]).filter(p=>p.asignadoPor==='Líder de Mercadeo'&&p.estado!=='Listo'&&p.estado!=='Cancelado')
                 if(tareasLider.length===0) return null
                 return (
-                  <div style={{background:'rgba(91,82,240,0.08)',border:'1px solid rgba(91,82,240,0.25)',borderRadius:12,padding:'12px 18px',marginBottom:8,display:'flex',alignItems:'center',gap:12,cursor:'pointer'}} onClick={()=>setTab('pendientes')}>
+                  <div style={{background:'rgba(91,82,240,0.08)',border:'1px solid rgba(91,82,240,0.25)',borderRadius:12,padding:'12px 18px',marginBottom:8,display:'flex',alignItems:'center',gap:12,cursor:'pointer'}} onClick={()=>setTab('tareasasignadas')}>
                     <div style={{width:32,height:32,borderRadius:8,background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>📋</div>
                     <div style={{flex:1}}>
                       <div style={{fontWeight:600,fontSize:13,color:'var(--accent2)'}}>Tienes {tareasLider.length} actividad{tareasLider.length>1?'es':''} asignada{tareasLider.length>1?'s':''} por el Líder de Mercadeo</div>
@@ -3185,13 +3276,14 @@ export default function App() {
                   </div>
                 )
               })()}
-              {tab==='dashboard'   &&<Dashboard    data={data}/>}
-              {tab==='inversiones' &&<Inversiones  data={data} setData={setDataUser}/>}
-              {tab==='ventas'      &&<Ventas       data={data} setData={setDataUser}/>}
-              {tab==='planes'      &&<Planes       data={data} setData={setDataUser}/>}
-              {tab==='presupuesto' &&<Presupuesto  data={data} setData={setDataUser}/>}
-              {tab==='pendientes'  &&<Pendientes   data={data} setData={setDataUser}/>}
-              {tab==='apoyocierre' &&<ApoyoCierre  data={data} setData={setDataUser}/>}
+              {tab==='dashboard'        &&<Dashboard         data={data}/>}
+              {tab==='inversiones'     &&<Inversiones       data={data} setData={setDataUser}/>}
+              {tab==='ventas'          &&<Ventas            data={data} setData={setDataUser}/>}
+              {tab==='planes'          &&<Planes            data={data} setData={setDataUser}/>}
+              {tab==='presupuesto'     &&<Presupuesto       data={data} setData={setDataUser}/>}
+              {tab==='pendientes'      &&<Pendientes        data={data} setData={setDataUser}/>}
+              {tab==='apoyocierre'     &&<ApoyoCierre       data={data} setData={setDataUser}/>}
+              {tab==='tareasasignadas' &&<TareasAsignadas   data={data} setData={setDataUser} usuario={usuario}/>}
             </>
           )}
         </div>
