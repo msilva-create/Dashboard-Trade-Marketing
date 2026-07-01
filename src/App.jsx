@@ -3228,27 +3228,25 @@ export default function App() {
   ]
   const tabs = esLider?TABS_LIDER:esPresupuesto?TABS_PRES:TABS_NORMAL
 
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+
   return (
-    <div style={{minHeight:'100vh',display:'flex',flexDirection:'column'}}>
-      <header style={{background:'var(--bg2)',borderBottom:'1px solid var(--border)',padding:'0 20px',display:'flex',alignItems:'center',height:56,gap:16,position:'sticky',top:0,zIndex:10}}>
-        <div style={{display:'flex',alignItems:'center',gap:9}}>
-          <div style={{width:30,height:30,borderRadius:8,background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center'}}><BarChart2 size={16} color="#fff"/></div>
-          <span style={{fontWeight:600,fontSize:14}}>Prolub</span>
-          <span style={{color:'var(--text3)',fontSize:13}}>/ Trade Marketing</span>
+    <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',background:'var(--bg)'}}>
+      {/* TOPBAR */}
+      <header style={{background:'var(--bg2)',borderBottom:'1px solid var(--border)',padding:'0 16px',display:'flex',alignItems:'center',height:52,gap:12,position:'sticky',top:0,zIndex:20}}>
+        <button onClick={()=>setSidebarOpen(o=>!o)} style={{width:32,height:32,borderRadius:8,background:'var(--bg3)',border:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0}}>
+          <BarChart2 size={15} color="var(--text2)"/>
+        </button>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <div style={{width:28,height:28,borderRadius:7,background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center'}}><BarChart2 size={14} color="#fff"/></div>
+          <span style={{fontWeight:700,fontSize:14,color:'var(--text)'}}>Prolub</span>
+          <span style={{color:'var(--text3)',fontSize:12}}>/ Trade Marketing</span>
         </div>
-        <nav style={{display:'flex',gap:2,marginLeft:'auto',overflowX:'auto'}}>
-          {tabs.map(t=>{ const Icon=t.icon; const active=tab===t.id; return (
-            <button key={t.id} onClick={()=>setTab(t.id)} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 12px',borderRadius:8,fontSize:12,fontWeight:active?500:400,background:active?'var(--accent-soft)':'transparent',color:active?'var(--accent2)':'var(--text2)',border:'none',cursor:'pointer',fontFamily:'var(--font)',whiteSpace:'nowrap',position:'relative'}}>
-              <Icon size={14}/>{t.label}
-              {t.badge>0&&<span style={{background:'var(--accent)',color:'#fff',borderRadius:10,fontSize:9,fontWeight:700,padding:'1px 5px',marginLeft:2}}>{t.badge}</span>}
-            </button>
-          )})}
-        </nav>
-        <div style={{display:'flex',alignItems:'center',gap:10,marginLeft:8,flexShrink:0}}>
-          <div style={{display:'flex',alignItems:'center',gap:7,background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:20,padding:'4px 12px'}}>
-            <div style={{width:8,height:8,borderRadius:'50%',background:usuario.color}}/>
+        <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
+          <div style={{display:'flex',alignItems:'center',gap:6,background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:20,padding:'4px 12px'}}>
+            <div style={{width:7,height:7,borderRadius:'50%',background:usuario.color}}/>
             <span style={{fontSize:12,fontWeight:500,color:'var(--text)'}}>{usuario.nombre}</span>
-            {sheetsSync==='syncing'&&<span style={{fontSize:10,color:'var(--yellow)'}}>↻ Sync...</span>}
+            {sheetsSync==='syncing'&&<span style={{fontSize:10,color:'var(--yellow)'}}>↻</span>}
             {sheetsSync==='ok'&&<span style={{fontSize:10,color:'var(--green)'}}>✓ Sheets</span>}
             {sheetsSync==='error'&&<span style={{fontSize:10,color:'var(--red)'}}>✗ Offline</span>}
           </div>
@@ -3256,7 +3254,20 @@ export default function App() {
         </div>
       </header>
 
-      <main style={{flex:1,padding:'24px 28px',maxWidth:1400,width:'100%',margin:'0 auto'}}>
+      <div style={{display:'flex',flex:1,overflow:'hidden'}}>
+        {/* SIDEBAR */}
+        <aside style={{width:sidebarOpen?220:56,flexShrink:0,background:'var(--bg2)',borderRight:'1px solid var(--border)',display:'flex',flexDirection:'column',padding:'12px 0',gap:2,transition:'width 0.2s',overflow:'hidden',position:'sticky',top:52,height:'calc(100vh - 52px)'}}>
+          {tabs.map(t=>{ const Icon=t.icon; const active=tab===t.id; return (
+            <button key={t.id} onClick={()=>setTab(t.id)} title={t.label} style={{display:'flex',alignItems:'center',gap:10,padding:sidebarOpen?'9px 16px':'9px 0',justifyContent:sidebarOpen?'flex-start':'center',margin:'0 6px',borderRadius:9,fontSize:13,fontWeight:active?600:400,background:active?'var(--accent-soft)':'transparent',color:active?'var(--accent2)':'var(--text2)',border:'none',cursor:'pointer',fontFamily:'var(--font)',whiteSpace:'nowrap',position:'relative',transition:'all 0.15s'}}>
+              <Icon size={16} style={{flexShrink:0}}/>
+              {sidebarOpen&&<span style={{overflow:'hidden',textOverflow:'ellipsis'}}>{t.label}</span>}
+              {t.badge>0&&<span style={{background:'var(--accent)',color:'#fff',borderRadius:10,fontSize:9,fontWeight:700,padding:'1px 5px',marginLeft:'auto',flexShrink:0}}>{t.badge}</span>}
+            </button>
+          )})}
+        </aside>
+
+        {/* CONTENIDO */}
+        <main style={{flex:1,padding:'24px 28px',overflowY:'auto',minWidth:0}}>
         <div key={tab+usuario.id}>
           {esLider && <DashboardLider/>}
           {esPresupuesto && <PresupuestoConsolidado/>}
@@ -3287,7 +3298,8 @@ export default function App() {
             </>
           )}
         </div>
-      </main>
+        </main>
+      </div>
 
       {!esLider&&!esPresupuesto&&(
         <footer style={{padding:'12px 28px',borderTop:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
