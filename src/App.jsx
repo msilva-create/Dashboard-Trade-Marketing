@@ -2611,6 +2611,304 @@ function TareasAsignadas({ data, setData, usuario }) {
   )
 }
 
+
+// ═══════════════════════════════════════════════════════
+// PROYECTOS
+// ═══════════════════════════════════════════════════════
+const EMAILS_EQUIPO = {
+  'Emma':    'epabon@gulfcolombia.com',
+  'María P': 'msilva@prolub.com.co',
+  'Juan':    'acomercial@prolub.com.co',
+  'Camilo':  'aalvarado@gulfcolombia.com',
+}
+const EMAIL_LIDER_PROY = 'cgil@prolub.com.co'
+const AREAS = ['Compras','Facturación','Logística','Comercial']
+const RESPONSABLES = ['Emma','María P','Juan','Camilo']
+const SHEETS_URL_PROY = 'https://script.google.com/macros/s/AKfycbzgSB5bZEo-3JgBbTySp8GOVB0VpYl8ki3J2EM-daQrB42HiAguVzqWZUCoFovx5rTF/exec'
+
+const ESTADO_PROY = {
+  'Pendiente': { color:'var(--yellow)',  bg:'rgba(180,83,9,0.1)' },
+  'En proceso':{ color:'var(--accent2)', bg:'var(--accent-soft)' },
+  'Finalizada':{ color:'var(--green)',   bg:'var(--green-soft)'  },
+}
+
+function enviarCorreoProyecto({ proyecto, subtarea }) {
+  const resp = subtarea?.responsable || proyecto.responsable
+  const email = EMAILS_EQUIPO[resp]
+  if(!email) return
+  const fechaEntrega = subtarea?.fechaEntrega || proyecto.fechaEntrega || ''
+  // Generar enlace Google Calendar
+  const titulo = encodeURIComponent(`📦 Entrega: ${subtarea?.nombre || proyecto.nombre}`)
+  const detalle = encodeURIComponent(`Proyecto: ${proyecto.nombre}\nResponsable: ${resp}\nÁreas: ${(subtarea?.areas||proyecto.areas||[]).join(', ')}`)
+  let calLink = ''
+  if(fechaEntrega) {
+    const d = new Date(fechaEntrega)
+    const fmt = t => t.toISOString().replace(/[-:]/g,'').split('.')[0]+'Z'
+    const start = fmt(d)
+    const end = fmt(new Date(d.getTime()+3600000))
+    calLink = `https://calendar.google.com/calendar/r/eventedit?text=${titulo}&dates=${start}/${end}&details=${detalle}&add=${encodeURIComponent(email)}`
+  }
+  // Generar enlace calendario también para Paola
+  let calLinkLider = ''
+  if(fechaEntrega) {
+    const d2 = new Date(fechaEntrega)
+    const fmt2 = t => t.toISOString().replace(/[-:]/g,'').split('.')[0]+'Z'
+    const start2 = fmt2(d2)
+    const end2 = fmt2(new Date(d2.getTime()+3600000))
+    const titulo2 = encodeURIComponent(`📦 Entrega: ${subtarea?.nombre || proyecto.nombre}`)
+    const detalle2 = encodeURIComponent(`Proyecto: ${proyecto.nombre}\nResponsable: ${resp}\nÁreas: ${(subtarea?.areas||proyecto.areas||[]).join(', ')}`)
+    calLinkLider = `https://calendar.google.com/calendar/r/eventedit?text=${titulo2}&dates=${start2}/${end2}&details=${detalle2}&add=${encodeURIComponent(EMAIL_LIDER_PROY)}`
+  }
+  fetch(SHEETS_URL_PROY, {
+    method:'POST', mode:'no-cors',
+    headers:{'Content-Type':'text/plain'},
+    body: JSON.stringify({
+      accion: 'enviar_correo_proyecto',
+      destinatario: email,
+      copia: EMAIL_LIDER_PROY,
+      proyecto: proyecto.nombre,
+      subtarea: subtarea?.nombre || '',
+      responsable: resp,
+      areas: (subtarea?.areas||proyecto.areas||[]).join(', '),
+      fechaEntrega,
+      calLink,
+      calLinkLider,
+      descripcion: proyecto.descripcion || '',
+    })
+  }).catch(()=>{})
+}
+
+function Proyectos({ data, setData, usuario }) {
+  const proyectos = data.proyectos || []
+  const [vista, setVista] = useState('lista') // lista | detalle
+  const [proyectoActivo, setProyectoActivo] = useState(null)
+  const [modalProyecto, setModalProyecto] = useState(false)
+  const [modalSubtarea, setModalSubtarea] = useState(false)
+  const [proyPadre, setProyPadre] = useState(null)
+  const [filtroEstado, setFiltroEstado] = useState('')
+  const [formP, setFormP] = useState({ nombre:'', descripcion:'', responsable:'', areas:[], fechaEntrega:'', estado:'Pendiente' })
+  const [formS, setFormS] = useState({ nombre:'', descripcion:'', responsable:'', areas:[], fechaEntrega:'', estado:'Pendiente' })
+
+  const save = nd => { localStorage.setItem(getStorageKey(usuario.id), JSON.stringify(nd)) }
+
+  const crearProyecto = () => {
+    if(!formP.nombre) return
+    const nuevo = { id:Date.now(), ...formP, creadoPor:usuario.nombre, subtareas:[], fechaCreacion:new Date().toLocaleDateString('es-CO') }
+    const nd = {...data, proyectos:[...proyectos, nuevo]}
+    setData(nd); save(nd)
+    enviarCorreoProyecto({ proyecto:nuevo, subtarea:null })
+    setModalProyecto(false)
+    setFormP({ nombre:'', descripcion:'', responsable:'', areas:[], fechaEntrega:'', estado:'Pendiente' })
+  }
+
+  const crearSubtarea = () => {
+    if(!formS.nombre||!proyPadre) return
+    const subtarea = { id:Date.now(), ...formS, creadoPor:usuario.nombre }
+    const nd = {...data, proyectos: proyectos.map(p=> p.id===proyPadre.id ? {...p, subtareas:[...(p.subtareas||[]), subtarea]} : p)}
+    setData(nd); save(nd)
+    enviarCorreoProyecto({ proyecto:proyPadre, subtarea })
+    setModalSubtarea(false)
+    setFormS({ nombre:'', descripcion:'', responsable:'', areas:[], fechaEntrega:'', estado:'Pendiente' })
+  }
+
+  const cambiarEstadoProy = (pid, estado) => {
+    const nd = {...data, proyectos: proyectos.map(p=> p.id===pid ? {...p,estado} : p)}
+    setData(nd); save(nd)
+    if(proyectoActivo?.id===pid) setProyectoActivo({...proyectoActivo,estado})
+  }
+
+  const cambiarEstadoSub = (pid, sid, estado) => {
+    const nd = {...data, proyectos: proyectos.map(p=> p.id===pid ? {...p, subtareas:(p.subtareas||[]).map(s=> s.id===sid?{...s,estado}:s)} : p)}
+    setData(nd); save(nd)
+    if(proyectoActivo?.id===pid) setProyectoActivo(nd.proyectos.find(p=>p.id===pid))
+  }
+
+  const eliminarProy = (pid) => {
+    if(!window.confirm('¿Eliminar este proyecto y todas sus subtareas?')) return
+    const nd = {...data, proyectos: proyectos.filter(p=>p.id!==pid)}
+    setData(nd); save(nd)
+    setVista('lista'); setProyectoActivo(null)
+  }
+
+  const eliminarSub = (pid, sid) => {
+    const nd = {...data, proyectos: proyectos.map(p=> p.id===pid ? {...p, subtareas:(p.subtareas||[]).filter(s=>s.id!==sid)} : p)}
+    setData(nd); save(nd)
+    if(proyectoActivo?.id===pid) setProyectoActivo(nd.proyectos.find(p=>p.id===pid))
+  }
+
+  const proyFiltrados = filtroEstado ? proyectos.filter(p=>p.estado===filtroEstado) : proyectos
+
+  const FormProyecto = ({ form, setForm, onSave, titulo }) => (
+    <Modal title={titulo} onClose={()=>{ setModalProyecto(false); setModalSubtarea(false) }}>
+      <div style={{display:'flex',flexDirection:'column',gap:14}}>
+        <Field label="Nombre *"><input value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})} placeholder="Nombre del proyecto o tarea"/></Field>
+        <Field label="Descripción"><textarea value={form.descripcion} onChange={e=>setForm({...form,descripcion:e.target.value})} rows={2} placeholder="Descripción breve" style={{resize:'vertical'}}/></Field>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+          <Field label="Responsable">
+            <select value={form.responsable} onChange={e=>setForm({...form,responsable:e.target.value})}>
+              <option value="">Sin asignar</option>
+              {RESPONSABLES.map(r=><option key={r}>{r}</option>)}
+            </select>
+          </Field>
+          <Field label="Fecha de entrega"><input type="date" value={form.fechaEntrega} onChange={e=>setForm({...form,fechaEntrega:e.target.value})}/></Field>
+        </div>
+        <Field label="Estado">
+          <select value={form.estado} onChange={e=>setForm({...form,estado:e.target.value})}>
+            {Object.keys(ESTADO_PROY).map(e=><option key={e}>{e}</option>)}
+          </select>
+        </Field>
+        <Field label="Áreas que intervienen">
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:4}}>
+            {AREAS.map(a=>(
+              <label key={a} style={{display:'flex',alignItems:'center',gap:5,cursor:'pointer',fontSize:13,padding:'5px 10px',borderRadius:7,border:'1px solid var(--border2)',background:form.areas.includes(a)?'var(--accent-soft)':'var(--bg3)',color:form.areas.includes(a)?'var(--accent2)':'var(--text2)'}}>
+                <input type="checkbox" checked={form.areas.includes(a)} onChange={e=>setForm({...form,areas:e.target.checked?[...form.areas,a]:form.areas.filter(x=>x!==a)})} style={{display:'none'}}/>
+                {a}
+              </label>
+            ))}
+          </div>
+        </Field>
+        <button onClick={onSave} style={{...S.btn('var(--accent)','#fff'),marginTop:4}}>Guardar</button>
+      </div>
+    </Modal>
+  )
+
+  // ── DETALLE DE PROYECTO ──
+  if(vista==='detalle'&&proyectoActivo) {
+    const proy = proyectos.find(p=>p.id===proyectoActivo.id)||proyectoActivo
+    const subtareas = proy.subtareas||[]
+    const total = subtareas.length
+    const finalizadas = subtareas.filter(s=>s.estado==='Finalizada').length
+    const pct = total>0?Math.round(finalizadas/total*100):0
+    const est = ESTADO_PROY[proy.estado]||ESTADO_PROY['Pendiente']
+    return (
+      <div style={{display:'flex',flexDirection:'column',gap:16}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <button onClick={()=>setVista('lista')} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'6px 12px',fontSize:12}}>← Volver</button>
+          <span style={{fontWeight:700,fontSize:17,color:'var(--text)',flex:1}}>{proy.nombre}</span>
+          <button onClick={()=>{setProyPadre(proy);setModalSubtarea(true)}} style={{...S.btn('var(--accent)','#fff'),fontSize:12}}>+ Subtarea</button>
+          <button onClick={()=>eliminarProy(proy.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'6px 10px'}}><Trash2 size={14}/></button>
+        </div>
+        <div style={{...S.card,padding:'18px 20px',display:'flex',flexDirection:'column',gap:12}}>
+          <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center'}}>
+            <select value={proy.estado} onChange={e=>cambiarEstadoProy(proy.id,e.target.value)} style={{fontSize:12,padding:'4px 10px',borderRadius:7,border:'1px solid '+est.color,color:est.color,background:est.bg,fontWeight:600,cursor:'pointer'}}>
+              {Object.keys(ESTADO_PROY).map(e=><option key={e}>{e}</option>)}
+            </select>
+            {proy.responsable&&<span style={{fontSize:12,background:'var(--bg3)',padding:'3px 10px',borderRadius:6,color:'var(--text2)'}}>👤 {proy.responsable}</span>}
+            {proy.fechaEntrega&&<span style={{fontSize:12,color:'var(--text3)'}}>📅 Entrega: {proy.fechaEntrega}</span>}
+            {(proy.areas||[]).map(a=><span key={a} style={{fontSize:11,background:'var(--accent-soft)',color:'var(--accent2)',padding:'2px 8px',borderRadius:5}}>{a}</span>)}
+          </div>
+          {proy.descripcion&&<p style={{fontSize:13,color:'var(--text2)',margin:0}}>{proy.descripcion}</p>}
+          {total>0&&(
+            <div>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--text3)',marginBottom:4}}>
+                <span>Progreso</span><span>{finalizadas}/{total} subtareas · {pct}%</span>
+              </div>
+              <div style={{height:6,background:'var(--bg4)',borderRadius:3}}>
+                <div style={{width:pct+'%',height:'100%',background:pct===100?'var(--green)':'var(--accent)',borderRadius:3,transition:'width 0.3s'}}/>
+              </div>
+            </div>
+          )}
+        </div>
+        {subtareas.length===0&&(
+          <div style={{...S.card,padding:36,textAlign:'center',color:'var(--text3)'}}>
+            <div style={{fontSize:28,marginBottom:8}}>📋</div>
+            <div>Sin subtareas aún — usa <strong>+ Subtarea</strong></div>
+          </div>
+        )}
+        {subtareas.map((s,i)=>{
+          const se = ESTADO_PROY[s.estado]||ESTADO_PROY['Pendiente']
+          return (
+            <div key={i} style={{...S.card,padding:'14px 18px',borderLeft:'3px solid '+se.color,display:'flex',gap:12,alignItems:'flex-start'}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',marginBottom:4}}>
+                  <span style={{fontWeight:600,fontSize:14}}>{s.nombre}</span>
+                  {s.responsable&&<span style={{fontSize:11,background:'var(--bg3)',padding:'2px 8px',borderRadius:5,color:'var(--text2)'}}>👤 {s.responsable}</span>}
+                  {s.fechaEntrega&&<span style={{fontSize:11,color:'var(--text3)'}}>📅 {s.fechaEntrega}</span>}
+                </div>
+                {s.descripcion&&<p style={{margin:'0 0 6px',fontSize:12,color:'var(--text2)'}}>{s.descripcion}</p>}
+                <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                  {(s.areas||[]).map(a=><span key={a} style={{fontSize:10,background:'var(--accent-soft)',color:'var(--accent2)',padding:'1px 7px',borderRadius:4}}>{a}</span>)}
+                </div>
+              </div>
+              <div style={{display:'flex',flexDirection:'column',gap:6,alignItems:'flex-end',flexShrink:0}}>
+                <select value={s.estado} onChange={e=>cambiarEstadoSub(proy.id,s.id,e.target.value)} style={{fontSize:11,padding:'3px 8px',borderRadius:6,border:'1px solid '+se.color,color:se.color,background:se.bg,fontWeight:600,cursor:'pointer'}}>
+                  {Object.keys(ESTADO_PROY).map(e=><option key={e}>{e}</option>)}
+                </select>
+                <button onClick={()=>eliminarSub(proy.id,s.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'3px 7px'}}><Trash2 size={11}/></button>
+              </div>
+            </div>
+          )
+        })}
+        {modalSubtarea&&<FormProyecto form={formS} setForm={setFormS} onSave={crearSubtarea} titulo="Nueva subtarea"/>}
+      </div>
+    )
+  }
+
+  // ── LISTA DE PROYECTOS ──
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:16}}>
+      <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
+        <div style={{display:'flex',gap:6}}>
+          {['','Pendiente','En proceso','Finalizada'].map(e=>(
+            <button key={e} onClick={()=>setFiltroEstado(e)} style={{...S.btn(filtroEstado===e?'var(--accent)':'var(--bg3)',filtroEstado===e?'#fff':'var(--text2)'),fontSize:12,padding:'5px 12px'}}>{e||'Todos'}</button>
+          ))}
+        </div>
+        <button onClick={()=>setModalProyecto(true)} style={{...S.btn('var(--accent)','#fff'),marginLeft:'auto'}}><PlusCircle size={15}/> Nuevo proyecto</button>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(300px,1fr))',gap:14}}>
+        {proyFiltrados.length===0&&(
+          <div style={{...S.card,padding:48,textAlign:'center',color:'var(--text3)',gridColumn:'1/-1'}}>
+            <div style={{fontSize:32,marginBottom:10}}>🗂️</div>
+            <div style={{fontWeight:600,fontSize:15,marginBottom:6}}>Sin proyectos aún</div>
+            <div style={{fontSize:13}}>Crea tu primer proyecto con <strong>Nuevo proyecto</strong></div>
+          </div>
+        )}
+        {proyFiltrados.map((p,i)=>{
+          const est = ESTADO_PROY[p.estado]||ESTADO_PROY['Pendiente']
+          const subs = p.subtareas||[]
+          const fin = subs.filter(s=>s.estado==='Finalizada').length
+          const pct = subs.length>0?Math.round(fin/subs.length*100):0
+          return (
+            <div key={i} style={{...S.card,padding:0,overflow:'hidden',cursor:'pointer',borderTop:'3px solid '+est.color}} onClick={()=>{setProyectoActivo(p);setVista('detalle')}}>
+              <div style={{padding:'16px 18px'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+                  <span style={{fontWeight:700,fontSize:14,color:'var(--text)',flex:1,marginRight:8}}>{p.nombre}</span>
+                  <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:5,background:est.bg,color:est.color,flexShrink:0,whiteSpace:'nowrap'}}>{p.estado}</span>
+                </div>
+                {p.descripcion&&<p style={{margin:'0 0 8px',fontSize:12,color:'var(--text2)',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{p.descripcion}</p>}
+                <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:10}}>
+                  {p.responsable&&<span style={{fontSize:11,color:'var(--text2)'}}>👤 {p.responsable}</span>}
+                  {p.fechaEntrega&&<span style={{fontSize:11,color:'var(--text3)'}}>📅 {p.fechaEntrega}</span>}
+                </div>
+                {(p.areas||[]).length>0&&(
+                  <div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:10}}>
+                    {p.areas.map(a=><span key={a} style={{fontSize:10,background:'var(--accent-soft)',color:'var(--accent2)',padding:'1px 7px',borderRadius:4}}>{a}</span>)}
+                  </div>
+                )}
+                {subs.length>0&&(
+                  <div>
+                    <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'var(--text3)',marginBottom:3}}>
+                      <span>{fin}/{subs.length} subtareas</span><span>{pct}%</span>
+                    </div>
+                    <div style={{height:4,background:'var(--bg4)',borderRadius:2}}>
+                      <div style={{width:pct+'%',height:'100%',background:pct===100?'var(--green)':'var(--accent)',borderRadius:2}}/>
+                    </div>
+                  </div>
+                )}
+                {subs.length===0&&<span style={{fontSize:11,color:'var(--text3)'}}>Sin subtareas</span>}
+              </div>
+              <div style={{padding:'8px 18px',borderTop:'1px solid var(--border)',fontSize:11,color:'var(--text3)',display:'flex',justifyContent:'space-between'}}>
+                <span>Por {p.creadoPor}</span><span>{p.fechaCreacion}</span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      {modalProyecto&&<FormProyecto form={formP} setForm={setFormP} onSave={crearProyecto} titulo="Nuevo proyecto"/>}
+    </div>
+  )
+}
+
 // ═══════════════════════════════════════════════════════
 // SISTEMA DE USUARIOS
 // ═══════════════════════════════════════════════════════
@@ -3210,6 +3508,22 @@ export default function App() {
 
   if(!usuario) return <LoginScreen onLogin={u=>{setUsuario(u);setTab('dashboard')}}/>
 
+  if(sheetsLoading) return (
+    <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'var(--bg)',gap:20}}>
+      <div style={{width:56,height:56,borderRadius:14,background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 8px 32px rgba(91,82,240,0.3)'}}>
+        <BarChart2 size={28} color="#fff"/>
+      </div>
+      <div style={{textAlign:'center'}}>
+        <div style={{fontWeight:700,fontSize:18,color:'var(--text)',marginBottom:6}}>Prolub Trade Marketing</div>
+        <div style={{fontSize:13,color:'var(--text3)'}}>Cargando datos de {usuario.nombre}...</div>
+      </div>
+      <div style={{width:200,height:4,background:'var(--bg3)',borderRadius:4,overflow:'hidden'}}>
+        <div style={{height:'100%',background:'var(--accent)',borderRadius:4,animation:'loadbar 1.5s ease-in-out infinite'}}/>
+      </div>
+      <style>{`@keyframes loadbar{0%{width:0%;margin-left:0}50%{width:60%;margin-left:20%}100%{width:0%;margin-left:100%}}`}</style>
+    </div>
+  )
+
   const esLider = usuario.rol==='lider'
   const esPresupuesto = usuario.rol==='presupuesto'
 
@@ -3225,6 +3539,7 @@ export default function App() {
     {id:'pendientes', label:'Pendientes',  icon:ListTodo},
     {id:'apoyocierre', label:'Apoyo Cierre', icon:DollarSign},
     {id:'tareasasignadas', label:'Tareas Asignadas', icon:ListTodo, badge:tareasAsignadasCount},
+    {id:'proyectos', label:'Proyectos', icon:BookOpen},
   ]
   const tabs = esLider?TABS_LIDER:esPresupuesto?TABS_PRES:TABS_NORMAL
 
@@ -3243,13 +3558,23 @@ export default function App() {
           <span style={{color:'var(--text3)',fontSize:12}}>/ Trade Marketing</span>
         </div>
         <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
+          {sheetsSync==='syncing'&&(
+            <div style={{display:'flex',alignItems:'center',gap:6,background:'rgba(217,119,6,0.1)',border:'1px solid rgba(217,119,6,0.3)',borderRadius:20,padding:'4px 12px'}}>
+              <span style={{fontSize:11,color:'var(--orange)',fontWeight:600,animation:'spin 1s linear infinite',display:'inline-block'}}>↻</span>
+              <span style={{fontSize:11,color:'var(--orange)',fontWeight:500}}>Sincronizando...</span>
+            </div>
+          )}
+          {sheetsSync==='error'&&(
+            <button onClick={()=>{setSheetsSync('syncing');cargarDesdeSheets(usuario.id).then(sd=>{if(sd){setData(sd);localStorage.setItem(getStorageKey(usuario.id),JSON.stringify(sd));setSheetsSync('ok')}else setSheetsSync('error')})}} style={{display:'flex',alignItems:'center',gap:6,background:'rgba(224,60,60,0.1)',border:'1px solid rgba(224,60,60,0.3)',borderRadius:20,padding:'4px 12px',cursor:'pointer',fontFamily:'var(--font)'}}>
+              <span style={{fontSize:11,color:'var(--red)',fontWeight:600}}>✗ Sin conexión — Reintentar</span>
+            </button>
+          )}
           <div style={{display:'flex',alignItems:'center',gap:6,background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:20,padding:'4px 12px'}}>
             <div style={{width:7,height:7,borderRadius:'50%',background:usuario.color}}/>
             <span style={{fontSize:12,fontWeight:500,color:'var(--text)'}}>{usuario.nombre}</span>
-            {sheetsSync==='syncing'&&<span style={{fontSize:10,color:'var(--yellow)'}}>↻</span>}
             {sheetsSync==='ok'&&<span style={{fontSize:10,color:'var(--green)'}}>✓ Sheets</span>}
-            {sheetsSync==='error'&&<span style={{fontSize:10,color:'var(--red)'}}>✗ Offline</span>}
           </div>
+          <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
           <button onClick={cerrarSesion} style={{fontSize:11,color:'var(--text3)',background:'none',border:'none',cursor:'pointer',padding:'4px 8px',fontFamily:'var(--font)'}}>Salir</button>
         </div>
       </header>
@@ -3295,6 +3620,7 @@ export default function App() {
               {tab==='pendientes'      &&<Pendientes        data={data} setData={setDataUser}/>}
               {tab==='apoyocierre'     &&<ApoyoCierre       data={data} setData={setDataUser}/>}
               {tab==='tareasasignadas' &&<TareasAsignadas   data={data} setData={setDataUser} usuario={usuario}/>}
+              {tab==='proyectos'        &&<Proyectos          data={data} setData={setDataUser} usuario={usuario}/>}
             </>
           )}
         </div>
