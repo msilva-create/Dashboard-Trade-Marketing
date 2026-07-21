@@ -21,6 +21,38 @@ const SHEETS_CONFIG = {
   },
 }
 
+const EMAILS_POR_CANAL = {
+  distribucion: {
+    'Cristian': 'cblanco@prolub.com.co',
+    'Mauricio': 'oramirez@prolub.com.co',
+    'Gonzalo':  'grodriguez@prolub.com.co',
+  },
+  industria: {
+    'Angela Pastor':        'apastor@prolub.com.co',
+    'Maria Fernanda':       'mquiroga@prolub.com.co',
+    'Aylin Cepeda':         'acepeda@prolub.com.co',
+    'Juan Pablo Rodriguez': 'jrodriguez@prolub.com.co',
+  },
+  zonas: {
+    'Andres Hernandez': 'ahernandez@prolub.com.co',
+    'Maria Fajardo':    'mfajardo@prolub.com.co',
+    'Luis Ferro':       'lferro@prolub.com.co',
+    'Ruben Escarraga':  'rescarraga@prolub.com.co',
+    'Juan Cubillos':    'jcubillos@prolub.com.co',
+    'Johan Santibanez': 'jsantibanez@prolub.com.co',
+    'Jhonn Florez':     'jflorez@prolub.com.co',
+    'Sandra Ceron':     'sceron@gulfcolombia.com',
+    'Hans Munoz':       'hdmunoz@prolub.com.co',
+    'Victor Molina':    'vmolina@prolub.com.co',
+  },
+}
+
+const JEFES_POR_CANAL = {
+  distribucion: { 'Maria Fernanda': 'mquiroga@prolub.com.co' },
+  industria:    { 'Maria Fernanda': 'mquiroga@prolub.com.co' },
+  zonas:        { 'Victor': 'vmolina@prolub.com.co', 'Carlos': 'cmercado@prolub.com.co' },
+}
+
 const HOJA_MAP = {
   inversiones:       'INVERSIONES',
   ventas:            'VENTAS',
@@ -1992,36 +2024,6 @@ function ApoyoCierre({ data, setData, usuario }) {
   const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzgSB5bZEo-3JgBbTySp8GOVB0VpYl8ki3J2EM-daQrB42HiAguVzqWZUCoFovx5rTF/exec'
 
   const _canalActual = usuario?.id || 'distribucion'
-  const EMAILS_POR_CANAL = {
-    distribucion: {
-      'Cristian': 'cblanco@prolub.com.co',
-      'Mauricio': 'oramirez@prolub.com.co',
-      'Gonzalo':  'grodriguez@prolub.com.co',
-    },
-    industria: {
-      'Angela Pastor':        'apastor@prolub.com.co',
-      'Maria Fernanda':       'mquiroga@prolub.com.co',
-      'Aylin Cepeda':         'acepeda@prolub.com.co',
-      'Juan Pablo Rodriguez': 'jrodriguez@prolub.com.co',
-    },
-    zonas: {
-      'Andres Hernandez': 'ahernandez@prolub.com.co',
-      'Maria Fajardo':    'mfajardo@prolub.com.co',
-      'Luis Ferro':       'lferro@prolub.com.co',
-      'Ruben Escarraga':  'rescarraga@prolub.com.co',
-      'Juan Cubillos':    'jcubillos@prolub.com.co',
-      'Johan Santibanez': 'jsantibanez@prolub.com.co',
-      'Jhonn Florez':     'jflorez@prolub.com.co',
-      'Sandra Ceron':     'sceron@gulfcolombia.com',
-      'Hans Munoz':       'hdmunoz@prolub.com.co',
-      'Victor Molina':    'vmolina@prolub.com.co',
-    },
-  }
-  const JEFES_POR_CANAL = {
-    distribucion: { 'Maria Fernanda': 'mquiroga@prolub.com.co' },
-    industria:    { 'Maria Fernanda': 'mquiroga@prolub.com.co' },
-    zonas:        { 'Victor': 'vmolina@prolub.com.co', 'Carlos': 'cmercado@prolub.com.co' },
-  }
   const EMAILS = EMAILS_POR_CANAL[_canalActual] || EMAILS_POR_CANAL.distribucion
   const JEFES_CANAL = JEFES_POR_CANAL[_canalActual] || {}
   const EMAIL_JEFE = 'cgil@prolub.com.co'
@@ -3490,7 +3492,9 @@ export default function App() {
     if(SHEETS_CONFIG[usuario.id]?.enabled) {
       setSheetsLoading(true)
       setSheetsSync('syncing')
+      const loadTimeout = setTimeout(() => setSheetsLoading(false), 5000)
       cargarDesdeSheets(usuario.id).then(sheetData => {
+        clearTimeout(loadTimeout)
         setSheetsLoading(false)
         if(sheetData) {
           // Salvaguarda: si Sheets devuelve presupuestos vacío pero localmente
@@ -3551,11 +3555,14 @@ export default function App() {
       </div>
       <div style={{textAlign:'center'}}>
         <div style={{fontWeight:700,fontSize:18,color:'var(--text)',marginBottom:6}}>Prolub Trade Marketing</div>
-        <div style={{fontSize:13,color:'var(--text3)'}}>Cargando datos de {usuario.nombre}...</div>
+        <div style={{fontSize:13,color:'var(--text3)'}}>Sincronizando datos de <strong style={{color:'var(--accent2)'}}>{usuario.nombre}</strong> con Google Sheets...</div>
       </div>
-      <div style={{width:200,height:4,background:'var(--bg3)',borderRadius:4,overflow:'hidden'}}>
-        <div style={{height:'100%',background:'var(--accent)',borderRadius:4,animation:'loadbar 1.5s ease-in-out infinite'}}/>
+      <div style={{width:220,height:5,background:'var(--bg3)',borderRadius:4,overflow:'hidden'}}>
+        <div style={{height:'100%',background:'var(--accent)',borderRadius:4,animation:'loadbar 1.8s ease-in-out infinite'}}/>
       </div>
+      <button onClick={()=>setSheetsLoading(false)} style={{fontSize:12,color:'var(--text3)',background:'none',border:'1px solid var(--border2)',borderRadius:8,padding:'6px 16px',cursor:'pointer',fontFamily:'var(--font)',marginTop:8}}>
+        Entrar sin sincronizar →
+      </button>
       <style>{`@keyframes loadbar{0%{width:0%;margin-left:0}50%{width:60%;margin-left:20%}100%{width:0%;margin-left:100%}}`}</style>
     </div>
   )
