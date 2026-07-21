@@ -3475,6 +3475,7 @@ export default function App() {
   const [chatOpen, setChatOpen] = useState(false)
   const [sheetsLoading, setSheetsLoading] = useState(false)
   const [sheetsSync, setSheetsSync] = useState(null)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
 
   const loadUser = (uid) => {
     if(!uid) { _currentUserKey = STORAGE_KEY; return load() }
@@ -3577,8 +3578,6 @@ export default function App() {
     {id:'proyectos', label:'Proyectos', icon:BookOpen},
   ]
   const tabs = esLider?TABS_LIDER:esPresupuesto?TABS_PRES:TABS_NORMAL
-
-  const [sidebarOpen, setSidebarOpen] = useState(true)
 
   return (
     <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',background:'var(--bg)'}}>
