@@ -303,7 +303,7 @@ const cop = n => new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',
 const num = n => new Intl.NumberFormat('es-CO').format(n||0)
 
 const S = {
-  card: { background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:'var(--radius)', overflow:'hidden' },
+  card: { background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:'var(--radius)', overflow:'hidden', boxShadow:'0 2px 12px rgba(30,16,64,0.06)' },
   th: { padding:'10px 14px', textAlign:'left', fontSize:11, fontWeight:600, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'0.05em', background:'var(--bg3)', whiteSpace:'nowrap' },
   td: { padding:'10px 14px', fontSize:13, borderTop:'1px solid var(--border)' },
   btn: (bg,color) => ({ background:bg, color, padding:'7px 14px', borderRadius:8, fontWeight:500, fontSize:13, display:'flex', alignItems:'center', gap:6, cursor:'pointer', border:'none', fontFamily:'var(--font)' }),
@@ -324,12 +324,38 @@ function Badge({ label }) {
   return <span style={{background:s.bg,color:s.c,fontSize:11,fontWeight:500,padding:'3px 8px',borderRadius:6,whiteSpace:'nowrap'}}>{label}</span>
 }
 
-function KpiCard({ icon:Icon, label, value, sub, accent }) {
+const KPI_GRADIENTS = [
+  'linear-gradient(135deg,#6c3fc4,#a855f7)',
+  'linear-gradient(135deg,#0891b2,#22d3ee)',
+  'linear-gradient(135deg,#16a25a,#4ade80)',
+  'linear-gradient(135deg,#d97706,#fbbf24)',
+  'linear-gradient(135deg,#db2777,#f472b6)',
+  'linear-gradient(135deg,#e03c3c,#f87171)',
+]
+let _kpiIdx = 0
+
+function KpiCard({ icon:Icon, label, value, sub, accent, gradient }) {
+  const bg = gradient || (accent ? null : KPI_GRADIENTS[0])
+  const useGrad = !accent
   return (
-    <div style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'var(--radius)',padding:'18px 22px',display:'flex',flexDirection:'column',gap:6}}>
-      <div style={{display:'flex',alignItems:'center',gap:7,color:'var(--text2)',fontSize:11,fontWeight:500,textTransform:'uppercase',letterSpacing:'0.06em'}}><Icon size={13}/>{label}</div>
-      <div style={{fontSize:22,fontWeight:600,color:accent||'var(--text)',fontFamily:'var(--mono)',letterSpacing:'-0.02em'}}>{value}</div>
-      {sub&&<div style={{fontSize:11,color:'var(--text3)'}}>{sub}</div>}
+    <div style={{
+      background: useGrad ? bg : 'var(--bg2)',
+      border: useGrad ? 'none' : '1px solid var(--border)',
+      borderRadius:'var(--radius)',
+      padding:'20px 22px',
+      display:'flex',flexDirection:'column',gap:8,
+      boxShadow: useGrad ? '0 4px 20px rgba(0,0,0,0.12)' : 'none',
+      position:'relative', overflow:'hidden'
+    }}>
+      {useGrad && <div style={{position:'absolute',top:-20,right:-20,width:80,height:80,borderRadius:'50%',background:'rgba(255,255,255,0.08)'}}/>}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+        <div style={{fontSize:11,fontWeight:600,color:useGrad?'rgba(255,255,255,0.75)':'var(--text2)',textTransform:'uppercase',letterSpacing:'0.06em'}}>{label}</div>
+        <div style={{width:32,height:32,borderRadius:8,background:useGrad?'rgba(255,255,255,0.15)':'var(--accent-soft)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+          <Icon size={15} color={useGrad?'#fff':accent||'var(--accent)'}/>
+        </div>
+      </div>
+      <div style={{fontSize:24,fontWeight:700,color:useGrad?'#fff':(accent||'var(--text)'),fontFamily:'var(--mono)',letterSpacing:'-0.02em',lineHeight:1}}>{value}</div>
+      {sub&&<div style={{fontSize:11,color:useGrad?'rgba(255,255,255,0.65)':'var(--text3)'}}>{sub}</div>}
     </div>
   )
 }
@@ -3117,7 +3143,7 @@ function LoginScreen({ onLogin }) {
   }
 
   return (
-    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'var(--bg)',padding:20}}>
+    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#1e1040 0%,#2d1a6e 50%,#1e1040 100%)',padding:20}}>
       <div style={{width:'100%',maxWidth:420}}>
         <div style={{textAlign:'center',marginBottom:32}}>
           <div style={{width:52,height:52,borderRadius:14,background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px'}}>
@@ -3126,7 +3152,7 @@ function LoginScreen({ onLogin }) {
           <h1 style={{fontSize:22,fontWeight:700,letterSpacing:'-0.02em',marginBottom:6}}>Prolub Trade Marketing</h1>
           <p style={{fontSize:13,color:'var(--text3)'}}>Selecciona tu unidad y accede</p>
         </div>
-        <div style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:16,padding:28,display:'flex',flexDirection:'column',gap:16}}>
+        <div style={{background:'rgba(255,255,255,0.97)',border:'1px solid rgba(255,255,255,0.2)',borderRadius:20,padding:32,display:'flex',flexDirection:'column',gap:16,boxShadow:'0 24px 64px rgba(0,0,0,0.4)'}}>
           <div>
             <label style={{fontSize:11,color:'var(--text2)',fontWeight:500,textTransform:'uppercase',letterSpacing:'0.05em',display:'block',marginBottom:10}}>Unidad de negocio</label>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
@@ -3684,18 +3710,18 @@ export default function App() {
   if(!usuario) return <LoginScreen onLogin={u=>{setUsuario(u);setTab('dashboard')}}/>
 
   if(sheetsLoading) return (
-    <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'var(--bg)',gap:20}}>
+    <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#1e1040 0%,#2d1a6e 100%)',gap:20}}>
       <div style={{width:56,height:56,borderRadius:14,background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 8px 32px rgba(91,82,240,0.3)'}}>
         <BarChart2 size={28} color="#fff"/>
       </div>
       <div style={{textAlign:'center'}}>
-        <div style={{fontWeight:700,fontSize:18,color:'var(--text)',marginBottom:6}}>Prolub Trade Marketing</div>
-        <div style={{fontSize:13,color:'var(--text3)'}}>Sincronizando datos de <strong style={{color:'var(--accent2)'}}>{usuario.nombre}</strong> con Google Sheets...</div>
+        <div style={{fontWeight:800,fontSize:20,color:'#fff',marginBottom:6,letterSpacing:'-0.01em'}}>Prolub Trade Marketing</div>
+        <div style={{fontSize:13,color:'rgba(255,255,255,0.6)'}}>Sincronizando datos de <strong style={{color:'#c084fc'}}>{usuario.nombre}</strong>...</div>
       </div>
       <div style={{width:220,height:5,background:'var(--bg3)',borderRadius:4,overflow:'hidden'}}>
         <div style={{height:'100%',background:'var(--accent)',borderRadius:4,animation:'loadbar 1.8s ease-in-out infinite'}}/>
       </div>
-      <button onClick={()=>setSheetsLoading(false)} style={{fontSize:12,color:'var(--text3)',background:'none',border:'1px solid var(--border2)',borderRadius:8,padding:'6px 16px',cursor:'pointer',fontFamily:'var(--font)',marginTop:8}}>
+      <button onClick={()=>setSheetsLoading(false)} style={{fontSize:12,color:'rgba(255,255,255,0.5)',background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:8,padding:'7px 18px',cursor:'pointer',fontFamily:'var(--font)',marginTop:4}}>
         Entrar sin sincronizar →
       </button>
       <style>{`@keyframes loadbar{0%{width:0%;margin-left:0}50%{width:60%;margin-left:20%}100%{width:0%;margin-left:100%}}`}</style>
@@ -3724,14 +3750,15 @@ export default function App() {
   return (
     <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',background:'var(--bg)'}}>
       {/* TOPBAR */}
-      <header style={{background:'var(--bg2)',borderBottom:'1px solid var(--border)',padding:'0 16px',display:'flex',alignItems:'center',height:52,gap:12,position:'sticky',top:0,zIndex:20}}>
-        <button onClick={()=>setSidebarOpen(o=>!o)} style={{width:32,height:32,borderRadius:8,background:'var(--bg3)',border:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0}}>
-          <BarChart2 size={15} color="var(--text2)"/>
+      <header style={{background:'var(--sidebar-bg)',padding:'0 20px',display:'flex',alignItems:'center',height:56,gap:14,position:'sticky',top:0,zIndex:20,boxShadow:'0 2px 16px rgba(30,16,64,0.2)'}}>
+        <button onClick={()=>setSidebarOpen(o=>!o)} style={{width:34,height:34,borderRadius:9,background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.15)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0}}>
+          <BarChart2 size={15} color="rgba(255,255,255,0.8)"/>
         </button>
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <div style={{width:28,height:28,borderRadius:7,background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center'}}><BarChart2 size={14} color="#fff"/></div>
-          <span style={{fontWeight:700,fontSize:14,color:'var(--text)'}}>Prolub</span>
-          <span style={{color:'var(--text3)',fontSize:12}}>/ Trade Marketing</span>
+        <div style={{display:'flex',alignItems:'center',gap:9}}>
+          <div style={{width:30,height:30,borderRadius:8,background:'linear-gradient(135deg,#6c3fc4,#a855f7)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 2px 8px rgba(108,63,196,0.4)'}}><BarChart2 size={15} color="#fff"/></div>
+          <span style={{fontWeight:800,fontSize:15,color:'#fff',letterSpacing:'-0.01em'}}>Prolub</span>
+          <span style={{color:'rgba(255,255,255,0.4)',fontSize:12}}>/</span>
+          <span style={{color:'rgba(255,255,255,0.6)',fontSize:12}}>Trade Marketing</span>
         </div>
         <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
           {sheetsSync==='syncing'&&(
@@ -3745,24 +3772,24 @@ export default function App() {
               <span style={{fontSize:11,color:'var(--red)',fontWeight:600}}>✗ Sin conexión — Reintentar</span>
             </button>
           )}
-          <div style={{display:'flex',alignItems:'center',gap:6,background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:20,padding:'4px 12px'}}>
-            <div style={{width:7,height:7,borderRadius:'50%',background:usuario.color}}/>
-            <span style={{fontSize:12,fontWeight:500,color:'var(--text)'}}>{usuario.nombre}</span>
-            {sheetsSync==='ok'&&<span style={{fontSize:10,color:'var(--green)'}}>✓ Sheets</span>}
+          <div style={{display:'flex',alignItems:'center',gap:7,background:'rgba(255,255,255,0.12)',border:'1px solid rgba(255,255,255,0.18)',borderRadius:20,padding:'5px 14px'}}>
+            <div style={{width:8,height:8,borderRadius:'50%',background:usuario.color,boxShadow:'0 0 6px '+usuario.color}}/>
+            <span style={{fontSize:12,fontWeight:600,color:'#fff'}}>{usuario.nombre}</span>
+            {sheetsSync==='ok'&&<span style={{fontSize:10,color:'#4ade80',fontWeight:600}}>✓</span>}
           </div>
           <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
-          <button onClick={cerrarSesion} style={{fontSize:11,color:'var(--text3)',background:'none',border:'none',cursor:'pointer',padding:'4px 8px',fontFamily:'var(--font)'}}>Salir</button>
+          <button onClick={cerrarSesion} style={{fontSize:11,color:'rgba(255,255,255,0.5)',background:'none',border:'none',cursor:'pointer',padding:'4px 8px',fontFamily:'var(--font)',letterSpacing:'0.02em'}}>Salir</button>
         </div>
       </header>
 
       <div style={{display:'flex',flex:1,overflow:'hidden'}}>
-        {/* SIDEBAR */}
-        <aside style={{width:sidebarOpen?220:56,flexShrink:0,background:'var(--bg2)',borderRight:'1px solid var(--border)',display:'flex',flexDirection:'column',padding:'12px 0',gap:2,transition:'width 0.2s',overflow:'hidden',position:'sticky',top:52,height:'calc(100vh - 52px)'}}>
+        {/* SIDEBAR OSCURO */}
+        <aside style={{width:sidebarOpen?220:60,flexShrink:0,background:'var(--sidebar-bg)',display:'flex',flexDirection:'column',padding:'16px 0',gap:2,transition:'width 0.22s cubic-bezier(.4,0,.2,1)',overflow:'hidden',position:'sticky',top:52,height:'calc(100vh - 52px)',boxShadow:'4px 0 24px rgba(30,16,64,0.18)'}}>
           {tabs.map(t=>{ const Icon=t.icon; const active=tab===t.id; return (
-            <button key={t.id} onClick={()=>setTab(t.id)} title={t.label} style={{display:'flex',alignItems:'center',gap:10,padding:sidebarOpen?'9px 16px':'9px 0',justifyContent:sidebarOpen?'flex-start':'center',margin:'0 6px',borderRadius:9,fontSize:13,fontWeight:active?600:400,background:active?'var(--accent-soft)':'transparent',color:active?'var(--accent2)':'var(--text2)',border:'none',cursor:'pointer',fontFamily:'var(--font)',whiteSpace:'nowrap',position:'relative',transition:'all 0.15s'}}>
-              <Icon size={16} style={{flexShrink:0}}/>
+            <button key={t.id} onClick={()=>setTab(t.id)} title={t.label} style={{display:'flex',alignItems:'center',gap:11,padding:sidebarOpen?'10px 18px':'10px 0',justifyContent:sidebarOpen?'flex-start':'center',margin:'0 8px',borderRadius:10,fontSize:13,fontWeight:active?600:400,background:active?'rgba(255,255,255,0.13)':'transparent',color:active?'#fff':'rgba(255,255,255,0.55)',border:'none',cursor:'pointer',fontFamily:'var(--font)',whiteSpace:'nowrap',position:'relative',transition:'all 0.15s',borderLeft:active?'3px solid #a855f7':'3px solid transparent'}}>
+              <Icon size={16} style={{flexShrink:0,color:active?'#c084fc':'rgba(255,255,255,0.5)'}}/>
               {sidebarOpen&&<span style={{overflow:'hidden',textOverflow:'ellipsis'}}>{t.label}</span>}
-              {t.badge>0&&<span style={{background:'var(--accent)',color:'#fff',borderRadius:10,fontSize:9,fontWeight:700,padding:'1px 5px',marginLeft:'auto',flexShrink:0}}>{t.badge}</span>}
+              {t.badge>0&&<span style={{background:'#a855f7',color:'#fff',borderRadius:10,fontSize:9,fontWeight:700,padding:'1px 6px',marginLeft:'auto',flexShrink:0}}>{t.badge}</span>}
             </button>
           )})}
         </aside>
