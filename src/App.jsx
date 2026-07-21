@@ -3731,7 +3731,7 @@ export default function App() {
   const esLider = usuario.rol==='lider'
   const esPresupuesto = usuario.rol==='presupuesto'
 
-  const TABS_LIDER = [{id:'dashboard',label:'Dashboard Consolidado',icon:LayoutDashboard}]
+  const TABS_LIDER = [{id:'dashboard',label:'Dashboard Consolidado',icon:LayoutDashboard},{id:'tareasProyectos',label:'Tareas y Proyectos',icon:BookOpen}]
   const TABS_PRES = [{id:'dashboard',label:'Presupuesto Consolidado',icon:DollarSign}]
   const tareasAsignadasCount = !esLider&&!esPresupuesto ? (data.pendientes||[]).filter(p=>p.asignadoPor==='Líder de Mercadeo'&&p.estado!=='Listo'&&p.estado!=='Cancelado').length : 0
   const TABS_NORMAL = [
@@ -3797,7 +3797,8 @@ export default function App() {
         {/* CONTENIDO */}
         <main style={{flex:1,padding:'24px 28px',overflowY:'auto',minWidth:0}}>
         <div key={tab+usuario.id}>
-          {esLider && <DashboardLider/>}
+          {esLider && tab==='dashboard' && <DashboardLider/>}
+          {esLider && tab==='tareasProyectos' && <TareasYProyectos data={data} setData={setDataUser} usuario={usuario}/>}
           {esPresupuesto && <PresupuestoConsolidado/>}
           {!esLider&&!esPresupuesto&&(
             <>
