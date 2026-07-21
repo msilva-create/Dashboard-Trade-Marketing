@@ -2193,7 +2193,7 @@ function ApoyoCierre({ data, setData, usuario }) {
                           </div>
                           <div style={{display:'flex',alignItems:'center',gap:8}}>
                             <span style={{fontFamily:'var(--mono)',fontWeight:600,color:'var(--accent2)'}}>{cop(a.monto)}</span>
-                            <button onClick={()=>delAsig(a.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'3px 6px'}}><Trash2 size={11}/></button>
+                            <button onClick={()=>{if(window.confirm('¿Eliminar esta asignación de $'+a.monto.toLocaleString('es-CO')+'?'))delAsig(a.id)}} style={{...S.btn('var(--red)','#fff'),padding:'5px 10px',fontSize:12,fontWeight:600}}>🗑️ Eliminar</button>
                           </div>
                         </div>
                       ))}
@@ -2710,6 +2710,46 @@ function enviarCorreoProyecto({ proyecto, subtarea }) {
 }
 
 
+
+// ═══════════════════════════════════════════════════════
+// FORM PROYECTO — componente independiente (evita bug de re-render)
+// ═══════════════════════════════════════════════════════
+function FormProyecto({ form, setForm, onSave, titulo, onClose }) {
+  return (
+    <Modal title={titulo} onClose={onClose}>
+      <div style={{display:'flex',flexDirection:'column',gap:14}}>
+        <Field label="Nombre *"><input autoFocus value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})} placeholder="Nombre del proyecto o tarea"/></Field>
+        <Field label="Descripción"><textarea value={form.descripcion} onChange={e=>setForm({...form,descripcion:e.target.value})} rows={2} placeholder="Descripción breve" style={{resize:'vertical'}}/></Field>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+          <Field label="Responsable">
+            <select value={form.responsable} onChange={e=>setForm({...form,responsable:e.target.value})}>
+              <option value="">Sin asignar</option>
+              {RESPONSABLES.map(r=><option key={r}>{r}</option>)}
+            </select>
+          </Field>
+          <Field label="Fecha de entrega"><input type="date" value={form.fechaEntrega} onChange={e=>setForm({...form,fechaEntrega:e.target.value})}/></Field>
+        </div>
+        <Field label="Estado">
+          <select value={form.estado} onChange={e=>setForm({...form,estado:e.target.value})}>
+            {Object.keys(ESTADO_PROY).map(e=><option key={e}>{e}</option>)}
+          </select>
+        </Field>
+        <Field label="Áreas que intervienen">
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:4}}>
+            {AREAS.map(a=>(
+              <label key={a} style={{display:'flex',alignItems:'center',gap:5,cursor:'pointer',fontSize:13,padding:'5px 10px',borderRadius:7,border:'1px solid var(--border2)',background:form.areas.includes(a)?'var(--accent-soft)':'var(--bg3)',color:form.areas.includes(a)?'var(--accent2)':'var(--text2)'}}>
+                <input type="checkbox" checked={form.areas.includes(a)} onChange={e=>setForm({...form,areas:e.target.checked?[...form.areas,a]:form.areas.filter(x=>x!==a)})} style={{display:'none'}}/>
+                {a}
+              </label>
+            ))}
+          </div>
+        </Field>
+        <button onClick={onSave} style={{...S.btn('var(--accent)','#fff'),marginTop:4}}>Guardar</button>
+      </div>
+    </Modal>
+  )
+}
+
 // ═══════════════════════════════════════════════════════
 // MIS TAREAS — tareas personales del usuario
 // ═══════════════════════════════════════════════════════
@@ -2887,39 +2927,7 @@ function TareasYProyectos({ data, setData, usuario }) {
 
   const proyFiltrados = filtroEstado ? proyectos.filter(p=>p.estado===filtroEstado) : proyectos
 
-  const FormProyecto = ({ form, setForm, onSave, titulo }) => (
-    <Modal title={titulo} onClose={()=>{ setModalProyecto(false); setModalSubtarea(false) }}>
-      <div style={{display:'flex',flexDirection:'column',gap:14}}>
-        <Field label="Nombre *"><input value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})} placeholder="Nombre del proyecto o tarea"/></Field>
-        <Field label="Descripción"><textarea value={form.descripcion} onChange={e=>setForm({...form,descripcion:e.target.value})} rows={2} placeholder="Descripción breve" style={{resize:'vertical'}}/></Field>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-          <Field label="Responsable">
-            <select value={form.responsable} onChange={e=>setForm({...form,responsable:e.target.value})}>
-              <option value="">Sin asignar</option>
-              {RESPONSABLES.map(r=><option key={r}>{r}</option>)}
-            </select>
-          </Field>
-          <Field label="Fecha de entrega"><input type="date" value={form.fechaEntrega} onChange={e=>setForm({...form,fechaEntrega:e.target.value})}/></Field>
-        </div>
-        <Field label="Estado">
-          <select value={form.estado} onChange={e=>setForm({...form,estado:e.target.value})}>
-            {Object.keys(ESTADO_PROY).map(e=><option key={e}>{e}</option>)}
-          </select>
-        </Field>
-        <Field label="Áreas que intervienen">
-          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:4}}>
-            {AREAS.map(a=>(
-              <label key={a} style={{display:'flex',alignItems:'center',gap:5,cursor:'pointer',fontSize:13,padding:'5px 10px',borderRadius:7,border:'1px solid var(--border2)',background:form.areas.includes(a)?'var(--accent-soft)':'var(--bg3)',color:form.areas.includes(a)?'var(--accent2)':'var(--text2)'}}>
-                <input type="checkbox" checked={form.areas.includes(a)} onChange={e=>setForm({...form,areas:e.target.checked?[...form.areas,a]:form.areas.filter(x=>x!==a)})} style={{display:'none'}}/>
-                {a}
-              </label>
-            ))}
-          </div>
-        </Field>
-        <button onClick={onSave} style={{...S.btn('var(--accent)','#fff'),marginTop:4}}>Guardar</button>
-      </div>
-    </Modal>
-  )
+  // FormProyecto movido afuera como componente global
 
   // ── DETALLE DE PROYECTO ──
   if(vista==='detalle'&&proyectoActivo) {
@@ -2988,7 +2996,7 @@ function TareasYProyectos({ data, setData, usuario }) {
             </div>
           )
         })}
-        {modalSubtarea&&<FormProyecto form={formS} setForm={setFormS} onSave={crearSubtarea} titulo="Nueva subtarea"/>}
+        {modalSubtarea&&<FormProyecto form={formS} setForm={setFormS} onSave={crearSubtarea} titulo="Nueva subtarea" onClose={()=>setModalSubtarea(false)}/>}
       </div>
     )
   }
@@ -3067,7 +3075,7 @@ function TareasYProyectos({ data, setData, usuario }) {
           )
         })}
       </div>
-      {modalProyecto&&<FormProyecto form={formP} setForm={setFormP} onSave={crearProyecto} titulo="Nuevo proyecto"/>}
+      {modalProyecto&&<FormProyecto form={formP} setForm={setFormP} onSave={crearProyecto} titulo="Nuevo proyecto" onClose={()=>setModalProyecto(false)}/>}
       </>}
     </div>
   )
