@@ -2709,7 +2709,125 @@ function enviarCorreoProyecto({ proyecto, subtarea }) {
   }).catch(()=>{})
 }
 
-function Proyectos({ data, setData, usuario }) {
+
+// ═══════════════════════════════════════════════════════
+// MIS TAREAS — tareas personales del usuario
+// ═══════════════════════════════════════════════════════
+function MisTareas({ data, setData, usuario }) {
+  const tareas = (data.pendientes||[]).filter(p=>!p.asignadoPor||p.asignadoPor===usuario.nombre)
+  const [modal, setModal] = useState(false)
+  const [form, setForm] = useState({tarea:'',categoria:'',fechaLimite:'',prioridad:'Media',estado:'Pendiente',notas:''})
+  const PRIORIDAD_COLOR = { Alta:'var(--red)', Media:'var(--orange)', Baja:'var(--green)' }
+  const ESTADO_COLOR = { Pendiente:'var(--yellow)', 'En curso':'var(--accent2)', Listo:'var(--green)', Cancelado:'var(--text3)' }
+  const save = nd => { localStorage.setItem(getStorageKey(usuario.id), JSON.stringify(nd)) }
+
+  const crear = () => {
+    if(!form.tarea) return
+    const nueva = {...form, id:Date.now(), asignadoPor:usuario.nombre, fechaCreacion:new Date().toLocaleDateString('es-CO')}
+    const nd = {...data, pendientes:[...(data.pendientes||[]), nueva]}
+    setData(nd); save(nd)
+    setModal(false)
+    setForm({tarea:'',categoria:'',fechaLimite:'',prioridad:'Media',estado:'Pendiente',notas:''})
+  }
+
+  const cambiarEstado = (id) => {
+    const ciclo = {Pendiente:'En curso','En curso':'Listo',Listo:'Pendiente'}
+    const nd = {...data, pendientes:(data.pendientes||[]).map(p=>p.id===id?{...p,estado:ciclo[p.estado]||'Pendiente'}:p)}
+    setData(nd); save(nd)
+  }
+
+  const eliminar = (id) => {
+    const nd = {...data, pendientes:(data.pendientes||[]).filter(p=>p.id!==id)}
+    setData(nd); save(nd)
+  }
+
+  const abiertas = tareas.filter(t=>t.estado!=='Listo'&&t.estado!=='Cancelado')
+  const cerradas = tareas.filter(t=>t.estado==='Listo'||t.estado==='Cancelado')
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:14}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div style={{display:'flex',gap:8}}>
+          <span style={{fontSize:12,background:'var(--bg3)',padding:'4px 12px',borderRadius:6,color:'var(--text2)'}}>Abiertas: {abiertas.length}</span>
+          <span style={{fontSize:12,background:'var(--green-soft)',padding:'4px 12px',borderRadius:6,color:'var(--green)'}}>Completadas: {cerradas.filter(t=>t.estado==='Listo').length}</span>
+        </div>
+        <button onClick={()=>setModal(true)} style={{...S.btn('var(--accent)','#fff')}}><PlusCircle size={15}/> Nueva tarea</button>
+      </div>
+
+      {tareas.length===0&&(
+        <div style={{...S.card,padding:48,textAlign:'center',color:'var(--text3)'}}>
+          <div style={{fontSize:32,marginBottom:10}}>✅</div>
+          <div style={{fontWeight:600,marginBottom:6}}>Sin tareas personales</div>
+          <div style={{fontSize:13}}>Crea tu primera tarea con <strong>Nueva tarea</strong></div>
+        </div>
+      )}
+
+      {abiertas.length>0&&(
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          <div style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Pendientes · {abiertas.length}</div>
+          {abiertas.map((t,i)=>(
+            <div key={i} style={{...S.card,padding:'12px 16px',display:'flex',gap:12,alignItems:'flex-start',borderLeft:'3px solid '+PRIORIDAD_COLOR[t.prioridad]}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',marginBottom:4}}>
+                  <span style={{fontWeight:600,fontSize:14}}>{t.tarea}</span>
+                  <span style={{fontSize:10,padding:'2px 7px',borderRadius:5,color:PRIORIDAD_COLOR[t.prioridad],border:'1px solid '+PRIORIDAD_COLOR[t.prioridad]}}>{t.prioridad}</span>
+                </div>
+                <div style={{display:'flex',gap:12,fontSize:12,color:'var(--text3)',flexWrap:'wrap'}}>
+                  {t.categoria&&<span>🏷️ {t.categoria}</span>}
+                  {t.fechaLimite&&<span style={{color:new Date(t.fechaLimite)<new Date()?'var(--red)':'var(--text3)'}}>📅 {t.fechaLimite}</span>}
+                </div>
+                {t.notas&&<p style={{margin:'5px 0 0',fontSize:12,color:'var(--text3)',borderLeft:'2px solid var(--border2)',paddingLeft:8}}>{t.notas}</p>}
+              </div>
+              <div style={{display:'flex',gap:6,flexShrink:0}}>
+                <button onClick={()=>cambiarEstado(t.id)} style={{...S.btn('var(--bg3)','var(--text2)'),fontSize:11,padding:'4px 10px',border:'1px solid '+ESTADO_COLOR[t.estado],color:ESTADO_COLOR[t.estado]}}>{t.estado}</button>
+                <button onClick={()=>eliminar(t.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'4px 7px'}}><Trash2 size={12}/></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {cerradas.length>0&&(
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          <div style={{fontSize:11,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Completadas · {cerradas.length}</div>
+          {cerradas.map((t,i)=>(
+            <div key={i} style={{...S.card,padding:'10px 16px',display:'flex',justifyContent:'space-between',alignItems:'center',opacity:0.6}}>
+              <span style={{fontSize:13,textDecoration:'line-through',color:'var(--text2)'}}>{t.tarea}</span>
+              <button onClick={()=>eliminar(t.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'3px 6px'}}><Trash2 size={11}/></button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {modal&&(
+        <Modal title="Nueva tarea personal" onClose={()=>setModal(false)}>
+          <div style={{display:'flex',flexDirection:'column',gap:14}}>
+            <Field label="Tarea *"><input value={form.tarea} onChange={e=>setForm({...form,tarea:e.target.value})} placeholder="¿Qué necesitas hacer?"/></Field>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+              <Field label="Categoría"><input value={form.categoria} onChange={e=>setForm({...form,categoria:e.target.value})} placeholder="Ej: Diseño, Seguimiento..."/></Field>
+              <Field label="Fecha límite"><input type="date" value={form.fechaLimite} onChange={e=>setForm({...form,fechaLimite:e.target.value})}/></Field>
+              <Field label="Prioridad">
+                <select value={form.prioridad} onChange={e=>setForm({...form,prioridad:e.target.value})}>
+                  {['Alta','Media','Baja'].map(p=><option key={p}>{p}</option>)}
+                </select>
+              </Field>
+              <Field label="Estado">
+                <select value={form.estado} onChange={e=>setForm({...form,estado:e.target.value})}>
+                  {['Pendiente','En curso','Listo'].map(s=><option key={s}>{s}</option>)}
+                </select>
+              </Field>
+            </div>
+            <Field label="Notas"><textarea value={form.notas} onChange={e=>setForm({...form,notas:e.target.value})} rows={2} style={{resize:'vertical'}} placeholder="Detalles adicionales..."/></Field>
+            <button onClick={crear} style={{...S.btn('var(--accent)','#fff')}}><Check size={15}/> Crear tarea</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  )
+}
+
+function TareasYProyectos({ data, setData, usuario }) {
+  const [seccion, setSeccion] = useState('proyectos') // proyectos | tareas
   const proyectos = data.proyectos || []
   const [vista, setVista] = useState('lista') // lista | detalle
   const [proyectoActivo, setProyectoActivo] = useState(null)
@@ -2798,12 +2916,6 @@ function Proyectos({ data, setData, usuario }) {
             ))}
           </div>
         </Field>
-        {Object.keys(JEFES_CANAL||{}).length>0&&(
-          <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13,padding:'8px 12px',borderRadius:8,border:'1px solid var(--border2)',background:form.copiarJefe?'var(--accent-soft)':'var(--bg3)'}}>
-            <input type="checkbox" checked={form.copiarJefe||false} onChange={e=>setForm({...form,copiarJefe:e.target.checked})} style={{width:15,height:15,accentColor:'var(--accent)',cursor:'pointer'}}/>
-            <span style={{color:form.copiarJefe?'var(--accent2)':'var(--text2)'}}>Copiar a jefe</span>
-          </label>
-        )}
         <button onClick={onSave} style={{...S.btn('var(--accent)','#fff'),marginTop:4}}>Guardar</button>
       </div>
     </Modal>
@@ -2881,9 +2993,23 @@ function Proyectos({ data, setData, usuario }) {
     )
   }
 
-  // ── LISTA DE PROYECTOS ──
+  // ── LISTA ──
   return (
     <div style={{display:'flex',flexDirection:'column',gap:16}}>
+      {/* Tabs de sección */}
+      <div style={{display:'flex',gap:6,borderBottom:'2px solid var(--border)',paddingBottom:0}}>
+        {[['proyectos','🗂️ Proyectos'],['tareas','✅ Mis Tareas']].map(([id,label])=>(
+          <button key={id} onClick={()=>setSeccion(id)} style={{padding:'8px 18px',fontSize:13,fontWeight:seccion===id?700:400,border:'none',background:'none',cursor:'pointer',color:seccion===id?'var(--accent2)':'var(--text2)',borderBottom:seccion===id?'2px solid var(--accent2)':'2px solid transparent',marginBottom:-2,fontFamily:'var(--font)'}}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* TAREAS PERSONALES */}
+      {seccion==='tareas'&&<MisTareas data={data} setData={setData} usuario={usuario}/>}
+
+      {/* PROYECTOS */}
+      {seccion==='proyectos'&&<>
       <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
         <div style={{display:'flex',gap:6}}>
           {['','Pendiente','En proceso','Finalizada'].map(e=>(
@@ -2942,6 +3068,7 @@ function Proyectos({ data, setData, usuario }) {
         })}
       </div>
       {modalProyecto&&<FormProyecto form={formP} setForm={setFormP} onSave={crearProyecto} titulo="Nuevo proyecto"/>}
+      </>}
     </div>
   )
 }
@@ -3582,7 +3709,7 @@ export default function App() {
     {id:'pendientes', label:'Pendientes',  icon:ListTodo},
     {id:'apoyocierre', label:'Apoyo Cierre', icon:DollarSign},
     {id:'tareasasignadas', label:'Tareas Asignadas', icon:ListTodo, badge:tareasAsignadasCount},
-    {id:'proyectos', label:'Proyectos', icon:BookOpen},
+    {id:'tareasProyectos', label:'Tareas y Proyectos', icon:BookOpen},
   ]
   const tabs = esLider?TABS_LIDER:esPresupuesto?TABS_PRES:TABS_NORMAL
 
@@ -3661,7 +3788,7 @@ export default function App() {
               {tab==='pendientes'      &&<Pendientes        data={data} setData={setDataUser}/>}
               {tab==='apoyocierre'     &&<ApoyoCierre       data={data} setData={setDataUser} usuario={usuario}/>}
               {tab==='tareasasignadas' &&<TareasAsignadas   data={data} setData={setDataUser} usuario={usuario}/>}
-              {tab==='proyectos'        &&<Proyectos          data={data} setData={setDataUser} usuario={usuario}/>}
+              {tab==='tareasProyectos'  &&<TareasYProyectos   data={data} setData={setDataUser} usuario={usuario}/>}
             </>
           )}
         </div>
