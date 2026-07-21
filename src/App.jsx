@@ -1979,7 +1979,7 @@ function Pendientes({ data, setData }) {
 // ═══════════════════════════════════════════════════════
 // APOYO CIERRE
 // ═══════════════════════════════════════════════════════
-function ApoyoCierre({ data, setData }) {
+function ApoyoCierre({ data, setData, usuario }) {
   const [mesActivo, setMesActivo] = useState('')
   const [comercialDetalle, setComercialDetalle] = useState(null)
   const [comercialActivo, setComercialActivo] = useState(null)
@@ -1991,6 +1991,7 @@ function ApoyoCierre({ data, setData }) {
 
   const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzgSB5bZEo-3JgBbTySp8GOVB0VpYl8ki3J2EM-daQrB42HiAguVzqWZUCoFovx5rTF/exec'
 
+  const _canalActual = usuario?.id || 'distribucion'
   const EMAILS_POR_CANAL = {
     distribucion: {
       'Cristian': 'cblanco@prolub.com.co',
@@ -2021,10 +2022,8 @@ function ApoyoCierre({ data, setData }) {
     industria:    { 'Maria Fernanda': 'mquiroga@prolub.com.co' },
     zonas:        { 'Victor': 'vmolina@prolub.com.co', 'Carlos': 'cmercado@prolub.com.co' },
   }
-  const JEFES_CANAL = JEFES_POR_CANAL[_canalActual] || {}
-  // Detectar canal del usuario actual via window o localStorage
-  const _canalActual = (()=>{ try { const u=JSON.parse(localStorage.getItem('auth_user_v2')||'{}'); return u.id||'distribucion' } catch{return 'distribucion'} })()
   const EMAILS = EMAILS_POR_CANAL[_canalActual] || EMAILS_POR_CANAL.distribucion
+  const JEFES_CANAL = JEFES_POR_CANAL[_canalActual] || {}
   const EMAIL_JEFE = 'cgil@prolub.com.co'
 
   // Emails por unidad para notificaciones de tareas
@@ -3654,7 +3653,7 @@ export default function App() {
               {tab==='planes'          &&<Planes            data={data} setData={setDataUser}/>}
               {tab==='presupuesto'     &&<Presupuesto       data={data} setData={setDataUser}/>}
               {tab==='pendientes'      &&<Pendientes        data={data} setData={setDataUser}/>}
-              {tab==='apoyocierre'     &&<ApoyoCierre       data={data} setData={setDataUser}/>}
+              {tab==='apoyocierre'     &&<ApoyoCierre       data={data} setData={setDataUser} usuario={usuario}/>}
               {tab==='tareasasignadas' &&<TareasAsignadas   data={data} setData={setDataUser} usuario={usuario}/>}
               {tab==='proyectos'        &&<Proyectos          data={data} setData={setDataUser} usuario={usuario}/>}
             </>
