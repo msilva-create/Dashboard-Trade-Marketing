@@ -1987,7 +1987,7 @@ function ApoyoCierre({ data, setData }) {
   const [modalRedencion, setModalRedencion] = useState(false)
   const [enviandoEmail, setEnviandoEmail] = useState(false)
   const [formAsig, setFormAsig] = useState({ comercial:'', distribuidor:'', mes:'', anio:2026, monto:'' })
-  const [formRed, setFormRed] = useState({ cliente:'', producto:'', valor:'', notas:'' })
+  const [formRed, setFormRed] = useState({ cliente:'', producto:'', valor:'', notas:'', copiarJefe:false })
 
   const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzgSB5bZEo-3JgBbTySp8GOVB0VpYl8ki3J2EM-daQrB42HiAguVzqWZUCoFovx5rTF/exec'
 
@@ -2016,10 +2016,12 @@ function ApoyoCierre({ data, setData }) {
       'Victor Molina':    'vmolina@prolub.com.co',
     },
   }
-  const JEFES_CANAL = {
-    'Victor': 'vmolina@prolub.com.co',
-    'Carlos': 'cmercado@prolub.com.co',
+  const JEFES_POR_CANAL = {
+    distribucion: { 'Maria Fernanda': 'mquiroga@prolub.com.co' },
+    industria:    { 'Maria Fernanda': 'mquiroga@prolub.com.co' },
+    zonas:        { 'Victor': 'vmolina@prolub.com.co', 'Carlos': 'cmercado@prolub.com.co' },
   }
+  const JEFES_CANAL = JEFES_POR_CANAL[_canalActual] || {}
   // Detectar canal del usuario actual via window o localStorage
   const _canalActual = (()=>{ try { const u=JSON.parse(localStorage.getItem('auth_user_v2')||'{}'); return u.id||'distribucion' } catch{return 'distribucion'} })()
   const EMAILS = EMAILS_POR_CANAL[_canalActual] || EMAILS_POR_CANAL.distribucion
@@ -2074,7 +2076,7 @@ function ApoyoCierre({ data, setData }) {
     const nd = {...data, redenciones:[...redenciones, nueva]}
     setData(nd); save(nd)
     setModalRedencion(false)
-    setFormRed({ cliente:'', producto:'', valor:'', notas:'' })
+    setFormRed({ cliente:'', producto:'', valor:'', notas:'', copiarJefe:false })
 
     const emailDest = EMAILS[comercialActivo.comercial]
     if(emailDest) {
@@ -2088,6 +2090,7 @@ function ApoyoCierre({ data, setData }) {
             accion: 'enviar_correo',
             destinatario: emailDest,
             copia: EMAIL_JEFE,
+            copiaJefe: formRed.copiarJefe ? Object.values(JEFES_CANAL).join(',') : '',
             comercial: comercialActivo.comercial,
             cliente: formRed.cliente,
             producto: formRed.producto,
@@ -2794,6 +2797,12 @@ function Proyectos({ data, setData, usuario }) {
             ))}
           </div>
         </Field>
+        {Object.keys(JEFES_CANAL||{}).length>0&&(
+          <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13,padding:'8px 12px',borderRadius:8,border:'1px solid var(--border2)',background:form.copiarJefe?'var(--accent-soft)':'var(--bg3)'}}>
+            <input type="checkbox" checked={form.copiarJefe||false} onChange={e=>setForm({...form,copiarJefe:e.target.checked})} style={{width:15,height:15,accentColor:'var(--accent)',cursor:'pointer'}}/>
+            <span style={{color:form.copiarJefe?'var(--accent2)':'var(--text2)'}}>Copiar a jefe</span>
+          </label>
+        )}
         <button onClick={onSave} style={{...S.btn('var(--accent)','#fff'),marginTop:4}}>Guardar</button>
       </div>
     </Modal>
