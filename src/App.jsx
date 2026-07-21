@@ -1991,11 +1991,38 @@ function ApoyoCierre({ data, setData }) {
 
   const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzgSB5bZEo-3JgBbTySp8GOVB0VpYl8ki3J2EM-daQrB42HiAguVzqWZUCoFovx5rTF/exec'
 
-  const EMAILS = {
-    'Cristian':  'cblanco@prolub.com.co',
-    'Mauricio':  'oramirez@prolub.com.co',
-    'Gonzalo':   'grodriguez@prolub.com.co',
+  const EMAILS_POR_CANAL = {
+    distribucion: {
+      'Cristian': 'cblanco@prolub.com.co',
+      'Mauricio': 'oramirez@prolub.com.co',
+      'Gonzalo':  'grodriguez@prolub.com.co',
+    },
+    industria: {
+      'Angela Pastor':        'apastor@prolub.com.co',
+      'Maria Fernanda':       'mquiroga@prolub.com.co',
+      'Aylin Cepeda':         'acepeda@prolub.com.co',
+      'Juan Pablo Rodriguez': 'jrodriguez@prolub.com.co',
+    },
+    zonas: {
+      'Andres Hernandez': 'ahernandez@prolub.com.co',
+      'Maria Fajardo':    'mfajardo@prolub.com.co',
+      'Luis Ferro':       'lferro@prolub.com.co',
+      'Ruben Escarraga':  'rescarraga@prolub.com.co',
+      'Juan Cubillos':    'jcubillos@prolub.com.co',
+      'Johan Santibanez': 'jsantibanez@prolub.com.co',
+      'Jhonn Florez':     'jflorez@prolub.com.co',
+      'Sandra Ceron':     'sceron@gulfcolombia.com',
+      'Hans Munoz':       'hdmunoz@prolub.com.co',
+      'Victor Molina':    'vmolina@prolub.com.co',
+    },
   }
+  const JEFES_CANAL = {
+    'Victor': 'vmolina@prolub.com.co',
+    'Carlos': 'cmercado@prolub.com.co',
+  }
+  // Detectar canal del usuario actual via window o localStorage
+  const _canalActual = (()=>{ try { const u=JSON.parse(localStorage.getItem('auth_user_v2')||'{}'); return u.id||'distribucion' } catch{return 'distribucion'} })()
+  const EMAILS = EMAILS_POR_CANAL[_canalActual] || EMAILS_POR_CANAL.distribucion
   const EMAIL_JEFE = 'cgil@prolub.com.co'
 
   // Emails por unidad para notificaciones de tareas
