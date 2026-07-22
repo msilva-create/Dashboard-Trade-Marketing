@@ -345,7 +345,7 @@ function KpiCard({ icon:Icon, label, value, sub, accent, gradient }) {
       padding:'20px 22px',
       display:'flex',flexDirection:'column',gap:8,
       boxShadow: useGrad ? '0 4px 20px rgba(0,0,0,0.12)' : 'none',
-      position:'relative', overflow:'hidden'
+      position:'relative', overflow:'visible', minWidth:0
     }}>
       {useGrad && <div style={{position:'absolute',top:-20,right:-20,width:80,height:80,borderRadius:'50%',background:'rgba(255,255,255,0.08)'}}/>}
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
@@ -354,7 +354,7 @@ function KpiCard({ icon:Icon, label, value, sub, accent, gradient }) {
           <Icon size={15} color={useGrad?'#fff':accent||'var(--accent)'}/>
         </div>
       </div>
-      <div style={{fontSize:24,fontWeight:700,color:useGrad?'#fff':(accent||'var(--text)'),fontFamily:'var(--mono)',letterSpacing:'-0.02em',lineHeight:1}}>{value}</div>
+      <div style={{fontSize:22,fontWeight:700,color:useGrad?'#fff':(accent||'var(--text)'),fontFamily:'var(--mono)',letterSpacing:'-0.02em',lineHeight:1.1,wordBreak:'break-all',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{value}</div>
       {sub&&<div style={{fontSize:11,color:useGrad?'rgba(255,255,255,0.65)':'var(--text3)'}}>{sub}</div>}
     </div>
   )
@@ -1997,7 +1997,7 @@ function Pendientes({ data, setData }) {
               <div style={{display:'flex',gap:14,flexWrap:'wrap',fontSize:12,color:'var(--text3)'}}>
                 <span style={{color:'var(--text2)',fontWeight:500}}>{p.distribuidor}</span>
                 {p.categoria&&<span>{p.categoria}</span>}
-                {p.fechaLimite&&<span>📅 {p.fechaLimite}</span>}
+                {p.fechaLimite&&<span>📅 {String(p.fechaLimite).slice(0,10)}</span>}
                 {p.responsable&&<span>👤 {p.responsable}</span>}
               </div>
               {p.notas&&<p style={{marginTop:5,fontSize:12,color:'var(--text3)',borderLeft:'2px solid var(--border2)',paddingLeft:8}}>{p.notas}</p>}
@@ -2840,7 +2840,7 @@ function MisTareas({ data, setData, usuario }) {
                 </div>
                 <div style={{display:'flex',gap:12,fontSize:12,color:'var(--text3)',flexWrap:'wrap'}}>
                   {t.categoria&&<span>🏷️ {t.categoria}</span>}
-                  {t.fechaLimite&&<span style={{color:new Date(t.fechaLimite)<new Date()?'var(--red)':'var(--text3)'}}>📅 {t.fechaLimite}</span>}
+                  {t.fechaLimite&&<span style={{color:new Date(t.fechaLimite)<new Date()?'var(--red)':'var(--text3)'}}>📅 {String(t.fechaLimite).slice(0,10)}</span>}
                 </div>
                 {t.notas&&<p style={{margin:'5px 0 0',fontSize:12,color:'var(--text3)',borderLeft:'2px solid var(--border2)',paddingLeft:8}}>{t.notas}</p>}
               </div>
@@ -3327,7 +3327,7 @@ function DashboardLider() {
         )}
       </div>
 
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:12}}>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',gap:12,overflow:'visible'}}>
         <KpiCard icon={TrendingUp} label="Inversión total" value={cop(totalInv)} sub={filtroMes||'Acumulado'} accent="var(--accent2)"/>
         <KpiCard icon={ShoppingCart} label="Venta neta" value={cop(totalVenta)} accent="var(--green)"/>
         <KpiCard icon={BarChart2} label="% Inv/Venta" value={roiPct.toFixed(1)+'%'} accent={roiPct>15?'var(--red)':roiPct>10?'var(--yellow)':'var(--green)'}/>
