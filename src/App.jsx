@@ -19,6 +19,21 @@ const SHEETS_CONFIG = {
     url: 'https://script.google.com/macros/s/AKfycbwM2qJ_PhIc8x24p9qDSJ0zu11iBafnlar901jwocw2x7Sr5RU-BIaKtalCjnn5ijfl/exec',
     enabled: true,
   },
+  juan: {
+    url: 'https://script.google.com/macros/s/AKfycbzvEUEujpIQauAG2rO6CPWZXLpngW2IzFNZI5uh4gQ-LFTpi9vjkr6BBKDCWcwnvWz2/exec',
+    spreadsheetId: '1s6fkyyCihzOki9Fan9EKIIvxwlra-QizwI7fy210GUI',
+    enabled: true,
+  },
+  camilo: {
+    url: 'https://script.google.com/macros/s/AKfycbzvEUEujpIQauAG2rO6CPWZXLpngW2IzFNZI5uh4gQ-LFTpi9vjkr6BBKDCWcwnvWz2/exec',
+    spreadsheetId: '1jVKNc8krqeClgfzaXr-i7YIHwuYRmjkoU35NEjz4oDk',
+    enabled: true,
+  },
+  julian: {
+    url: 'https://script.google.com/macros/s/AKfycbzvEUEujpIQauAG2rO6CPWZXLpngW2IzFNZI5uh4gQ-LFTpi9vjkr6BBKDCWcwnvWz2/exec',
+    spreadsheetId: '1nEdGAcy45hMckYxOC_SRfrYEqW6ifgRv9fFoJA75YlY',
+    enabled: true,
+  },
 }
 
 const EMAILS_POR_CANAL = {
@@ -180,7 +195,10 @@ async function cargarDesdeSheets(uid) {
   const cfg = SHEETS_CONFIG[uid]
   if(!cfg?.enabled) return null
   try {
-    const res = await fetch(cfg.url)
+    const readUrl = cfg.spreadsheetId
+      ? `${cfg.url}?spreadsheetId=${encodeURIComponent(cfg.spreadsheetId)}`
+      : cfg.url
+    const res = await fetch(readUrl)
     const json = await res.json()
     if(!json.ok) return null
     const d = json.data
@@ -212,7 +230,12 @@ async function insertarFilaSheets(uid, tipo, item) {
   return new Promise(resolve => {
     window[cb] = () => { resolve(); delete window[cb] }
     const s = document.createElement('script')
-    s.src = cfg.url + '?callback=' + cb + '&data=' + encodeURIComponent(JSON.stringify({accion:'agregar_lote', hoja, filas:[fila]}))
+    s.src = cfg.url + '?callback=' + cb + '&data=' + encodeURIComponent(JSON.stringify({
+      accion:'agregar_lote',
+      hoja,
+      filas:[fila],
+      spreadsheetId: cfg.spreadsheetId || ''
+    }))
     s.onerror = () => resolve()
     s.onload = () => { setTimeout(resolve, 200); s.remove() }
     document.head.appendChild(s)
@@ -229,7 +252,12 @@ async function eliminarFilaSheets(uid, tipo, id) {
   return new Promise(resolve => {
     window[cb] = () => { resolve(); delete window[cb] }
     const s = document.createElement('script')
-    s.src = cfg.url + '?callback=' + cb + '&data=' + encodeURIComponent(JSON.stringify({accion:'eliminar', hoja, id}))
+    s.src = cfg.url + '?callback=' + cb + '&data=' + encodeURIComponent(JSON.stringify({
+      accion:'eliminar',
+      hoja,
+      id,
+      spreadsheetId: cfg.spreadsheetId || ''
+    }))
     s.onerror = () => resolve()
     s.onload = () => { setTimeout(resolve, 200); s.remove() }
     document.head.appendChild(s)
@@ -2738,6 +2766,18 @@ function obtenerCorreoResponsable(nombre='') {
   return mapa[normalizado] || EMAILS_EQUIPO[nombre] || ''
 }
 
+function obtenerUidResponsable(nombre='') {
+  const normalizado = normalizarNombreResponsable(nombre)
+  const mapa = {
+    'maria p': 'distribucion',
+    'emma': 'industria',
+    'juan': 'juan',
+    'camilo': 'camilo',
+    'julian': 'julian',
+  }
+  return mapa[normalizado] || 'distribucion'
+}
+
 const ESTADO_PROY = {
   'Pendiente': { color:'var(--yellow)',  bg:'rgba(180,83,9,0.1)' },
   'En proceso':{ color:'var(--accent2)', bg:'var(--accent-soft)' },
@@ -3031,8 +3071,9 @@ function TareasYProyectos({ data, setData, usuario }) {
     const nuevo = { id:Date.now(), ...formP, creadoPor:usuario.nombre, subtareas:[], fechaCreacion:new Date().toLocaleDateString('es-CO') }
     const nd = {...data, proyectos:[...proyectos, nuevo]}
     setData(nd)
+    const destinoUid = obtenerUidResponsable(nuevo.responsable)
     try {
-      await insertarFilaSheets(sheetUid,'proyectos',nuevo)
+      await insertarFilaSheets(destinoUid,'proyectos',nuevo)
     } catch(e) {
       console.error('Error guardando proyecto:', e)
     }
@@ -3040,7 +3081,7 @@ function TareasYProyectos({ data, setData, usuario }) {
     const resultadoCorreo = await enviarCorreoProyecto({
       proyecto:nuevo,
       subtarea:null,
-      uid:sheetUid,
+      uid:destinoUid,
     })
     console.log('Resultado correo nuevo proyecto:', resultadoCorreo)
     setModalProyecto(false)
@@ -3054,10 +3095,11 @@ function TareasYProyectos({ data, setData, usuario }) {
     const nd = {...data, proyectos: proyectosActualizados}
     const proyectoActualizado = proyectosActualizados.find(p=>p.id===proyPadre.id)
     setData(nd)
+    const destinoUid = obtenerUidResponsable(subtarea.responsable || proyPadre.responsable)
     try {
-      await eliminarFilaSheets(sheetUid,'proyectos',proyPadre.id)
+      await eliminarFilaSheets(destinoUid,'proyectos',proyPadre.id)
       if(proyectoActualizado) {
-        await insertarFilaSheets(sheetUid,'proyectos',proyectoActualizado)
+        await insertarFilaSheets(destinoUid,'proyectos',proyectoActualizado)
       }
     } catch(e) {
       console.error('Error guardando subtarea:', e)
@@ -3066,7 +3108,7 @@ function TareasYProyectos({ data, setData, usuario }) {
     const resultadoCorreo = await enviarCorreoProyecto({
       proyecto:proyPadre,
       subtarea,
-      uid:sheetUid,
+      uid:destinoUid,
     })
     console.log('Resultado correo nueva subtarea:', resultadoCorreo)
     setModalSubtarea(false)
@@ -3078,8 +3120,9 @@ function TareasYProyectos({ data, setData, usuario }) {
     const nd = {...data, proyectos: proyectosActualizados}
     const proyectoActualizado = proyectosActualizados.find(p=>p.id===pid)
     setData(nd)
-    eliminarFilaSheets(sheetUid,'proyectos',pid)
-      .then(()=>proyectoActualizado&&insertarFilaSheets(sheetUid,'proyectos',proyectoActualizado))
+    const destinoUid = obtenerUidResponsable(proyectoActualizado?.responsable)
+    eliminarFilaSheets(destinoUid,'proyectos',pid)
+      .then(()=>proyectoActualizado&&insertarFilaSheets(destinoUid,'proyectos',proyectoActualizado))
       .catch(e=>console.error('Error actualizando proyecto:',e))
     if(proyectoActivo?.id===pid) setProyectoActivo({...proyectoActivo,estado})
   }
@@ -3089,8 +3132,9 @@ function TareasYProyectos({ data, setData, usuario }) {
     const nd = {...data, proyectos: proyectosActualizados}
     const proyectoActualizado = proyectosActualizados.find(p=>p.id===pid)
     setData(nd)
-    eliminarFilaSheets(sheetUid,'proyectos',pid)
-      .then(()=>proyectoActualizado&&insertarFilaSheets(sheetUid,'proyectos',proyectoActualizado))
+    const destinoUid = obtenerUidResponsable(proyectoActualizado?.responsable)
+    eliminarFilaSheets(destinoUid,'proyectos',pid)
+      .then(()=>proyectoActualizado&&insertarFilaSheets(destinoUid,'proyectos',proyectoActualizado))
       .catch(e=>console.error('Error actualizando subtarea:',e))
     if(proyectoActivo?.id===pid) setProyectoActivo(nd.proyectos.find(p=>p.id===pid))
   }
@@ -3099,7 +3143,7 @@ function TareasYProyectos({ data, setData, usuario }) {
     if(!window.confirm('¿Eliminar este proyecto y todas sus subtareas?')) return
     const nd = {...data, proyectos: proyectos.filter(p=>p.id!==pid)}
     setData(nd)
-    eliminarFilaSheets(sheetUid,'proyectos',pid)
+    eliminarFilaSheets(obtenerUidResponsable(proyectos.find(p=>p.id===pid)?.responsable),'proyectos',pid)
       .catch(e=>console.error('Error eliminando proyecto:',e))
     setVista('lista'); setProyectoActivo(null)
   }
@@ -3109,8 +3153,9 @@ function TareasYProyectos({ data, setData, usuario }) {
     const nd = {...data, proyectos: proyectosActualizados}
     const proyectoActualizado = proyectosActualizados.find(p=>p.id===pid)
     setData(nd)
-    eliminarFilaSheets(sheetUid,'proyectos',pid)
-      .then(()=>proyectoActualizado&&insertarFilaSheets(sheetUid,'proyectos',proyectoActualizado))
+    const destinoUid = obtenerUidResponsable(proyectoActualizado?.responsable)
+    eliminarFilaSheets(destinoUid,'proyectos',pid)
+      .then(()=>proyectoActualizado&&insertarFilaSheets(destinoUid,'proyectos',proyectoActualizado))
       .catch(e=>console.error('Error eliminando subtarea:',e))
     if(proyectoActivo?.id===pid) setProyectoActivo(nd.proyectos.find(p=>p.id===pid))
   }
@@ -3281,6 +3326,7 @@ const USUARIOS = [
   { id:'presupuesto',  nombre:'Presupuesto (Juan)',  pass:'pres2026',  color:'#a78bfa', rol:'presupuesto' },
   { id:'lider',        nombre:'Líder de Mercadeo',   pass:'lider2026', color:'#f59e0b', rol:'lider' },
   { id:'diseno',       nombre:'Diseño',              pass:'dis2026x',  color:'#ec4899', rol:'normal' },
+  { id:'julian',       nombre:'Julian',              pass:'jul2026',   color:'#14b8a6', rol:'colaborador' },
 ]
 const AUTH_KEY = 'prolub_auth'
 const getStorageKey = uid => 'tracker_v3_'+uid
@@ -3424,26 +3470,26 @@ function DashboardLider() {
       ud.tareasAsignadas = [...(ud.tareasAsignadas||[]), nuevo]
       localStorage.setItem(key, JSON.stringify(ud))
 
-      const urlDestino = SHEETS_CONFIG[u.id]?.url
+      const nombreResponsable = nuevo.responsable || u.nombre
+      const destinoUid = obtenerUidResponsable(nombreResponsable)
+      const cfgDestino = SHEETS_CONFIG[destinoUid]
+      const urlDestino = cfgDestino?.url
 
-      // Guardar la tarea en el Sheet de la unidad cuando esa unidad tenga
-      // un Apps Script propio configurado.
       if(urlDestino) {
         await enviarViaJsonp(urlDestino, {
           accion:'agregar_lote',
           hoja:'TAREAS_ASIGNADAS',
           filas:[toSheetRow('tareasAsignadas',nuevo)],
+          spreadsheetId: cfgDestino.spreadsheetId || '',
         })
-        console.log('Tarea guardada en Sheets')
+        console.log('Tarea guardada en el archivo de', nombreResponsable)
       } else {
-        console.warn(`La unidad ${u.id} no tiene Apps Script propio; la tarea quedó guardada localmente.`)
+        console.warn(`No hay destino configurado para ${nombreResponsable}.`)
       }
 
-      // El correo no debe depender de que la unidad tenga un Sheet propio.
-      // Distribución funciona como servicio central de notificaciones.
-      const urlCorreo = SHEETS_CONFIG.distribucion.url
+      const urlCorreo = urlDestino || SHEETS_CONFIG.distribucion.url
 
-      const nombreResponsable = nuevo.responsable || u.nombre
+      
       const emailDest =
         obtenerCorreoResponsable(nombreResponsable) ||
         EMAILS_UNIDAD_LIDER[u.id]
@@ -3912,7 +3958,7 @@ export default function App() {
   }
   const totalImp = importResult?Object.values(importResult.importados).reduce((s,n)=>s+n,0):0
 
-  if(!usuario) return <LoginScreen onLogin={u=>{setUsuario(u);setTab('dashboard')}}/>
+  if(!usuario) return <LoginScreen onLogin={u=>{setUsuario(u);setTab(u.rol==='colaborador'?'tareasasignadas':'dashboard')}}/>
 
   if(sheetsLoading) return (
     <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#1e1040 0%,#2d1a6e 100%)',gap:20}}>
@@ -3935,10 +3981,15 @@ export default function App() {
 
   const esLider = usuario.rol==='lider'
   const esPresupuesto = usuario.rol==='presupuesto'
+  const esColaborador = usuario.rol==='colaborador'
 
   const TABS_LIDER = [{id:'dashboard',label:'Dashboard Consolidado',icon:LayoutDashboard},{id:'tareasProyectos',label:'Tareas y Proyectos',icon:BookOpen}]
   const TABS_PRES = [{id:'dashboard',label:'Presupuesto Consolidado',icon:DollarSign}]
-  const tareasAsignadasCount = !esLider&&!esPresupuesto ? (data.tareasAsignadas||[]).filter(p=>p.estado!=='Listo'&&p.estado!=='Cancelado').length : 0
+  const TABS_COLAB = [
+    {id:'tareasasignadas',label:'Mis Tareas',icon:ListTodo},
+    {id:'tareasProyectos',label:'Tareas y Proyectos',icon:BookOpen},
+  ]
+  const tareasAsignadasCount = !esLider&&!esPresupuesto&&!esColaborador ? (data.tareasAsignadas||[]).filter(p=>p.estado!=='Listo'&&p.estado!=='Cancelado').length : 0
   const TABS_NORMAL = [
     {id:'dashboard',  label:'Dashboard',   icon:LayoutDashboard},
     {id:'inversiones',label:'Inversiones', icon:TrendingUp},
@@ -3950,7 +4001,7 @@ export default function App() {
     {id:'tareasasignadas', label:'Tareas Asignadas', icon:ListTodo, badge:tareasAsignadasCount},
     {id:'tareasProyectos', label:'Tareas y Proyectos', icon:BookOpen},
   ]
-  const tabs = esLider?TABS_LIDER:esPresupuesto?TABS_PRES:TABS_NORMAL
+  const tabs = esLider?TABS_LIDER:esPresupuesto?TABS_PRES:esColaborador?TABS_COLAB:TABS_NORMAL
 
   return (
     <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',background:'var(--bg)'}}>
@@ -4005,7 +4056,13 @@ export default function App() {
           {esLider && tab==='dashboard' && <DashboardLider/>}
           {esLider && tab==='tareasProyectos' && <TareasYProyectos data={data} setData={setDataUser} usuario={usuario}/>}
           {esPresupuesto && <PresupuestoConsolidado/>}
-          {!esLider&&!esPresupuesto&&(
+          {esColaborador && (
+            <>
+              {tab==='tareasasignadas' && <TareasAsignadas data={data} setData={setDataUser} usuario={usuario}/>}
+              {tab==='tareasProyectos' && <TareasYProyectos data={data} setData={setDataUser} usuario={usuario}/>}
+            </>
+          )}
+          {!esLider&&!esPresupuesto&&!esColaborador&&(
             <>
               {(()=>{
                 const tareasLider = (data.tareasAsignadas||[]).filter(p=>p.estado!=='Listo'&&p.estado!=='Cancelado')
