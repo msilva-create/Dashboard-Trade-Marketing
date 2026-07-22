@@ -2698,11 +2698,24 @@ const EMAILS_EQUIPO = {
   'Maria P': 'msilva@prolub.com.co',
   'Juan':    'acomercial@prolub.com.co',
   'Camilo':  'aalvarado@gulfcolombia.com',
+  'Julian':  'jacifuentes@prolub.com.co',
+  'Julián':  'jacifuentes@prolub.com.co',
 }
 
 const EMAIL_LIDER_PROY = 'cgil@prolub.com.co'
 const AREAS = ['Compras','Facturación','Logística','Comercial']
-const RESPONSABLES = ['Emma','María P','Juan','Camilo']
+const RESPONSABLES = ['Emma','María P','Juan','Camilo','Julian']
+
+// Archivos personales de seguimiento.
+// El Apps Script puede usar estos IDs para copiar tareas y proyectos
+// al archivo individual del responsable.
+const SHEETS_RESPONSABLES = {
+  'Juan':   '1s6fkyyCihzOki9Fan9EKIIvxwlra-QizwI7fy210GUI',
+  'Camilo': '1jVKNc8krqeClgfzaXr-i7YIHwuYRmjkoU35NEjz4oDk',
+  'Julian': '1nEdGAcy45hMckYxOC_SRfrYEqW6ifgRv9fFoJA75YlY',
+  'Julián': '1nEdGAcy45hMckYxOC_SRfrYEqW6ifgRv9fFoJA75YlY',
+}
+
 const SHEETS_URL_PROY = SHEETS_CONFIG.distribucion.url
 
 function normalizarNombreResponsable(nombre='') {
@@ -2720,6 +2733,7 @@ function obtenerCorreoResponsable(nombre='') {
     'maria p': 'msilva@prolub.com.co',
     'juan': 'acomercial@prolub.com.co',
     'camilo': 'aalvarado@gulfcolombia.com',
+    'julian': 'jacifuentes@prolub.com.co',
   }
   return mapa[normalizado] || EMAILS_EQUIPO[nombre] || ''
 }
@@ -3411,24 +3425,32 @@ function DashboardLider() {
       localStorage.setItem(key, JSON.stringify(ud))
 
       const urlDestino = SHEETS_CONFIG[u.id]?.url
+
+      // Guardar la tarea en el Sheet de la unidad cuando esa unidad tenga
+      // un Apps Script propio configurado.
       if(urlDestino) {
-        enviarViaJsonp(urlDestino, {
+        await enviarViaJsonp(urlDestino, {
           accion:'agregar_lote',
           hoja:'TAREAS_ASIGNADAS',
           filas:[toSheetRow('tareasAsignadas',nuevo)],
-        }).then(r=>console.log('Tarea guardada en Sheets:',r)).catch(e=>console.error('Error guardando tarea:',e))
+        })
+        console.log('Tarea guardada en Sheets')
+      } else {
+        console.warn(`La unidad ${u.id} no tiene Apps Script propio; la tarea quedó guardada localmente.`)
       }
 
-      // Enviar correo según el responsable seleccionado.
-      // Si no hay responsable seleccionado, usa el correo líder de la unidad.
+      // El correo no debe depender de que la unidad tenga un Sheet propio.
+      // Distribución funciona como servicio central de notificaciones.
+      const urlCorreo = SHEETS_CONFIG.distribucion.url
+
       const nombreResponsable = nuevo.responsable || u.nombre
       const emailDest =
         obtenerCorreoResponsable(nombreResponsable) ||
         EMAILS_UNIDAD_LIDER[u.id]
 
-      if(emailDest && urlDestino) {
+      if(emailDest && urlCorreo) {
         try {
-          const respuestaCorreo = await enviarViaJsonp(urlDestino, {
+          const respuestaCorreo = await enviarViaJsonp(urlCorreo, {
             accion: 'enviar_correo_tarea',
             destinatario: emailDest,
             copia: EMAIL_LIDER_PROY,
@@ -3455,11 +3477,12 @@ function DashboardLider() {
         }
       } else {
         console.error('No se encontró correo para la tarea:', nombreResponsable)
+        throw new Error(`No se encontró correo para ${nombreResponsable}`)
       }
 
       setModalPendiente(false)
       setFormPend({unidad:'',distribuidor:'',tarea:'',categoria:'',fechaLimite:'',prioridad:'Media',estado:'Pendiente',responsable:'',notas:''})
-      alert('✅ Actividad asignada a '+u.nombre+' — se envió notificación por correo')
+      alert('✅ Tarea asignada a '+nombreResponsable+' y notificación enviada por correo')
     } catch(e) { alert('Error: '+e.message) }
   }
 
