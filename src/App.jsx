@@ -8,15 +8,15 @@ let _currentUserKey = STORAGE_KEY
 
 const SHEETS_CONFIG = {
   distribucion: {
-    url: 'https://script.google.com/macros/s/AKfycbzgSB5bZEo-3JgBbTySp8GOVB0VpYl8ki3J2EM-daQrB42HiAguVzqWZUCoFovx5rTF/exec',
+    url: 'https://script.google.com/macros/s/AKfycbzvEUEujpIQauAG2rO6CPWZXLpngW2IzFNZI5uh4gQ-LFTpi9vjkr6BBKDCWcwnvWz2/exec',
     enabled: true,
   },
   industria: {
-    url: 'https://script.google.com/macros/s/AKfycbzu5sO8QA5DjziQ1ZE78Te73PeNtKgw_9BLgwAsdpdkDrdrge_n22jL_-xHdnY41d3Ghg/exec',
+    url: 'https://script.google.com/macros/s/AKfycbx5XYlT-1UbJa4RM7X-IeUtxO3dV-Q9x8VslEJSHQz1Igb8j3CZvbfTgpHcyA5ZBbqSJA/exec',
     enabled: true,
   },
   zonas: {
-    url: 'https://script.google.com/macros/s/AKfycbz6Yg6s6ZOdjfv4iOrnPf4Jjo01NrCbGyXOaemmHFgcuousNQ6OuyiJDjwGkjLm_uVL/exec',
+    url: 'https://script.google.com/macros/s/AKfycbwM2qJ_PhIc8x24p9qDSJ0zu11iBafnlar901jwocw2x7Sr5RU-BIaKtalCjnn5ijfl/exec',
     enabled: true,
   },
 }
@@ -2068,7 +2068,7 @@ function ApoyoCierre({ data, setData, usuario }) {
   const [formAsig, setFormAsig] = useState({ comercial:'', distribuidor:'', mes:'', anio:2026, monto:'' })
   const [formRed, setFormRed] = useState({ cliente:'', producto:'', valor:'', notas:'', copiarJefe:false })
 
-  const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzgSB5bZEo-3JgBbTySp8GOVB0VpYl8ki3J2EM-daQrB42HiAguVzqWZUCoFovx5rTF/exec'
+  const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzvEUEujpIQauAG2rO6CPWZXLpngW2IzFNZI5uh4gQ-LFTpi9vjkr6BBKDCWcwnvWz2/exec'
 
   const _canalActual = usuario?.id || 'distribucion'
   const EMAILS = EMAILS_POR_CANAL[_canalActual] || EMAILS_POR_CANAL.distribucion
@@ -2731,27 +2731,52 @@ const ESTADO_PROY = {
 }
 
 
-// ── Helper para enviar correos via JSONP (compatible con Apps Script) ──
-function enviarViaJsonp(url, payload) {
-  return new Promise(resolve => {
-    const cb = 'gs_mail_' + Date.now() + '_' + Math.random().toString(36).slice(2)
-    window[cb] = (r) => { resolve(r); delete window[cb] }
-    const s = document.createElement('script')
-    // Limpiar payload: quitar caracteres problemáticos
-    const cleanPayload = {}
-    Object.entries(payload).forEach(([k,v]) => {
-      if(typeof v === 'string') {
-        cleanPayload[k] = v.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^\x20-\x7E]/g,'')
-      } else {
-        cleanPayload[k] = v
-      }
-    })
-    s.src = url + '?callback=' + cb + '&data=' + encodeURIComponent(JSON.stringify(cleanPayload))
-    s.onerror = () => { resolve({ok:false}); s.remove() }
-    s.onload = () => { setTimeout(resolve, 300); s.remove() }
-    document.head.appendChild(s)
-    setTimeout(() => { resolve({ok:false}); delete window[cb] }, 8000)
+// ── Envío confiable hacia Apps Script ───────────────────────────────
+// Apps Script devuelve JSON, pero el navegador puede bloquear la lectura
+// por CORS. Usamos GET con mode:'no-cors': la solicitud sí llega y ejecuta
+// MailApp, aunque el frontend no pueda leer el cuerpo de la respuesta.
+async function enviarViaJsonp(url, payload) {
+  if(!url) return { ok:false, error:'No hay URL de Apps Script configurada' }
+
+  const params = new URLSearchParams({
+    data: JSON.stringify(payload),
+    _ts: String(Date.now()),
   })
+
+  const requestUrl = `${url}?${params.toString()}`
+
+  try {
+    await fetch(requestUrl, {
+      method: 'GET',
+      mode: 'no-cors',
+      cache: 'no-store',
+      redirect: 'follow',
+    })
+
+    // En no-cors la respuesta es opaca; si fetch no lanzó error,
+    // la solicitud fue despachada al Apps Script.
+    return { ok:true, mensaje:'Solicitud de correo enviada al Apps Script' }
+  } catch(fetchError) {
+    console.warn('Fetch hacia Apps Script falló; usando respaldo por imagen.', fetchError)
+
+    // Respaldo: fuerza una petición GET aunque la respuesta no sea una imagen.
+    return await new Promise(resolve => {
+      const img = new Image()
+      let terminado = false
+
+      const finalizar = () => {
+        if(terminado) return
+        terminado = true
+        resolve({ ok:true, mensaje:'Solicitud enviada mediante respaldo' })
+      }
+
+      img.onload = finalizar
+      img.onerror = finalizar
+      img.src = requestUrl
+
+      setTimeout(finalizar, 5000)
+    })
+  }
 }
 
 async function enviarCorreoProyecto({ proyecto, subtarea, uid='distribucion' }) {
@@ -2992,9 +3017,18 @@ function TareasYProyectos({ data, setData, usuario }) {
     const nuevo = { id:Date.now(), ...formP, creadoPor:usuario.nombre, subtareas:[], fechaCreacion:new Date().toLocaleDateString('es-CO') }
     const nd = {...data, proyectos:[...proyectos, nuevo]}
     setData(nd)
-    insertarFilaSheets(sheetUid,'proyectos',nuevo)
-      .catch(e=>console.error('Error guardando proyecto:',e))
-    await enviarCorreoProyecto({ proyecto:nuevo, subtarea:null, uid:sheetUid })
+    try {
+      await insertarFilaSheets(sheetUid,'proyectos',nuevo)
+    } catch(e) {
+      console.error('Error guardando proyecto:', e)
+    }
+
+    const resultadoCorreo = await enviarCorreoProyecto({
+      proyecto:nuevo,
+      subtarea:null,
+      uid:sheetUid,
+    })
+    console.log('Resultado correo nuevo proyecto:', resultadoCorreo)
     setModalProyecto(false)
     setFormP({ nombre:'', descripcion:'', responsable:'', areas:[], fechaEntrega:'', estado:'Pendiente' })
   }
@@ -3006,10 +3040,21 @@ function TareasYProyectos({ data, setData, usuario }) {
     const nd = {...data, proyectos: proyectosActualizados}
     const proyectoActualizado = proyectosActualizados.find(p=>p.id===proyPadre.id)
     setData(nd)
-    eliminarFilaSheets(sheetUid,'proyectos',proyPadre.id)
-      .then(()=>proyectoActualizado&&insertarFilaSheets(sheetUid,'proyectos',proyectoActualizado))
-      .catch(e=>console.error('Error guardando subtarea:',e))
-    await enviarCorreoProyecto({ proyecto:proyPadre, subtarea, uid:sheetUid })
+    try {
+      await eliminarFilaSheets(sheetUid,'proyectos',proyPadre.id)
+      if(proyectoActualizado) {
+        await insertarFilaSheets(sheetUid,'proyectos',proyectoActualizado)
+      }
+    } catch(e) {
+      console.error('Error guardando subtarea:', e)
+    }
+
+    const resultadoCorreo = await enviarCorreoProyecto({
+      proyecto:proyPadre,
+      subtarea,
+      uid:sheetUid,
+    })
+    console.log('Resultado correo nueva subtarea:', resultadoCorreo)
     setModalSubtarea(false)
     setFormS({ nombre:'', descripcion:'', responsable:'', areas:[], fechaEntrega:'', estado:'Pendiente' })
   }
@@ -3350,7 +3395,7 @@ function DashboardLider() {
     zonas:        'msilva@prolub.com.co',
     diseno:       'aalvarado@gulfcolombia.com',
   }
-  const SHEETS_URL_LIDER = 'https://script.google.com/macros/s/AKfycbzgSB5bZEo-3JgBbTySp8GOVB0VpYl8ki3J2EM-daQrB42HiAguVzqWZUCoFovx5rTF/exec'
+  const SHEETS_URL_LIDER = 'https://script.google.com/macros/s/AKfycbzvEUEujpIQauAG2rO6CPWZXLpngW2IzFNZI5uh4gQ-LFTpi9vjkr6BBKDCWcwnvWz2/exec'
 
   const crearPendiente = async () => {
     if(!formPend.unidad||!formPend.tarea) return
