@@ -62,6 +62,8 @@ const HOJA_MAP = {
   apoyoCierre:       'APOYO_CIERRE',
   redenciones:       'REDENCIONES_APOYO',
   pendientes:        'PENDIENTES',
+  tareasAsignadas:   'TAREAS_ASIGNADAS',
+  proyectos:         'PROYECTOS',
 }
 
 const CAMPOS_MAP = {
@@ -72,7 +74,9 @@ const CAMPOS_MAP = {
   planes:       { id:'id', distribuidor:'distribuidor', anio:'año', quarter:'quarter', estado:'estado', tiposPlan:'tipoPlan', metaGalones:'metaGalones', metaVenta:'metaVenta', condiciones:'condiciones', acuerdos:'acuerdos', notas:'notas', metaMes1:'metaMes1', metaMes2:'metaMes2', metaMes3:'metaMes3', metaGalonesMes1:'metaGalonesMes1', metaGalonesMes2:'metaGalonesMes2', metaGalonesMes3:'metaGalonesMes3', tieneCVC:'tieneCVC', montoCVC:'montoCVC', detalleCVC:'detalleCVC', tienePromotora:'tienePromotora', nombrePromotora:'nombrePromotora', montoPromotora:'montoPromotora', condicionesGenerales:'condicionesGenerales' },
   apoyoCierre:  { id:'ID', anio:'AÑO', mes:'MES', comercial:'COMERCIAL', monto:'MONTO_ASIGNADO', distribuidor:'CLIENTE' },
   redenciones:  { id:'ID', fecha:'FECHA', anio:'AÑO', mes:'MES', comercial:'COMERCIAL', cliente:'CLIENTE', producto:'PRODUCTO', valor:'VALOR_REDIMIDO', notas:'OBSERVACION' },
-  pendientes:   { id:'id', distribuidor:'distribuidor', tarea:'tarea', categoria:'categoria', fechaLimite:'fechaLimite', prioridad:'prioridad', estado:'estado', responsable:'responsable', notas:'notas' },
+  pendientes:   { id:'id', distribuidor:'distribuidor', tarea:'tarea', categoria:'categoria', fechaLimite:'fechaLimite', prioridad:'prioridad', estado:'estado', responsable:'responsable', notas:'notas', asignadoPor:'asignadoPor', fechaCreacion:'fechaCreacion' },
+  tareasAsignadas: { id:'id', distribuidor:'distribuidor', tarea:'tarea', categoria:'categoria', fechaLimite:'fechaLimite', prioridad:'prioridad', estado:'estado', responsable:'responsable', notas:'notas', asignadoPor:'asignadoPor', fechaCreacion:'fechaCreacion' },
+  proyectos:    { id:'id', nombre:'nombre', descripcion:'descripcion', responsable:'responsable', areas:'areas', fechaEntrega:'fechaEntrega', estado:'estado', creadoPor:'creadoPor', subtareas:'subtareas', fechaCreacion:'fechaCreacion' },
 }
 
 // ── NORMALIZAR MES ── "MAYO" / "mayo" → "Mayo"
@@ -155,6 +159,19 @@ function fromSheetRow(tipo, row) {
       if(obj[k]!==undefined) obj[k] = obj[k]===''?'':Number(obj[k])||0
     })
   }
+  if(tipo === 'proyectos') {
+    if(typeof obj.areas === 'string') {
+      obj.areas = obj.areas.split(',').map(a=>a.trim()).filter(Boolean)
+    }
+    try {
+      if(typeof obj.subtareas === 'string' && obj.subtareas.trim()) {
+        obj.subtareas = JSON.parse(obj.subtareas)
+      }
+    } catch(e) {
+      obj.subtareas = []
+    }
+    if(!Array.isArray(obj.subtareas)) obj.subtareas = []
+  }
   if(!obj.id) obj.id = Date.now() + Math.random()
   return obj
 }
@@ -176,6 +193,8 @@ async function cargarDesdeSheets(uid) {
       redenciones:      (d.redenciones_apoyo||[]).map(r=>fromSheetRow('redenciones',r)),
       gastosPresupuesto:(d.gastos_presupuesto||[]).map(r=>fromSheetRow('gastosPresupuesto',r)),
       pendientes:       (d.pendientes       ||[]).map(r=>fromSheetRow('pendientes',r)),
+      tareasAsignadas:  (d.tareas_asignadas ||[]).map(r=>fromSheetRow('tareasAsignadas',r)),
+      proyectos:        (d.proyectos         ||[]).map(r=>fromSheetRow('proyectos',r)),
     }
   } catch(e) {
     console.error('Error cargando Sheets:', e)
@@ -287,6 +306,8 @@ function load() {
       { id:3, distribuidor:'MAQUINAGRO S.A.S', anio:2026, quarter:'Q2', estado:'En negociación', tiposPlan:['Prolub respalda'], metaGalones:2400, metaVenta:48000000, condiciones:'En revisión — propuesta enviada el 15 de abril', acuerdos:'Pendiente aprobación gerencia', notas:'Solicitan incremento de apoyo vs Q1', historial:[] },
     ],
     gastosPresupuesto: [],
+    tareasAsignadas: [],
+    proyectos: [],
     pendientes: [
       { id:1, distribuidor:'CVS- SERVITECAS S.A.S', tarea:'Revisar cumplimiento meta Q1', categoria:'Seguimiento', fechaLimite:'2026-03-31', prioridad:'Alta', estado:'Pendiente', responsable:'', notas:'' },
       { id:2, distribuidor:'MAQUINAGRO S.A.S', tarea:'Cerrar negociación plan Q2', categoria:'Negociación', fechaLimite:'2026-04-15', prioridad:'Alta', estado:'En curso', responsable:'', notas:'' },
@@ -2580,10 +2601,7 @@ Responde en español, conciso y útil.`
 // TAREAS ASIGNADAS — vista del canal
 // ═══════════════════════════════════════════════════════
 function TareasAsignadas({ data, setData, usuario }) {
-  const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzgSB5bZEo-3JgBbTySp8GOVB0VpYl8ki3J2EM-daQrB42HiAguVzqWZUCoFovx5rTF/exec'
-  const save = nd => { localStorage.setItem(getStorageKey(usuario.id), JSON.stringify(nd)) }
-
-  const tareas = (data.pendientes||[]).filter(p=>p.asignadoPor==='Líder de Mercadeo')
+  const tareas = data.tareasAsignadas || []
   const abiertas = tareas.filter(t=>t.estado!=='Listo'&&t.estado!=='Cancelado')
   const cerradas = tareas.filter(t=>t.estado==='Listo'||t.estado==='Cancelado')
 
@@ -2593,16 +2611,23 @@ function TareasAsignadas({ data, setData, usuario }) {
   const cambiarEstado = (tarea) => {
     const ciclo = { Pendiente:'En curso', 'En curso':'Listo', Listo:'Pendiente' }
     const nuevo = { ...tarea, estado: ciclo[tarea.estado] || 'Pendiente' }
-    const pendientes = data.pendientes.map(p => p.id===tarea.id ? nuevo : p)
-    const nd = { ...data, pendientes }
-    setData(nd); save(nd)
+    const tareasAsignadas = tareas.map(p => p.id===tarea.id ? nuevo : p)
+    const nd = { ...data, tareasAsignadas }
+    setData(nd)
+    eliminarFilaSheets(usuario.id,'tareasAsignadas',tarea.id)
+      .then(()=>insertarFilaSheets(usuario.id,'tareasAsignadas',nuevo))
+      .catch(e=>console.error('Error actualizando tarea asignada:',e))
   }
 
   const eliminar = (id) => {
     if(!window.confirm('¿Marcar como cancelada esta tarea?')) return
-    const pendientes = data.pendientes.map(p => p.id===id ? {...p, estado:'Cancelado'} : p)
-    const nd = { ...data, pendientes }
-    setData(nd); save(nd)
+    const tareasAsignadas = tareas.map(p => p.id===id ? {...p, estado:'Cancelado'} : p)
+    const nd = { ...data, tareasAsignadas }
+    const actualizada = tareasAsignadas.find(p=>p.id===id)
+    setData(nd)
+    eliminarFilaSheets(usuario.id,'tareasAsignadas',id)
+      .then(()=>actualizada&&insertarFilaSheets(usuario.id,'tareasAsignadas',actualizada))
+      .catch(e=>console.error('Error cancelando tarea asignada:',e))
   }
 
   const TarjetaTarea = ({ t }) => (
@@ -2676,7 +2701,7 @@ const EMAILS_EQUIPO = {
 const EMAIL_LIDER_PROY = 'cgil@prolub.com.co'
 const AREAS = ['Compras','Facturación','Logística','Comercial']
 const RESPONSABLES = ['Emma','María P','Juan','Camilo']
-const SHEETS_URL_PROY = 'https://script.google.com/macros/s/AKfycbzgSB5bZEo-3JgBbTySp8GOVB0VpYl8ki3J2EM-daQrB42HiAguVzqWZUCoFovx5rTF/exec'
+const SHEETS_URL_PROY = SHEETS_CONFIG.distribucion.url
 
 const ESTADO_PROY = {
   'Pendiente': { color:'var(--yellow)',  bg:'rgba(180,83,9,0.1)' },
@@ -2708,7 +2733,7 @@ function enviarViaJsonp(url, payload) {
   })
 }
 
-function enviarCorreoProyecto({ proyecto, subtarea }) {
+function enviarCorreoProyecto({ proyecto, subtarea, uid='distribucion' }) {
   const resp = subtarea?.responsable || proyecto.responsable
   const email = EMAILS_EQUIPO[resp]
   if(!email) return
@@ -2735,7 +2760,8 @@ function enviarCorreoProyecto({ proyecto, subtarea }) {
     const detalle2 = encodeURIComponent(`Proyecto: ${proyecto.nombre} | Responsable: ${resp} | Areas: ${(subtarea?.areas||proyecto.areas||[]).join(', ')}`)
     calLinkLider = `https://calendar.google.com/calendar/r/eventedit?text=${titulo2}&dates=${start2}/${end2}&details=${detalle2}&add=${encodeURIComponent(EMAIL_LIDER_PROY)}`
   }
-  enviarViaJsonp(SHEETS_URL_PROY, {
+  const urlProyecto = SHEETS_CONFIG[uid]?.url || SHEETS_URL_PROY
+  enviarViaJsonp(urlProyecto, {
     accion: 'enviar_correo_proyecto',
     destinatario: email,
     copia: EMAIL_LIDER_PROY,
@@ -2800,26 +2826,29 @@ function MisTareas({ data, setData, usuario }) {
   const [form, setForm] = useState({tarea:'',categoria:'',fechaLimite:'',prioridad:'Media',estado:'Pendiente',notas:''})
   const PRIORIDAD_COLOR = { Alta:'var(--red)', Media:'var(--orange)', Baja:'var(--green)' }
   const ESTADO_COLOR = { Pendiente:'var(--yellow)', 'En curso':'var(--accent2)', Listo:'var(--green)', Cancelado:'var(--text3)' }
-  const save = nd => { localStorage.setItem(getStorageKey(usuario.id), JSON.stringify(nd)) }
-
   const crear = () => {
     if(!form.tarea) return
     const nueva = {...form, id:Date.now(), asignadoPor:usuario.nombre, fechaCreacion:new Date().toLocaleDateString('es-CO')}
     const nd = {...data, pendientes:[...(data.pendientes||[]), nueva]}
-    setData(nd); save(nd)
+    setData(nd, {insertar:nueva, tipo:'pendientes'})
     setModal(false)
     setForm({tarea:'',categoria:'',fechaLimite:'',prioridad:'Media',estado:'Pendiente',notas:''})
   }
 
   const cambiarEstado = (id) => {
     const ciclo = {Pendiente:'En curso','En curso':'Listo',Listo:'Pendiente'}
-    const nd = {...data, pendientes:(data.pendientes||[]).map(p=>p.id===id?{...p,estado:ciclo[p.estado]||'Pendiente'}:p)}
-    setData(nd); save(nd)
+    const pendientes = (data.pendientes||[]).map(p=>p.id===id?{...p,estado:ciclo[p.estado]||'Pendiente'}:p)
+    const nd = {...data, pendientes}
+    const actualizada = pendientes.find(p=>p.id===id)
+    setData(nd)
+    eliminarFilaSheets(usuario.id,'pendientes',id)
+      .then(()=>actualizada&&insertarFilaSheets(usuario.id,'pendientes',actualizada))
+      .catch(e=>console.error('Error actualizando tarea personal:',e))
   }
 
   const eliminar = (id) => {
     const nd = {...data, pendientes:(data.pendientes||[]).filter(p=>p.id!==id)}
-    setData(nd); save(nd)
+    setData(nd, {eliminar:id, tipo:'pendientes'})
   }
 
   const abiertas = tareas.filter(t=>t.estado!=='Listo'&&t.estado!=='Cancelado')
@@ -2919,14 +2948,16 @@ function TareasYProyectos({ data, setData, usuario }) {
   const [formP, setFormP] = useState({ nombre:'', descripcion:'', responsable:'', areas:[], fechaEntrega:'', estado:'Pendiente' })
   const [formS, setFormS] = useState({ nombre:'', descripcion:'', responsable:'', areas:[], fechaEntrega:'', estado:'Pendiente' })
 
-  const save = nd => { localStorage.setItem(getStorageKey(usuario.id), JSON.stringify(nd)) }
+  const sheetUid = SHEETS_CONFIG[usuario.id]?.enabled ? usuario.id : 'distribucion'
 
   const crearProyecto = () => {
     if(!formP.nombre) return
     const nuevo = { id:Date.now(), ...formP, creadoPor:usuario.nombre, subtareas:[], fechaCreacion:new Date().toLocaleDateString('es-CO') }
     const nd = {...data, proyectos:[...proyectos, nuevo]}
-    setData(nd); save(nd)
-    enviarCorreoProyecto({ proyecto:nuevo, subtarea:null })
+    setData(nd)
+    insertarFilaSheets(sheetUid,'proyectos',nuevo)
+      .catch(e=>console.error('Error guardando proyecto:',e))
+    enviarCorreoProyecto({ proyecto:nuevo, subtarea:null, uid:sheetUid })
     setModalProyecto(false)
     setFormP({ nombre:'', descripcion:'', responsable:'', areas:[], fechaEntrega:'', estado:'Pendiente' })
   }
@@ -2934,35 +2965,57 @@ function TareasYProyectos({ data, setData, usuario }) {
   const crearSubtarea = () => {
     if(!formS.nombre||!proyPadre) return
     const subtarea = { id:Date.now(), ...formS, creadoPor:usuario.nombre }
-    const nd = {...data, proyectos: proyectos.map(p=> p.id===proyPadre.id ? {...p, subtareas:[...(p.subtareas||[]), subtarea]} : p)}
-    setData(nd); save(nd)
-    enviarCorreoProyecto({ proyecto:proyPadre, subtarea })
+    const proyectosActualizados = proyectos.map(p=> p.id===proyPadre.id ? {...p, subtareas:[...(p.subtareas||[]), subtarea]} : p)
+    const nd = {...data, proyectos: proyectosActualizados}
+    const proyectoActualizado = proyectosActualizados.find(p=>p.id===proyPadre.id)
+    setData(nd)
+    eliminarFilaSheets(sheetUid,'proyectos',proyPadre.id)
+      .then(()=>proyectoActualizado&&insertarFilaSheets(sheetUid,'proyectos',proyectoActualizado))
+      .catch(e=>console.error('Error guardando subtarea:',e))
+    enviarCorreoProyecto({ proyecto:proyPadre, subtarea, uid:sheetUid })
     setModalSubtarea(false)
     setFormS({ nombre:'', descripcion:'', responsable:'', areas:[], fechaEntrega:'', estado:'Pendiente' })
   }
 
   const cambiarEstadoProy = (pid, estado) => {
-    const nd = {...data, proyectos: proyectos.map(p=> p.id===pid ? {...p,estado} : p)}
-    setData(nd); save(nd)
+    const proyectosActualizados = proyectos.map(p=> p.id===pid ? {...p,estado} : p)
+    const nd = {...data, proyectos: proyectosActualizados}
+    const proyectoActualizado = proyectosActualizados.find(p=>p.id===pid)
+    setData(nd)
+    eliminarFilaSheets(sheetUid,'proyectos',pid)
+      .then(()=>proyectoActualizado&&insertarFilaSheets(sheetUid,'proyectos',proyectoActualizado))
+      .catch(e=>console.error('Error actualizando proyecto:',e))
     if(proyectoActivo?.id===pid) setProyectoActivo({...proyectoActivo,estado})
   }
 
   const cambiarEstadoSub = (pid, sid, estado) => {
-    const nd = {...data, proyectos: proyectos.map(p=> p.id===pid ? {...p, subtareas:(p.subtareas||[]).map(s=> s.id===sid?{...s,estado}:s)} : p)}
-    setData(nd); save(nd)
+    const proyectosActualizados = proyectos.map(p=> p.id===pid ? {...p, subtareas:(p.subtareas||[]).map(s=> s.id===sid?{...s,estado}:s)} : p)
+    const nd = {...data, proyectos: proyectosActualizados}
+    const proyectoActualizado = proyectosActualizados.find(p=>p.id===pid)
+    setData(nd)
+    eliminarFilaSheets(sheetUid,'proyectos',pid)
+      .then(()=>proyectoActualizado&&insertarFilaSheets(sheetUid,'proyectos',proyectoActualizado))
+      .catch(e=>console.error('Error actualizando subtarea:',e))
     if(proyectoActivo?.id===pid) setProyectoActivo(nd.proyectos.find(p=>p.id===pid))
   }
 
   const eliminarProy = (pid) => {
     if(!window.confirm('¿Eliminar este proyecto y todas sus subtareas?')) return
     const nd = {...data, proyectos: proyectos.filter(p=>p.id!==pid)}
-    setData(nd); save(nd)
+    setData(nd)
+    eliminarFilaSheets(sheetUid,'proyectos',pid)
+      .catch(e=>console.error('Error eliminando proyecto:',e))
     setVista('lista'); setProyectoActivo(null)
   }
 
   const eliminarSub = (pid, sid) => {
-    const nd = {...data, proyectos: proyectos.map(p=> p.id===pid ? {...p, subtareas:(p.subtareas||[]).filter(s=>s.id!==sid)} : p)}
-    setData(nd); save(nd)
+    const proyectosActualizados = proyectos.map(p=> p.id===pid ? {...p, subtareas:(p.subtareas||[]).filter(s=>s.id!==sid)} : p)
+    const nd = {...data, proyectos: proyectosActualizados}
+    const proyectoActualizado = proyectosActualizados.find(p=>p.id===pid)
+    setData(nd)
+    eliminarFilaSheets(sheetUid,'proyectos',pid)
+      .then(()=>proyectoActualizado&&insertarFilaSheets(sheetUid,'proyectos',proyectoActualizado))
+      .catch(e=>console.error('Error eliminando subtarea:',e))
     if(proyectoActivo?.id===pid) setProyectoActivo(nd.proyectos.find(p=>p.id===pid))
   }
 
@@ -3270,28 +3323,39 @@ function DashboardLider() {
       const key = getStorageKey(u.id)
       const raw = localStorage.getItem(key)
       const ud = raw ? JSON.parse(raw) : {inversiones:[],ventas:[],planes:[],presupuestos:[],pendientes:[],gastosPresupuesto:[]}
-      const nuevo = {...formPend, id:Date.now(), distribuidor:formPend.distribuidor||'', asignadoPor:'Líder de Mercadeo'}
+      const nuevo = {...formPend, id:Date.now(), distribuidor:formPend.distribuidor||'', asignadoPor:'Líder de Mercadeo', fechaCreacion:new Date().toLocaleDateString('es-CO')}
       delete nuevo.unidad
-      ud.pendientes = [...(ud.pendientes||[]), nuevo]
+      ud.tareasAsignadas = [...(ud.tareasAsignadas||[]), nuevo]
       localStorage.setItem(key, JSON.stringify(ud))
+
+      const urlDestino = SHEETS_CONFIG[u.id]?.url
+      if(urlDestino) {
+        enviarViaJsonp(urlDestino, {
+          accion:'agregar_lote',
+          hoja:'TAREAS_ASIGNADAS',
+          filas:[toSheetRow('tareasAsignadas',nuevo)],
+        }).then(r=>console.log('Tarea guardada en Sheets:',r)).catch(e=>console.error('Error guardando tarea:',e))
+      }
 
       // Enviar correo de notificación a la unidad destino
       const emailDest = EMAILS_UNIDAD_LIDER[u.id]
-      if(emailDest) {
+      if(emailDest && urlDestino) {
         try {
-          enviarViaJsonp(SHEETS_URL_LIDER, {
-              accion: 'enviar_correo',
+          enviarViaJsonp(urlDestino, {
+              accion: 'enviar_correo_tarea',
               destinatario: emailDest,
               copia: 'cgil@prolub.com.co',
-              asunto: 'Nueva actividad asignada: ' + nuevo.tarea,
               comercial: u.nombre,
+              responsable: u.nombre,
+              tarea: nuevo.tarea,
               producto: nuevo.tarea,
               cliente: nuevo.distribuidor || '',
+              distribuidor: nuevo.distribuidor || '',
               notas: nuevo.notas || '',
+              descripcion: nuevo.notas || '',
               mes: nuevo.fechaLimite || '',
+              fechaLimite: nuevo.fechaLimite || '',
               fecha: new Date().toLocaleDateString('es-CO'),
-              valorRedimido: 0,
-              nuevoSaldo: 0,
             })
         } catch(e) { console.error('Error notificacion email:', e) }
       }
@@ -3675,6 +3739,12 @@ export default function App() {
           if((!sheetData.presupuestos || sheetData.presupuestos.length===0) && localActual.presupuestos?.length>0) {
             sheetData.presupuestos = localActual.presupuestos
           }
+          if((!sheetData.proyectos || sheetData.proyectos.length===0) && localActual.proyectos?.length>0) {
+            sheetData.proyectos = localActual.proyectos
+          }
+          if((!sheetData.tareasAsignadas || sheetData.tareasAsignadas.length===0) && localActual.tareasAsignadas?.length>0) {
+            sheetData.tareasAsignadas = localActual.tareasAsignadas
+          }
           setData(sheetData)
           _currentUserKey = getStorageKey(usuario.id)
           localStorage.setItem(_currentUserKey, JSON.stringify(sheetData))
@@ -3743,7 +3813,7 @@ export default function App() {
 
   const TABS_LIDER = [{id:'dashboard',label:'Dashboard Consolidado',icon:LayoutDashboard},{id:'tareasProyectos',label:'Tareas y Proyectos',icon:BookOpen}]
   const TABS_PRES = [{id:'dashboard',label:'Presupuesto Consolidado',icon:DollarSign}]
-  const tareasAsignadasCount = !esLider&&!esPresupuesto ? (data.pendientes||[]).filter(p=>p.asignadoPor==='Líder de Mercadeo'&&p.estado!=='Listo'&&p.estado!=='Cancelado').length : 0
+  const tareasAsignadasCount = !esLider&&!esPresupuesto ? (data.tareasAsignadas||[]).filter(p=>p.estado!=='Listo'&&p.estado!=='Cancelado').length : 0
   const TABS_NORMAL = [
     {id:'dashboard',  label:'Dashboard',   icon:LayoutDashboard},
     {id:'inversiones',label:'Inversiones', icon:TrendingUp},
@@ -3813,7 +3883,7 @@ export default function App() {
           {!esLider&&!esPresupuesto&&(
             <>
               {(()=>{
-                const tareasLider = (data.pendientes||[]).filter(p=>p.asignadoPor==='Líder de Mercadeo'&&p.estado!=='Listo'&&p.estado!=='Cancelado')
+                const tareasLider = (data.tareasAsignadas||[]).filter(p=>p.estado!=='Listo'&&p.estado!=='Cancelado')
                 if(tareasLider.length===0) return null
                 return (
                   <div style={{background:'rgba(91,82,240,0.08)',border:'1px solid rgba(91,82,240,0.25)',borderRadius:12,padding:'12px 18px',marginBottom:8,display:'flex',alignItems:'center',gap:12,cursor:'pointer'}} onClick={()=>setTab('tareasasignadas')}>
@@ -3865,7 +3935,7 @@ export default function App() {
             {SHEETS_CONFIG[usuario?.id]?.enabled&&(
               <button onClick={async ()=>{
                 setSheetsSync('syncing')
-                const tipos=['inversiones','ventas','presupuestos','gastosPresupuesto','planes','apoyoCierre','redenciones','pendientes']
+                const tipos=['inversiones','ventas','presupuestos','gastosPresupuesto','planes','apoyoCierre','redenciones','pendientes','tareasAsignadas','proyectos']
                 for(const t of tipos){
                   guardarEnSheets(usuario.id,t,data[t]||[])
                   await new Promise(r=>setTimeout(r,600))
