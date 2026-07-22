@@ -2109,11 +2109,7 @@ function ApoyoCierre({ data, setData, usuario }) {
     if(emailDest) {
       setEnviandoEmail(true)
       try {
-        fetch(SHEETS_URL, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({
+        enviarViaJsonp(SHEETS_URL, {
             accion: 'enviar_correo',
             destinatario: emailDest,
             copia: EMAIL_JEFE,
@@ -2127,7 +2123,6 @@ function ApoyoCierre({ data, setData, usuario }) {
             fecha: nueva.fecha,
             notas: formRed.notas,
           })
-        })
       } catch(e) { console.error('Error enviando email:', e) }
       setEnviandoEmail(false)
     }
@@ -2689,6 +2684,21 @@ const ESTADO_PROY = {
   'Finalizada':{ color:'var(--green)',   bg:'var(--green-soft)'  },
 }
 
+
+// ── Helper para enviar correos via JSONP (compatible con Apps Script) ──
+function enviarViaJsonp(url, payload) {
+  return new Promise(resolve => {
+    const cb = 'gs_mail_' + Date.now() + '_' + Math.random().toString(36).slice(2)
+    window[cb] = (r) => { resolve(r); delete window[cb] }
+    const s = document.createElement('script')
+    s.src = url + '?callback=' + cb + '&data=' + encodeURIComponent(JSON.stringify(payload))
+    s.onerror = () => { resolve({ok:false}); s.remove() }
+    s.onload = () => { setTimeout(resolve, 300); s.remove() }
+    document.head.appendChild(s)
+    setTimeout(() => { resolve({ok:false}); delete window[cb] }, 8000)
+  })
+}
+
 function enviarCorreoProyecto({ proyecto, subtarea }) {
   const resp = subtarea?.responsable || proyecto.responsable
   const email = EMAILS_EQUIPO[resp]
@@ -2716,23 +2726,19 @@ function enviarCorreoProyecto({ proyecto, subtarea }) {
     const detalle2 = encodeURIComponent(`Proyecto: ${proyecto.nombre}\nResponsable: ${resp}\nÁreas: ${(subtarea?.areas||proyecto.areas||[]).join(', ')}`)
     calLinkLider = `https://calendar.google.com/calendar/r/eventedit?text=${titulo2}&dates=${start2}/${end2}&details=${detalle2}&add=${encodeURIComponent(EMAIL_LIDER_PROY)}`
   }
-  fetch(SHEETS_URL_PROY, {
-    method:'POST', mode:'no-cors',
-    headers:{'Content-Type':'text/plain'},
-    body: JSON.stringify({
-      accion: 'enviar_correo_proyecto',
-      destinatario: email,
-      copia: EMAIL_LIDER_PROY,
-      proyecto: proyecto.nombre,
-      subtarea: subtarea?.nombre || '',
-      responsable: resp,
-      areas: (subtarea?.areas||proyecto.areas||[]).join(', '),
-      fechaEntrega,
-      calLink,
-      calLinkLider,
-      descripcion: proyecto.descripcion || '',
-    })
-  }).catch(()=>{})
+  enviarViaJsonp(SHEETS_URL_PROY, {
+    accion: 'enviar_correo_proyecto',
+    destinatario: email,
+    copia: EMAIL_LIDER_PROY,
+    proyecto: proyecto.nombre,
+    subtarea: subtarea?.nombre || '',
+    responsable: resp,
+    areas: (subtarea?.areas||proyecto.areas||[]).join(', '),
+    fechaEntrega,
+    calLink,
+    calLinkLider,
+    descripcion: proyecto.descripcion || '',
+  }).then(r => console.log('Correo proyecto:', r)).catch(()=>{})
 }
 
 
@@ -3264,11 +3270,7 @@ function DashboardLider() {
       const emailDest = EMAILS_UNIDAD_LIDER[u.id]
       if(emailDest) {
         try {
-          fetch(SHEETS_URL_LIDER, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify({
+          enviarViaJsonp(SHEETS_URL_LIDER, {
               accion: 'enviar_correo',
               destinatario: emailDest,
               copia: 'cgil@prolub.com.co',
@@ -3282,7 +3284,6 @@ function DashboardLider() {
               valorRedimido: 0,
               nuevoSaldo: 0,
             })
-          })
         } catch(e) { console.error('Error notificacion email:', e) }
       }
 
