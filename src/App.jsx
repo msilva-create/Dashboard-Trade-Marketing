@@ -9,14 +9,17 @@ let _currentUserKey = STORAGE_KEY
 const SHEETS_CONFIG = {
   distribucion: {
     url: 'https://script.google.com/macros/s/AKfycbxzqhKZr7ue545BDwpgqQrNsognsVOtxxZNPd6P4Jm_wtdj1_Sqkd9FdswrdtfM2d8S/exec',
+    spreadsheetId: '15X2WrJGDw__xFvPpe3Gcm5iR9KSKgJP20Q_kyJ0Zn0U',
     enabled: true,
   },
   industria: {
-    url: 'https://script.google.com/macros/s/AKfycbx5XYlT-1UbJa4RM7X-IeUtxO3dV-Q9x8VslEJSHQz1Igb8j3CZvbfTgpHcyA5ZBbqSJA/exec',
+    url: 'https://script.google.com/macros/s/AKfycbxzqhKZr7ue545BDwpgqQrNsognsVOtxxZNPd6P4Jm_wtdj1_Sqkd9FdswrdtfM2d8S/exec',
+    spreadsheetId: '1YOqpzgEyLWdqAvXLIQBW9YrQ1KpnvUnEjZvHkY5Ce4A',
     enabled: true,
   },
   zonas: {
-    url: 'https://script.google.com/macros/s/AKfycbwM2qJ_PhIc8x24p9qDSJ0zu11iBafnlar901jwocw2x7Sr5RU-BIaKtalCjnn5ijfl/exec',
+    url: 'https://script.google.com/macros/s/AKfycbxzqhKZr7ue545BDwpgqQrNsognsVOtxxZNPd6P4Jm_wtdj1_Sqkd9FdswrdtfM2d8S/exec',
+    spreadsheetId: '1OHpuBQ5Aj-NV9n-wQBlkUoT8mgC3DgZhWyAVSAfFL7Y',
     enabled: true,
   },
   juan: {
