@@ -93,7 +93,18 @@ const CAMPOS_MAP = {
   apoyoCierre:  { id:'ID', anio:'AÑO', mes:'MES', comercial:'COMERCIAL', monto:'MONTO_ASIGNADO', distribuidor:'CLIENTE' },
   redenciones:  { id:'ID', fecha:'FECHA', anio:'AÑO', mes:'MES', comercial:'COMERCIAL', cliente:'CLIENTE', producto:'PRODUCTO', valor:'VALOR_REDIMIDO', notas:'OBSERVACION' },
   pendientes:   { id:'id', distribuidor:'distribuidor', tarea:'tarea', categoria:'categoria', fechaLimite:'fechaLimite', prioridad:'prioridad', estado:'estado', responsable:'responsable', notas:'notas', asignadoPor:'asignadoPor', fechaCreacion:'fechaCreacion' },
-  tareasAsignadas: { id:'id', distribuidor:'distribuidor', tarea:'tarea', categoria:'categoria', fechaLimite:'fechaLimite', prioridad:'prioridad', estado:'estado', responsable:'responsable', notas:'notas', asignadoPor:'asignadoPor', fechaCreacion:'fechaCreacion' },
+  tareasAsignadas: {
+    id:'id',
+    distribuidor:'proyecto',
+    tarea:'nombre',
+    notas:'descripcion',
+    responsable:'responsable',
+    fechaLimite:'fechaEntrega',
+    estado:'estado',
+    categoria:'areas',
+    asignadoPor:'creadoPor',
+    fechaCreacion:'fechaCreacion'
+  },
   proyectos:    { id:'id', nombre:'nombre', descripcion:'descripcion', responsable:'responsable', areas:'areas', fechaEntrega:'fechaEntrega', estado:'estado', creadoPor:'creadoPor', subtareas:'subtareas', fechaCreacion:'fechaCreacion' },
 }
 
@@ -3092,30 +3103,95 @@ function TareasYProyectos({ data, setData, usuario }) {
   }
 
   const crearSubtarea = async () => {
-    if(!formS.nombre||!proyPadre) return
-    const subtarea = { id:Date.now(), ...formS, creadoPor:usuario.nombre }
-    const proyectosActualizados = proyectos.map(p=> p.id===proyPadre.id ? {...p, subtareas:[...(p.subtareas||[]), subtarea]} : p)
-    const nd = {...data, proyectos: proyectosActualizados}
-    const proyectoActualizado = proyectosActualizados.find(p=>p.id===proyPadre.id)
+    if(!formS.nombre || !proyPadre) return
+
+    if(!formS.responsable) {
+      alert('Selecciona un responsable para la subtarea.')
+      return
+    }
+
+    const ahora = Date.now()
+    const subtarea = {
+      id: ahora,
+      ...formS,
+      creadoPor: usuario.nombre,
+      fechaCreacion: new Date().toLocaleDateString('es-CO'),
+    }
+
+    // 1. Mantener la subtarea dentro del proyecto padre.
+    const proyectosActualizados = proyectos.map(p =>
+      p.id === proyPadre.id
+        ? {...p, subtareas:[...(p.subtareas || []), subtarea]}
+        : p
+    )
+    const proyectoActualizado = proyectosActualizados.find(p => p.id === proyPadre.id)
+
+    // 2. Crear también una tarea individual para el responsable.
+    // Así Emma la verá en TAREAS_ASIGNADAS de Industria, Juan en su archivo, etc.
+    const tareaAsignada = {
+      id: ahora,
+      unidad: 'Proyecto',
+      tarea: subtarea.nombre,
+      distribuidor: proyPadre.nombre,
+      categoria: (subtarea.areas || []).join(', ') || 'Proyecto',
+      fechaLimite: subtarea.fechaEntrega || '',
+      prioridad: 'Media',
+      estado: subtarea.estado === 'Finalizada' ? 'Listo' : (subtarea.estado || 'Pendiente'),
+      responsable: subtarea.responsable,
+      notas: subtarea.descripcion || `Subtarea del proyecto: ${proyPadre.nombre}`,
+      asignadoPor: usuario.nombre,
+      fechaCreacion: subtarea.fechaCreacion,
+      proyectoId: proyPadre.id,
+    }
+
+    const tareasActualizadas = [...(data.tareasAsignadas || []), tareaAsignada]
+    const nd = {
+      ...data,
+      proyectos: proyectosActualizados,
+      tareasAsignadas: tareasActualizadas,
+    }
     setData(nd)
-    const destinoUid = obtenerUidResponsable(subtarea.responsable || proyPadre.responsable)
+
+    // El proyecto padre siempre se actualiza en el archivo de su responsable.
+    const uidProyecto = obtenerUidResponsable(proyPadre.responsable)
+
+    // La tarea individual se guarda en el archivo del responsable de la subtarea.
+    const uidResponsable = obtenerUidResponsable(subtarea.responsable)
+
     try {
-      await eliminarFilaSheets(destinoUid,'proyectos',proyPadre.id)
+      await eliminarFilaSheets(uidProyecto, 'proyectos', proyPadre.id)
       if(proyectoActualizado) {
-        await insertarFilaSheets(destinoUid,'proyectos',proyectoActualizado)
+        await insertarFilaSheets(uidProyecto, 'proyectos', proyectoActualizado)
       }
+
+      await insertarFilaSheets(uidResponsable, 'tareasAsignadas', tareaAsignada)
+
+      console.log(
+        'Subtarea guardada en proyecto y tarea asignada a',
+        subtarea.responsable
+      )
     } catch(e) {
-      console.error('Error guardando subtarea:', e)
+      console.error('Error guardando la subtarea:', e)
+      alert('La subtarea se creó en pantalla, pero hubo un error guardándola en Sheets.')
     }
 
     const resultadoCorreo = await enviarCorreoProyecto({
-      proyecto:proyPadre,
+      proyecto: proyPadre,
       subtarea,
-      uid:destinoUid,
+      uid: uidResponsable,
     })
+
     console.log('Resultado correo nueva subtarea:', resultadoCorreo)
+
     setModalSubtarea(false)
-    setFormS({ nombre:'', descripcion:'', responsable:'', areas:[], fechaEntrega:'', estado:'Pendiente' })
+    setFormS({
+      nombre:'',
+      descripcion:'',
+      responsable:'',
+      areas:[],
+      fechaEntrega:'',
+      estado:'Pendiente'
+    })
   }
 
   const cambiarEstadoProy = (pid, estado) => {
@@ -3131,15 +3207,48 @@ function TareasYProyectos({ data, setData, usuario }) {
   }
 
   const cambiarEstadoSub = (pid, sid, estado) => {
-    const proyectosActualizados = proyectos.map(p=> p.id===pid ? {...p, subtareas:(p.subtareas||[]).map(s=> s.id===sid?{...s,estado}:s)} : p)
-    const nd = {...data, proyectos: proyectosActualizados}
-    const proyectoActualizado = proyectosActualizados.find(p=>p.id===pid)
+    const proyectoOriginal = proyectos.find(p => p.id === pid)
+    const subtareaOriginal = proyectoOriginal?.subtareas?.find(s => s.id === sid)
+
+    const proyectosActualizados = proyectos.map(p =>
+      p.id === pid
+        ? {...p, subtareas:(p.subtareas || []).map(s => s.id === sid ? {...s, estado} : s)}
+        : p
+    )
+
+    const tareasActualizadas = (data.tareasAsignadas || []).map(t =>
+      String(t.id) === String(sid)
+        ? {...t, estado: estado === 'Finalizada' ? 'Listo' : estado}
+        : t
+    )
+
+    const nd = {
+      ...data,
+      proyectos: proyectosActualizados,
+      tareasAsignadas: tareasActualizadas,
+    }
+
+    const proyectoActualizado = proyectosActualizados.find(p => p.id === pid)
+    const tareaActualizada = tareasActualizadas.find(t => String(t.id) === String(sid))
+
     setData(nd)
-    const destinoUid = obtenerUidResponsable(proyectoActualizado?.responsable)
-    eliminarFilaSheets(destinoUid,'proyectos',pid)
-      .then(()=>proyectoActualizado&&insertarFilaSheets(destinoUid,'proyectos',proyectoActualizado))
-      .catch(e=>console.error('Error actualizando subtarea:',e))
-    if(proyectoActivo?.id===pid) setProyectoActivo(nd.proyectos.find(p=>p.id===pid))
+
+    const uidProyecto = obtenerUidResponsable(proyectoActualizado?.responsable)
+    const uidTarea = obtenerUidResponsable(subtareaOriginal?.responsable)
+
+    eliminarFilaSheets(uidProyecto, 'proyectos', pid)
+      .then(() => proyectoActualizado && insertarFilaSheets(uidProyecto, 'proyectos', proyectoActualizado))
+      .then(async () => {
+        if(tareaActualizada) {
+          await eliminarFilaSheets(uidTarea, 'tareasAsignadas', sid)
+          await insertarFilaSheets(uidTarea, 'tareasAsignadas', tareaActualizada)
+        }
+      })
+      .catch(e => console.error('Error actualizando subtarea:', e))
+
+    if(proyectoActivo?.id === pid) {
+      setProyectoActivo(nd.proyectos.find(p => p.id === pid))
+    }
   }
 
   const eliminarProy = (pid) => {
