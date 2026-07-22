@@ -2695,13 +2695,34 @@ function TareasAsignadas({ data, setData, usuario }) {
 const EMAILS_EQUIPO = {
   'Emma':    'epabon@gulfcolombia.com',
   'María P': 'msilva@prolub.com.co',
+  'Maria P': 'msilva@prolub.com.co',
   'Juan':    'acomercial@prolub.com.co',
   'Camilo':  'aalvarado@gulfcolombia.com',
 }
+
 const EMAIL_LIDER_PROY = 'cgil@prolub.com.co'
 const AREAS = ['Compras','Facturación','Logística','Comercial']
 const RESPONSABLES = ['Emma','María P','Juan','Camilo']
 const SHEETS_URL_PROY = SHEETS_CONFIG.distribucion.url
+
+function normalizarNombreResponsable(nombre='') {
+  return String(nombre)
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g,'')
+    .toLowerCase()
+}
+
+function obtenerCorreoResponsable(nombre='') {
+  const normalizado = normalizarNombreResponsable(nombre)
+  const mapa = {
+    'emma': 'epabon@gulfcolombia.com',
+    'maria p': 'msilva@prolub.com.co',
+    'juan': 'acomercial@prolub.com.co',
+    'camilo': 'aalvarado@gulfcolombia.com',
+  }
+  return mapa[normalizado] || EMAILS_EQUIPO[nombre] || ''
+}
 
 const ESTADO_PROY = {
   'Pendiente': { color:'var(--yellow)',  bg:'rgba(180,83,9,0.1)' },
@@ -2733,10 +2754,13 @@ function enviarViaJsonp(url, payload) {
   })
 }
 
-function enviarCorreoProyecto({ proyecto, subtarea, uid='distribucion' }) {
+async function enviarCorreoProyecto({ proyecto, subtarea, uid='distribucion' }) {
   const resp = subtarea?.responsable || proyecto.responsable
-  const email = EMAILS_EQUIPO[resp]
-  if(!email) return
+  const email = obtenerCorreoResponsable(resp)
+  if(!email) {
+    console.error('No se encontró correo para el responsable:', resp)
+    return {ok:false, error:'No se encontró correo para '+resp}
+  }
   const fechaEntrega = subtarea?.fechaEntrega || proyecto.fechaEntrega || ''
   // Generar enlace Google Calendar
   const titulo = encodeURIComponent(`Entrega: ${subtarea?.nombre || proyecto.nombre}`)
@@ -2761,19 +2785,32 @@ function enviarCorreoProyecto({ proyecto, subtarea, uid='distribucion' }) {
     calLinkLider = `https://calendar.google.com/calendar/r/eventedit?text=${titulo2}&dates=${start2}/${end2}&details=${detalle2}&add=${encodeURIComponent(EMAIL_LIDER_PROY)}`
   }
   const urlProyecto = SHEETS_CONFIG[uid]?.url || SHEETS_URL_PROY
-  enviarViaJsonp(urlProyecto, {
-    accion: 'enviar_correo_proyecto',
-    destinatario: email,
-    copia: EMAIL_LIDER_PROY,
-    proyecto: proyecto.nombre,
-    subtarea: subtarea?.nombre || '',
-    responsable: resp,
-    areas: (subtarea?.areas||proyecto.areas||[]).join(', '),
-    fechaEntrega,
-    calLink,
-    calLinkLider,
-    descripcion: proyecto.descripcion || '',
-  }).then(r => console.log('Correo proyecto:', r)).catch(()=>{})
+  try {
+    const respuesta = await enviarViaJsonp(urlProyecto, {
+      accion: 'enviar_correo_proyecto',
+      destinatario: email,
+      copia: EMAIL_LIDER_PROY,
+      proyecto: proyecto.nombre,
+      subtarea: subtarea?.nombre || '',
+      responsable: resp,
+      areas: (subtarea?.areas||proyecto.areas||[]).join(', '),
+      fechaEntrega,
+      calLink,
+      calLinkLider,
+      descripcion: subtarea?.descripcion || proyecto.descripcion || '',
+    })
+
+    console.log('Correo proyecto:', respuesta)
+
+    if(!respuesta?.ok) {
+      console.error('Apps Script no confirmó el correo del proyecto:', respuesta)
+    }
+
+    return respuesta
+  } catch(error) {
+    console.error('Error enviando correo del proyecto:', error)
+    return {ok:false, error:error?.message || 'Error enviando correo'}
+  }
 }
 
 
@@ -2950,19 +2987,19 @@ function TareasYProyectos({ data, setData, usuario }) {
 
   const sheetUid = SHEETS_CONFIG[usuario.id]?.enabled ? usuario.id : 'distribucion'
 
-  const crearProyecto = () => {
+  const crearProyecto = async () => {
     if(!formP.nombre) return
     const nuevo = { id:Date.now(), ...formP, creadoPor:usuario.nombre, subtareas:[], fechaCreacion:new Date().toLocaleDateString('es-CO') }
     const nd = {...data, proyectos:[...proyectos, nuevo]}
     setData(nd)
     insertarFilaSheets(sheetUid,'proyectos',nuevo)
       .catch(e=>console.error('Error guardando proyecto:',e))
-    enviarCorreoProyecto({ proyecto:nuevo, subtarea:null, uid:sheetUid })
+    await enviarCorreoProyecto({ proyecto:nuevo, subtarea:null, uid:sheetUid })
     setModalProyecto(false)
     setFormP({ nombre:'', descripcion:'', responsable:'', areas:[], fechaEntrega:'', estado:'Pendiente' })
   }
 
-  const crearSubtarea = () => {
+  const crearSubtarea = async () => {
     if(!formS.nombre||!proyPadre) return
     const subtarea = { id:Date.now(), ...formS, creadoPor:usuario.nombre }
     const proyectosActualizados = proyectos.map(p=> p.id===proyPadre.id ? {...p, subtareas:[...(p.subtareas||[]), subtarea]} : p)
@@ -2972,7 +3009,7 @@ function TareasYProyectos({ data, setData, usuario }) {
     eliminarFilaSheets(sheetUid,'proyectos',proyPadre.id)
       .then(()=>proyectoActualizado&&insertarFilaSheets(sheetUid,'proyectos',proyectoActualizado))
       .catch(e=>console.error('Error guardando subtarea:',e))
-    enviarCorreoProyecto({ proyecto:proyPadre, subtarea, uid:sheetUid })
+    await enviarCorreoProyecto({ proyecto:proyPadre, subtarea, uid:sheetUid })
     setModalSubtarea(false)
     setFormS({ nombre:'', descripcion:'', responsable:'', areas:[], fechaEntrega:'', estado:'Pendiente' })
   }
@@ -3315,7 +3352,7 @@ function DashboardLider() {
   }
   const SHEETS_URL_LIDER = 'https://script.google.com/macros/s/AKfycbzgSB5bZEo-3JgBbTySp8GOVB0VpYl8ki3J2EM-daQrB42HiAguVzqWZUCoFovx5rTF/exec'
 
-  const crearPendiente = () => {
+  const crearPendiente = async () => {
     if(!formPend.unidad||!formPend.tarea) return
     const u = USUARIOS.find(u=>u.id===formPend.unidad)
     if(!u) return
@@ -3337,27 +3374,42 @@ function DashboardLider() {
         }).then(r=>console.log('Tarea guardada en Sheets:',r)).catch(e=>console.error('Error guardando tarea:',e))
       }
 
-      // Enviar correo de notificación a la unidad destino
-      const emailDest = EMAILS_UNIDAD_LIDER[u.id]
+      // Enviar correo según el responsable seleccionado.
+      // Si no hay responsable seleccionado, usa el correo líder de la unidad.
+      const nombreResponsable = nuevo.responsable || u.nombre
+      const emailDest =
+        obtenerCorreoResponsable(nombreResponsable) ||
+        EMAILS_UNIDAD_LIDER[u.id]
+
       if(emailDest && urlDestino) {
         try {
-          enviarViaJsonp(urlDestino, {
-              accion: 'enviar_correo_tarea',
-              destinatario: emailDest,
-              copia: 'cgil@prolub.com.co',
-              comercial: u.nombre,
-              responsable: u.nombre,
-              tarea: nuevo.tarea,
-              producto: nuevo.tarea,
-              cliente: nuevo.distribuidor || '',
-              distribuidor: nuevo.distribuidor || '',
-              notas: nuevo.notas || '',
-              descripcion: nuevo.notas || '',
-              mes: nuevo.fechaLimite || '',
-              fechaLimite: nuevo.fechaLimite || '',
-              fecha: new Date().toLocaleDateString('es-CO'),
-            })
-        } catch(e) { console.error('Error notificacion email:', e) }
+          const respuestaCorreo = await enviarViaJsonp(urlDestino, {
+            accion: 'enviar_correo_tarea',
+            destinatario: emailDest,
+            copia: EMAIL_LIDER_PROY,
+            comercial: nombreResponsable,
+            responsable: nombreResponsable,
+            tarea: nuevo.tarea,
+            producto: nuevo.tarea,
+            cliente: nuevo.distribuidor || '',
+            distribuidor: nuevo.distribuidor || '',
+            notas: nuevo.notas || '',
+            descripcion: nuevo.notas || '',
+            mes: nuevo.fechaLimite || '',
+            fechaLimite: nuevo.fechaLimite || '',
+            fecha: new Date().toLocaleDateString('es-CO'),
+          })
+
+          console.log('Correo tarea:', respuestaCorreo)
+
+          if(!respuestaCorreo?.ok) {
+            console.error('Apps Script no confirmó el correo de la tarea:', respuestaCorreo)
+          }
+        } catch(e) {
+          console.error('Error notificación email:', e)
+        }
+      } else {
+        console.error('No se encontró correo para la tarea:', nombreResponsable)
       }
 
       setModalPendiente(false)
@@ -3610,7 +3662,12 @@ function DashboardLider() {
             <Field label="Categoría"><input value={formPend.categoria} onChange={e=>setFormPend({...formPend,categoria:e.target.value})} placeholder="Ej: Seguimiento, Diseño..."/></Field>
             <Field label="Fecha límite"><input type="date" value={formPend.fechaLimite} onChange={e=>setFormPend({...formPend,fechaLimite:e.target.value})}/></Field>
             <Field label="Prioridad"><select value={formPend.prioridad} onChange={e=>setFormPend({...formPend,prioridad:e.target.value})}>{['Alta','Media','Baja'].map(p=><option key={p}>{p}</option>)}</select></Field>
-            <Field label="Responsable"><input value={formPend.responsable} onChange={e=>setFormPend({...formPend,responsable:e.target.value})} placeholder="Nombre..."/></Field>
+            <Field label="Responsable">
+              <select value={formPend.responsable} onChange={e=>setFormPend({...formPend,responsable:e.target.value})}>
+                <option value="">Selecciona responsable...</option>
+                {RESPONSABLES.map(r=><option key={r} value={r}>{r}</option>)}
+              </select>
+            </Field>
             <Field label="Notas" span><textarea value={formPend.notas} onChange={e=>setFormPend({...formPend,notas:e.target.value})} rows={2} style={{resize:'vertical'}} placeholder="Detalles adicionales..."/></Field>
           </div>
           <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:20}}>
