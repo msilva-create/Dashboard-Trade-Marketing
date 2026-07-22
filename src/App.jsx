@@ -82,6 +82,7 @@ const HOJA_MAP = {
   pendientes:        'PENDIENTES',
   tareasAsignadas:   'TAREAS_ASIGNADAS',
   proyectos:         'PROYECTOS',
+  subtareasProyectos:'SUBTAREAS_PROYECTOS',
 }
 
 const CAMPOS_MAP = {
@@ -106,6 +107,7 @@ const CAMPOS_MAP = {
     fechaCreacion:'fechaCreacion'
   },
   proyectos:    { id:'id', nombre:'nombre', descripcion:'descripcion', responsable:'responsable', areas:'areas', fechaEntrega:'fechaEntrega', estado:'estado', creadoPor:'creadoPor', subtareas:'subtareas', fechaCreacion:'fechaCreacion' },
+  subtareasProyectos: { id:'id', proyecto:'proyecto', nombre:'nombre', descripcion:'descripcion', responsable:'responsable', fechaEntrega:'fechaEntrega', estado:'estado', areas:'areas', creadoPor:'creadoPor', fechaCreacion:'fechaCreacion' },
 }
 
 // ── NORMALIZAR MES ── "MAYO" / "mayo" → "Mayo"
@@ -3126,29 +3128,23 @@ function TareasYProyectos({ data, setData, usuario }) {
     )
     const proyectoActualizado = proyectosActualizados.find(p => p.id === proyPadre.id)
 
-    // 2. Crear también una tarea individual para el responsable.
-    // Así Emma la verá en TAREAS_ASIGNADAS de Industria, Juan en su archivo, etc.
-    const tareaAsignada = {
-      id: ahora,
-      unidad: 'Proyecto',
-      tarea: subtarea.nombre,
-      distribuidor: proyPadre.nombre,
-      categoria: (subtarea.areas || []).join(', ') || 'Proyecto',
-      fechaLimite: subtarea.fechaEntrega || '',
-      prioridad: 'Media',
-      estado: subtarea.estado === 'Finalizada' ? 'Listo' : (subtarea.estado || 'Pendiente'),
+    // 2. La subtarea se guarda en una hoja separada.
+    const filaSubtarea = {
+      id: subtarea.id,
+      proyecto: proyPadre.nombre,
+      nombre: subtarea.nombre,
+      descripcion: subtarea.descripcion || '',
       responsable: subtarea.responsable,
-      notas: subtarea.descripcion || `Subtarea del proyecto: ${proyPadre.nombre}`,
-      asignadoPor: usuario.nombre,
+      fechaEntrega: subtarea.fechaEntrega || '',
+      estado: subtarea.estado || 'Pendiente',
+      areas: (subtarea.areas || []).join(', '),
+      creadoPor: subtarea.creadoPor,
       fechaCreacion: subtarea.fechaCreacion,
-      proyectoId: proyPadre.id,
     }
 
-    const tareasActualizadas = [...(data.tareasAsignadas || []), tareaAsignada]
     const nd = {
       ...data,
       proyectos: proyectosActualizados,
-      tareasAsignadas: tareasActualizadas,
     }
     setData(nd)
 
@@ -3164,10 +3160,10 @@ function TareasYProyectos({ data, setData, usuario }) {
         await insertarFilaSheets(uidProyecto, 'proyectos', proyectoActualizado)
       }
 
-      await insertarFilaSheets(uidResponsable, 'tareasAsignadas', tareaAsignada)
+      await insertarFilaSheets(uidResponsable, 'subtareasProyectos', filaSubtarea)
 
       console.log(
-        'Subtarea guardada en proyecto y tarea asignada a',
+        'Subtarea guardada en SUBTAREAS_PROYECTOS de',
         subtarea.responsable
       )
     } catch(e) {
@@ -3216,20 +3212,13 @@ function TareasYProyectos({ data, setData, usuario }) {
         : p
     )
 
-    const tareasActualizadas = (data.tareasAsignadas || []).map(t =>
-      String(t.id) === String(sid)
-        ? {...t, estado: estado === 'Finalizada' ? 'Listo' : estado}
-        : t
-    )
-
     const nd = {
       ...data,
       proyectos: proyectosActualizados,
-      tareasAsignadas: tareasActualizadas,
     }
 
     const proyectoActualizado = proyectosActualizados.find(p => p.id === pid)
-    const tareaActualizada = tareasActualizadas.find(t => String(t.id) === String(sid))
+    const subtareaActualizada = proyectoActualizado?.subtareas?.find(s => String(s.id) === String(sid))
 
     setData(nd)
 
@@ -3239,9 +3228,21 @@ function TareasYProyectos({ data, setData, usuario }) {
     eliminarFilaSheets(uidProyecto, 'proyectos', pid)
       .then(() => proyectoActualizado && insertarFilaSheets(uidProyecto, 'proyectos', proyectoActualizado))
       .then(async () => {
-        if(tareaActualizada) {
-          await eliminarFilaSheets(uidTarea, 'tareasAsignadas', sid)
-          await insertarFilaSheets(uidTarea, 'tareasAsignadas', tareaActualizada)
+        if(subtareaActualizada) {
+          const filaSubtarea = {
+            id: subtareaActualizada.id,
+            proyecto: proyectoOriginal?.nombre || '',
+            nombre: subtareaActualizada.nombre || '',
+            descripcion: subtareaActualizada.descripcion || '',
+            responsable: subtareaActualizada.responsable || '',
+            fechaEntrega: subtareaActualizada.fechaEntrega || '',
+            estado: subtareaActualizada.estado || 'Pendiente',
+            areas: (subtareaActualizada.areas || []).join(', '),
+            creadoPor: subtareaActualizada.creadoPor || '',
+            fechaCreacion: subtareaActualizada.fechaCreacion || '',
+          }
+          await eliminarFilaSheets(uidTarea, 'subtareasProyectos', sid)
+          await insertarFilaSheets(uidTarea, 'subtareasProyectos', filaSubtarea)
         }
       })
       .catch(e => console.error('Error actualizando subtarea:', e))
