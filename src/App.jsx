@@ -8,7 +8,7 @@ let _currentUserKey = STORAGE_KEY
 
 const SHEETS_CONFIG = {
   distribucion: {
-    url: 'https://script.google.com/macros/s/AKfycbzvEUEujpIQauAG2rO6CPWZXLpngW2IzFNZI5uh4gQ-LFTpi9vjkr6BBKDCWcwnvWz2/exec',
+    url: 'https://script.google.com/macros/s/AKfycbxzqhKZr7ue545BDwpgqQrNsognsVOtxxZNPd6P4Jm_wtdj1_Sqkd9FdswrdtfM2d8S/exec',
     enabled: true,
   },
   industria: {
@@ -20,17 +20,17 @@ const SHEETS_CONFIG = {
     enabled: true,
   },
   juan: {
-    url: 'https://script.google.com/macros/s/AKfycbzvEUEujpIQauAG2rO6CPWZXLpngW2IzFNZI5uh4gQ-LFTpi9vjkr6BBKDCWcwnvWz2/exec',
+    url: 'https://script.google.com/macros/s/AKfycbxzqhKZr7ue545BDwpgqQrNsognsVOtxxZNPd6P4Jm_wtdj1_Sqkd9FdswrdtfM2d8S/exec',
     spreadsheetId: '1s6fkyyCihzOki9Fan9EKIIvxwlra-QizwI7fy210GUI',
     enabled: true,
   },
   camilo: {
-    url: 'https://script.google.com/macros/s/AKfycbzvEUEujpIQauAG2rO6CPWZXLpngW2IzFNZI5uh4gQ-LFTpi9vjkr6BBKDCWcwnvWz2/exec',
+    url: 'https://script.google.com/macros/s/AKfycbxzqhKZr7ue545BDwpgqQrNsognsVOtxxZNPd6P4Jm_wtdj1_Sqkd9FdswrdtfM2d8S/exec',
     spreadsheetId: '1jVKNc8krqeClgfzaXr-i7YIHwuYRmjkoU35NEjz4oDk',
     enabled: true,
   },
   julian: {
-    url: 'https://script.google.com/macros/s/AKfycbzvEUEujpIQauAG2rO6CPWZXLpngW2IzFNZI5uh4gQ-LFTpi9vjkr6BBKDCWcwnvWz2/exec',
+    url: 'https://script.google.com/macros/s/AKfycbxzqhKZr7ue545BDwpgqQrNsognsVOtxxZNPd6P4Jm_wtdj1_Sqkd9FdswrdtfM2d8S/exec',
     spreadsheetId: '1nEdGAcy45hMckYxOC_SRfrYEqW6ifgRv9fFoJA75YlY',
     enabled: true,
   },
@@ -2096,7 +2096,7 @@ function ApoyoCierre({ data, setData, usuario }) {
   const [formAsig, setFormAsig] = useState({ comercial:'', distribuidor:'', mes:'', anio:2026, monto:'' })
   const [formRed, setFormRed] = useState({ cliente:'', producto:'', valor:'', notas:'', copiarJefe:false })
 
-  const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzvEUEujpIQauAG2rO6CPWZXLpngW2IzFNZI5uh4gQ-LFTpi9vjkr6BBKDCWcwnvWz2/exec'
+  const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxzqhKZr7ue545BDwpgqQrNsognsVOtxxZNPd6P4Jm_wtdj1_Sqkd9FdswrdtfM2d8S/exec'
 
   const _canalActual = usuario?.id || 'distribucion'
   const EMAILS = EMAILS_POR_CANAL[_canalActual] || EMAILS_POR_CANAL.distribucion
@@ -3455,7 +3455,7 @@ function DashboardLider() {
     zonas:        'msilva@prolub.com.co',
     diseno:       'aalvarado@gulfcolombia.com',
   }
-  const SHEETS_URL_LIDER = 'https://script.google.com/macros/s/AKfycbzvEUEujpIQauAG2rO6CPWZXLpngW2IzFNZI5uh4gQ-LFTpi9vjkr6BBKDCWcwnvWz2/exec'
+  const SHEETS_URL_LIDER = 'https://script.google.com/macros/s/AKfycbxzqhKZr7ue545BDwpgqQrNsognsVOtxxZNPd6P4Jm_wtdj1_Sqkd9FdswrdtfM2d8S/exec'
 
   const crearPendiente = async () => {
     if(!formPend.unidad||!formPend.tarea) return
@@ -3472,22 +3472,21 @@ function DashboardLider() {
 
       const nombreResponsable = nuevo.responsable || u.nombre
       const destinoUid = obtenerUidResponsable(nombreResponsable)
-      const cfgDestino = SHEETS_CONFIG[destinoUid]
-      const urlDestino = cfgDestino?.url
 
-      if(urlDestino) {
-        await enviarViaJsonp(urlDestino, {
-          accion:'agregar_lote',
-          hoja:'TAREAS_ASIGNADAS',
-          filas:[toSheetRow('tareasAsignadas',nuevo)],
-          spreadsheetId: cfgDestino.spreadsheetId || '',
-        })
+      // Guardar la tarea usando la misma función confiable que ya funciona
+      // para proyectos. Esta función usa POST y envía el spreadsheetId
+      // cuando el responsable tiene archivo personal.
+      try {
+        await insertarFilaSheets(destinoUid, 'tareasAsignadas', nuevo)
         console.log('Tarea guardada en el archivo de', nombreResponsable)
-      } else {
-        console.warn(`No hay destino configurado para ${nombreResponsable}.`)
+      } catch (errorGuardado) {
+        console.error('No se pudo guardar la tarea de', nombreResponsable, errorGuardado)
+        throw errorGuardado
       }
 
-      const urlCorreo = urlDestino || SHEETS_CONFIG.distribucion.url
+      // El correo siempre lo procesa el Apps Script central de Distribución,
+      // que ya fue probado directamente y sí envía MailApp correctamente.
+      const urlCorreo = SHEETS_CONFIG.distribucion.url
 
       
       const emailDest =
