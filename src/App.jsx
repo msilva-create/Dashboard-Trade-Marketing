@@ -3087,17 +3087,22 @@ function TareasYProyectos({ data, setData, usuario }) {
     const nuevo = { id:Date.now(), ...formP, creadoPor:usuario.nombre, subtareas:[], fechaCreacion:new Date().toLocaleDateString('es-CO') }
     const nd = {...data, proyectos:[...proyectos, nuevo]}
     setData(nd)
-    const destinoUid = obtenerUidResponsable(nuevo.responsable)
+    // Todos los proyectos se guardan en el archivo central de Distribución.
+    // Así Paola siempre ve el historial completo, sin importar el responsable.
+    const uidCentral = 'distribucion'
+    const uidResponsable = obtenerUidResponsable(nuevo.responsable)
+
     try {
-      await insertarFilaSheets(destinoUid,'proyectos',nuevo)
+      await insertarFilaSheets(uidCentral, 'proyectos', nuevo)
     } catch(e) {
-      console.error('Error guardando proyecto:', e)
+      console.error('Error guardando proyecto central:', e)
     }
 
+    // El correo sí se dirige al responsable seleccionado.
     const resultadoCorreo = await enviarCorreoProyecto({
       proyecto:nuevo,
       subtarea:null,
-      uid:destinoUid,
+      uid:uidResponsable,
     })
     console.log('Resultado correo nuevo proyecto:', resultadoCorreo)
     setModalProyecto(false)
@@ -3148,22 +3153,26 @@ function TareasYProyectos({ data, setData, usuario }) {
     }
     setData(nd)
 
-    // El proyecto padre siempre se actualiza en el archivo de su responsable.
-    const uidProyecto = obtenerUidResponsable(proyPadre.responsable)
-
-    // La tarea individual se guarda en el archivo del responsable de la subtarea.
+    // El proyecto y todas sus subtareas se conservan en el archivo central.
+    const uidCentral = 'distribucion'
     const uidResponsable = obtenerUidResponsable(subtarea.responsable)
 
     try {
-      await eliminarFilaSheets(uidProyecto, 'proyectos', proyPadre.id)
+      await eliminarFilaSheets(uidCentral, 'proyectos', proyPadre.id)
       if(proyectoActualizado) {
-        await insertarFilaSheets(uidProyecto, 'proyectos', proyectoActualizado)
+        await insertarFilaSheets(uidCentral, 'proyectos', proyectoActualizado)
       }
 
-      await insertarFilaSheets(uidResponsable, 'subtareasProyectos', filaSubtarea)
+      // Registro central para que Paola siempre vea todas las subtareas.
+      await insertarFilaSheets(uidCentral, 'subtareasProyectos', filaSubtarea)
+
+      // Copia adicional en el archivo personal/área del responsable.
+      if(uidResponsable !== uidCentral) {
+        await insertarFilaSheets(uidResponsable, 'subtareasProyectos', filaSubtarea)
+      }
 
       console.log(
-        'Subtarea guardada en SUBTAREAS_PROYECTOS de',
+        'Subtarea guardada centralmente y asignada a',
         subtarea.responsable
       )
     } catch(e) {
@@ -3222,11 +3231,11 @@ function TareasYProyectos({ data, setData, usuario }) {
 
     setData(nd)
 
-    const uidProyecto = obtenerUidResponsable(proyectoActualizado?.responsable)
-    const uidTarea = obtenerUidResponsable(subtareaOriginal?.responsable)
+    const uidCentral = 'distribucion'
+    const uidResponsable = obtenerUidResponsable(subtareaOriginal?.responsable)
 
-    eliminarFilaSheets(uidProyecto, 'proyectos', pid)
-      .then(() => proyectoActualizado && insertarFilaSheets(uidProyecto, 'proyectos', proyectoActualizado))
+    eliminarFilaSheets(uidCentral, 'proyectos', pid)
+      .then(() => proyectoActualizado && insertarFilaSheets(uidCentral, 'proyectos', proyectoActualizado))
       .then(async () => {
         if(subtareaActualizada) {
           const filaSubtarea = {
@@ -3241,8 +3250,13 @@ function TareasYProyectos({ data, setData, usuario }) {
             creadoPor: subtareaActualizada.creadoPor || '',
             fechaCreacion: subtareaActualizada.fechaCreacion || '',
           }
-          await eliminarFilaSheets(uidTarea, 'subtareasProyectos', sid)
-          await insertarFilaSheets(uidTarea, 'subtareasProyectos', filaSubtarea)
+          await eliminarFilaSheets(uidCentral, 'subtareasProyectos', sid)
+          await insertarFilaSheets(uidCentral, 'subtareasProyectos', filaSubtarea)
+
+          if(uidResponsable !== uidCentral) {
+            await eliminarFilaSheets(uidResponsable, 'subtareasProyectos', sid)
+            await insertarFilaSheets(uidResponsable, 'subtareasProyectos', filaSubtarea)
+          }
         }
       })
       .catch(e => console.error('Error actualizando subtarea:', e))
@@ -3256,7 +3270,7 @@ function TareasYProyectos({ data, setData, usuario }) {
     if(!window.confirm('¿Eliminar este proyecto y todas sus subtareas?')) return
     const nd = {...data, proyectos: proyectos.filter(p=>p.id!==pid)}
     setData(nd)
-    eliminarFilaSheets(obtenerUidResponsable(proyectos.find(p=>p.id===pid)?.responsable),'proyectos',pid)
+    eliminarFilaSheets('distribucion','proyectos',pid)
       .catch(e=>console.error('Error eliminando proyecto:',e))
     setVista('lista'); setProyectoActivo(null)
   }
