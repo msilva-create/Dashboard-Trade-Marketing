@@ -2691,7 +2691,16 @@ function enviarViaJsonp(url, payload) {
     const cb = 'gs_mail_' + Date.now() + '_' + Math.random().toString(36).slice(2)
     window[cb] = (r) => { resolve(r); delete window[cb] }
     const s = document.createElement('script')
-    s.src = url + '?callback=' + cb + '&data=' + encodeURIComponent(JSON.stringify(payload))
+    // Limpiar payload: quitar caracteres problemáticos
+    const cleanPayload = {}
+    Object.entries(payload).forEach(([k,v]) => {
+      if(typeof v === 'string') {
+        cleanPayload[k] = v.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^\x20-\x7E]/g,'')
+      } else {
+        cleanPayload[k] = v
+      }
+    })
+    s.src = url + '?callback=' + cb + '&data=' + encodeURIComponent(JSON.stringify(cleanPayload))
     s.onerror = () => { resolve({ok:false}); s.remove() }
     s.onload = () => { setTimeout(resolve, 300); s.remove() }
     document.head.appendChild(s)
