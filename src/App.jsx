@@ -2705,8 +2705,8 @@ function enviarCorreoProyecto({ proyecto, subtarea }) {
   if(!email) return
   const fechaEntrega = subtarea?.fechaEntrega || proyecto.fechaEntrega || ''
   // Generar enlace Google Calendar
-  const titulo = encodeURIComponent(`📦 Entrega: ${subtarea?.nombre || proyecto.nombre}`)
-  const detalle = encodeURIComponent(`Proyecto: ${proyecto.nombre}\nResponsable: ${resp}\nÁreas: ${(subtarea?.areas||proyecto.areas||[]).join(', ')}`)
+  const titulo = encodeURIComponent(`Entrega: ${subtarea?.nombre || proyecto.nombre}`)
+  const detalle = encodeURIComponent(`Proyecto: ${proyecto.nombre} | Responsable: ${resp} | Areas: ${(subtarea?.areas||proyecto.areas||[]).join(', ')}`)
   let calLink = ''
   if(fechaEntrega) {
     const d = new Date(fechaEntrega)
@@ -2722,8 +2722,8 @@ function enviarCorreoProyecto({ proyecto, subtarea }) {
     const fmt2 = t => t.toISOString().replace(/[-:]/g,'').split('.')[0]+'Z'
     const start2 = fmt2(d2)
     const end2 = fmt2(new Date(d2.getTime()+3600000))
-    const titulo2 = encodeURIComponent(`📦 Entrega: ${subtarea?.nombre || proyecto.nombre}`)
-    const detalle2 = encodeURIComponent(`Proyecto: ${proyecto.nombre}\nResponsable: ${resp}\nÁreas: ${(subtarea?.areas||proyecto.areas||[]).join(', ')}`)
+    const titulo2 = encodeURIComponent(`Entrega: ${subtarea?.nombre || proyecto.nombre}`)
+    const detalle2 = encodeURIComponent(`Proyecto: ${proyecto.nombre} | Responsable: ${resp} | Areas: ${(subtarea?.areas||proyecto.areas||[]).join(', ')}`)
     calLinkLider = `https://calendar.google.com/calendar/r/eventedit?text=${titulo2}&dates=${start2}/${end2}&details=${detalle2}&add=${encodeURIComponent(EMAIL_LIDER_PROY)}`
   }
   enviarViaJsonp(SHEETS_URL_PROY, {
@@ -3274,7 +3274,7 @@ function DashboardLider() {
               accion: 'enviar_correo',
               destinatario: emailDest,
               copia: 'cgil@prolub.com.co',
-              asunto: '📋 Nueva actividad asignada — ' + nuevo.tarea,
+              asunto: 'Nueva actividad asignada: ' + nuevo.tarea,
               comercial: u.nombre,
               producto: nuevo.tarea,
               cliente: nuevo.distribuidor || '',
