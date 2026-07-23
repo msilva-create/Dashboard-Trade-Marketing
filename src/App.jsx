@@ -106,7 +106,7 @@ const CAMPOS_MAP = {
     asignadoPor:'creadoPor',
     fechaCreacion:'fechaCreacion'
   },
-  proyectos:    { id:'id', nombre:'nombre', descripcion:'descripcion', responsable:'responsable', areas:'areas', fechaEntrega:'fechaEntrega', estado:'estado', creadoPor:'creadoPor', subtareas:'subtareas', fechaCreacion:'fechaCreacion' },
+  proyectos:    { id:'id', nombre:'nombre', descripcion:'descripcion', responsable:'responsable', areas:'areas', fechaEntrega:'fechaEntrega', estado:'estado', creadoPor:'creadoPor', subtareas:'subtareas', fechaCreacion:'fechaCreacion', correoFinalEnviado:'correoFinalEnviado' },
   subtareasProyectos: { id:'id', proyecto:'proyecto', nombre:'nombre', descripcion:'descripcion', responsable:'responsable', fechaEntrega:'fechaEntrega', estado:'estado', areas:'areas', creadoPor:'creadoPor', fechaCreacion:'fechaCreacion' },
 }
 
@@ -2909,11 +2909,45 @@ async function enviarCorreoProyecto({ proyecto, subtarea, uid='distribucion' }) 
 }
 
 
+async function enviarCorreoFinalizacion({
+  tipo,
+  proyecto,
+  subtarea=null,
+  destinatarios=[],
+}) {
+  const correos = [...new Set(
+    [EMAIL_LIDER_PROY, ...destinatarios]
+      .map(v => String(v || '').trim())
+      .filter(Boolean)
+  )]
+
+  if(!correos.length) {
+    return {ok:false, error:'No hay destinatarios para la notificación.'}
+  }
+
+  try {
+    return await enviarViaJsonp(SHEETS_URL_PROY, {
+      accion: 'enviar_correo_finalizacion',
+      tipo,
+      destinatarios: correos.join(','),
+      proyecto: proyecto?.nombre || '',
+      subtarea: subtarea?.nombre || '',
+      responsable: subtarea?.responsable || proyecto?.responsable || '',
+      fechaFinalizacion: new Date().toLocaleString('es-CO'),
+      descripcion: subtarea?.descripcion || proyecto?.descripcion || '',
+    })
+  } catch(error) {
+    console.error('Error enviando notificación de finalización:', error)
+    return {ok:false, error:error?.message || 'Error enviando correo de finalización'}
+  }
+}
+
+
 
 // ═══════════════════════════════════════════════════════
 // FORM PROYECTO — componente independiente (evita bug de re-render)
 // ═══════════════════════════════════════════════════════
-function FormProyecto({ form, setForm, onSave, titulo, onClose }) {
+function FormProyecto({ form, setForm, onSave, titulo, onClose, guardando=false, textoGuardando='Guardando...' }) {
   return (
     <Modal title={titulo} onClose={onClose}>
       <div style={{display:'flex',flexDirection:'column',gap:14}}>
@@ -2943,7 +2977,19 @@ function FormProyecto({ form, setForm, onSave, titulo, onClose }) {
             ))}
           </div>
         </Field>
-        <button onClick={onSave} style={{...S.btn('var(--accent)','#fff'),marginTop:4}}>Guardar</button>
+        <button
+          onClick={onSave}
+          disabled={guardando}
+          style={{
+            ...S.btn(guardando ? 'var(--bg3)' : 'var(--accent)', guardando ? 'var(--text3)' : '#fff'),
+            marginTop:4,
+            cursor:guardando ? 'not-allowed' : 'pointer',
+            opacity:guardando ? 0.8 : 1,
+            minHeight:38,
+          }}
+        >
+          {guardando ? `⏳ ${textoGuardando}` : 'Guardar'}
+        </button>
       </div>
     </Modal>
   )
@@ -3075,6 +3121,8 @@ function TareasYProyectos({ data, setData, usuario }) {
   const [proyectoActivo, setProyectoActivo] = useState(null)
   const [modalProyecto, setModalProyecto] = useState(false)
   const [modalSubtarea, setModalSubtarea] = useState(false)
+  const [guardandoProyecto, setGuardandoProyecto] = useState(false)
+  const [guardandoSubtarea, setGuardandoSubtarea] = useState(false)
   const [proyPadre, setProyPadre] = useState(null)
   const [filtroEstado, setFiltroEstado] = useState('')
   const [formP, setFormP] = useState({ nombre:'', descripcion:'', responsable:'', areas:[], fechaEntrega:'', estado:'Pendiente' })
@@ -3083,8 +3131,15 @@ function TareasYProyectos({ data, setData, usuario }) {
   const sheetUid = SHEETS_CONFIG[usuario.id]?.enabled ? usuario.id : 'distribucion'
 
   const crearProyecto = async () => {
-    if(!formP.nombre) return
-    const nuevo = { id:Date.now(), ...formP, creadoPor:usuario.nombre, subtareas:[], fechaCreacion:new Date().toLocaleDateString('es-CO') }
+    if(guardandoProyecto) return
+    if(!formP.nombre) {
+      alert('Escribe el nombre del proyecto.')
+      return
+    }
+
+    setGuardandoProyecto(true)
+
+    const nuevo = { id:Date.now(), ...formP, creadoPor:usuario.nombre, subtareas:[], fechaCreacion:new Date().toLocaleDateString('es-CO'), correoFinalEnviado:'NO' }
     const nd = {...data, proyectos:[...proyectos, nuevo]}
     setData(nd)
     // Todos los proyectos se guardan en el archivo central de Distribución.
@@ -3093,12 +3148,20 @@ function TareasYProyectos({ data, setData, usuario }) {
     const uidResponsable = obtenerUidResponsable(nuevo.responsable)
 
     try {
+      // 1. Siempre conservar una copia maestra en el archivo de María P / Distribución.
       await insertarFilaSheets(uidCentral, 'proyectos', nuevo)
+
+      // 2. Guardar también el proyecto en el archivo personal del responsable.
+      // María P usa el mismo archivo central, por eso evitamos duplicarlo.
+      if(uidResponsable && uidResponsable !== uidCentral) {
+        await insertarFilaSheets(uidResponsable, 'proyectos', nuevo)
+      }
     } catch(e) {
-      console.error('Error guardando proyecto central:', e)
+      console.error('Error guardando proyecto central o en el archivo del responsable:', e)
+      alert('El proyecto se creó en pantalla, pero hubo un error al copiarlo a Google Sheets.')
     }
 
-    // El correo sí se dirige al responsable seleccionado.
+    // El correo se dirige al responsable seleccionado.
     const resultadoCorreo = await enviarCorreoProyecto({
       proyecto:nuevo,
       subtarea:null,
@@ -3107,15 +3170,22 @@ function TareasYProyectos({ data, setData, usuario }) {
     console.log('Resultado correo nuevo proyecto:', resultadoCorreo)
     setModalProyecto(false)
     setFormP({ nombre:'', descripcion:'', responsable:'', areas:[], fechaEntrega:'', estado:'Pendiente' })
+    setGuardandoProyecto(false)
   }
 
   const crearSubtarea = async () => {
-    if(!formS.nombre || !proyPadre) return
+    if(guardandoSubtarea) return
+    if(!formS.nombre || !proyPadre) {
+      alert('Escribe el nombre de la subtarea.')
+      return
+    }
 
     if(!formS.responsable) {
       alert('Selecciona un responsable para la subtarea.')
       return
     }
+
+    setGuardandoSubtarea(true)
 
     const ahora = Date.now()
     const subtarea = {
@@ -3197,6 +3267,7 @@ function TareasYProyectos({ data, setData, usuario }) {
       fechaEntrega:'',
       estado:'Pendiente'
     })
+    setGuardandoSubtarea(false)
   }
 
   const cambiarEstadoProy = (pid, estado) => {
@@ -3211,58 +3282,110 @@ function TareasYProyectos({ data, setData, usuario }) {
     if(proyectoActivo?.id===pid) setProyectoActivo({...proyectoActivo,estado})
   }
 
-  const cambiarEstadoSub = (pid, sid, estado) => {
+  const cambiarEstadoSub = async (pid, sid, estado) => {
     const proyectoOriginal = proyectos.find(p => p.id === pid)
-    const subtareaOriginal = proyectoOriginal?.subtareas?.find(s => s.id === sid)
+    const subtareaOriginal = proyectoOriginal?.subtareas?.find(s => String(s.id) === String(sid))
 
-    const proyectosActualizados = proyectos.map(p =>
-      p.id === pid
-        ? {...p, subtareas:(p.subtareas || []).map(s => s.id === sid ? {...s, estado} : s)}
-        : p
-    )
+    if(!proyectoOriginal || !subtareaOriginal) return
 
-    const nd = {
-      ...data,
-      proyectos: proyectosActualizados,
+    const tareaSeAcabaDeFinalizar =
+      estado === 'Finalizada' && subtareaOriginal.estado !== 'Finalizada'
+
+    let proyectoActualizado = {
+      ...proyectoOriginal,
+      subtareas:(proyectoOriginal.subtareas || []).map(s =>
+        String(s.id) === String(sid) ? {...s, estado} : s
+      ),
     }
 
-    const proyectoActualizado = proyectosActualizados.find(p => p.id === pid)
-    const subtareaActualizada = proyectoActualizado?.subtareas?.find(s => String(s.id) === String(sid))
+    const subtareasProyecto = proyectoActualizado.subtareas || []
+    const proyectoLlegoAl100 =
+      subtareasProyecto.length > 0 &&
+      subtareasProyecto.every(s => s.estado === 'Finalizada')
+
+    const debeNotificarProyecto =
+      proyectoLlegoAl100 &&
+      String(proyectoOriginal.correoFinalEnviado || 'NO').toUpperCase() !== 'SI'
+
+    if(proyectoLlegoAl100) {
+      proyectoActualizado = {
+        ...proyectoActualizado,
+        estado:'Finalizada',
+        correoFinalEnviado: debeNotificarProyecto ? 'SI' : (proyectoOriginal.correoFinalEnviado || 'SI'),
+      }
+    }
+
+    const proyectosActualizados = proyectos.map(p =>
+      p.id === pid ? proyectoActualizado : p
+    )
+
+    const nd = {...data, proyectos: proyectosActualizados}
+    const subtareaActualizada = proyectoActualizado.subtareas.find(
+      s => String(s.id) === String(sid)
+    )
 
     setData(nd)
+    if(proyectoActivo?.id === pid) setProyectoActivo(proyectoActualizado)
 
     const uidCentral = 'distribucion'
-    const uidResponsable = obtenerUidResponsable(subtareaOriginal?.responsable)
+    const uidResponsable = obtenerUidResponsable(subtareaActualizada?.responsable)
 
-    eliminarFilaSheets(uidCentral, 'proyectos', pid)
-      .then(() => proyectoActualizado && insertarFilaSheets(uidCentral, 'proyectos', proyectoActualizado))
-      .then(async () => {
-        if(subtareaActualizada) {
-          const filaSubtarea = {
-            id: subtareaActualizada.id,
-            proyecto: proyectoOriginal?.nombre || '',
-            nombre: subtareaActualizada.nombre || '',
-            descripcion: subtareaActualizada.descripcion || '',
-            responsable: subtareaActualizada.responsable || '',
-            fechaEntrega: subtareaActualizada.fechaEntrega || '',
-            estado: subtareaActualizada.estado || 'Pendiente',
-            areas: (subtareaActualizada.areas || []).join(', '),
-            creadoPor: subtareaActualizada.creadoPor || '',
-            fechaCreacion: subtareaActualizada.fechaCreacion || '',
-          }
-          await eliminarFilaSheets(uidCentral, 'subtareasProyectos', sid)
-          await insertarFilaSheets(uidCentral, 'subtareasProyectos', filaSubtarea)
+    try {
+      // Guardar primero; después notificar.
+      await eliminarFilaSheets(uidCentral, 'proyectos', pid)
+      await insertarFilaSheets(uidCentral, 'proyectos', proyectoActualizado)
 
-          if(uidResponsable !== uidCentral) {
-            await eliminarFilaSheets(uidResponsable, 'subtareasProyectos', sid)
-            await insertarFilaSheets(uidResponsable, 'subtareasProyectos', filaSubtarea)
-          }
+      if(subtareaActualizada) {
+        const filaSubtarea = {
+          id: subtareaActualizada.id,
+          proyecto: proyectoOriginal.nombre || '',
+          nombre: subtareaActualizada.nombre || '',
+          descripcion: subtareaActualizada.descripcion || '',
+          responsable: subtareaActualizada.responsable || '',
+          fechaEntrega: subtareaActualizada.fechaEntrega || '',
+          estado: subtareaActualizada.estado || 'Pendiente',
+          areas: (subtareaActualizada.areas || []).join(', '),
+          creadoPor: subtareaActualizada.creadoPor || '',
+          fechaCreacion: subtareaActualizada.fechaCreacion || '',
         }
-      })
-      .catch(e => console.error('Error actualizando subtarea:', e))
 
-    if(proyectoActivo?.id === pid) {
-      setProyectoActivo(nd.proyectos.find(p => p.id === pid))
+        await eliminarFilaSheets(uidCentral, 'subtareasProyectos', sid)
+        await insertarFilaSheets(uidCentral, 'subtareasProyectos', filaSubtarea)
+
+        if(uidResponsable !== uidCentral) {
+          await eliminarFilaSheets(uidResponsable, 'subtareasProyectos', sid)
+          await insertarFilaSheets(uidResponsable, 'subtareasProyectos', filaSubtarea)
+        }
+      }
+
+      // 1. Correo cuando una tarea pasa por primera vez a Finalizada.
+      if(tareaSeAcabaDeFinalizar) {
+        await enviarCorreoFinalizacion({
+          tipo:'tarea_finalizada',
+          proyecto:proyectoActualizado,
+          subtarea:subtareaActualizada,
+          destinatarios:[
+            obtenerCorreoResponsable(subtareaActualizada?.responsable),
+          ],
+        })
+      }
+
+      // 2. Correo general cuando el proyecto llega al 100 %.
+      if(debeNotificarProyecto) {
+        const correosInvolucrados = [
+          obtenerCorreoResponsable(proyectoActualizado.responsable),
+          ...subtareasProyecto.map(s => obtenerCorreoResponsable(s.responsable)),
+        ]
+
+        await enviarCorreoFinalizacion({
+          tipo:'proyecto_finalizado',
+          proyecto:proyectoActualizado,
+          destinatarios:correosInvolucrados,
+        })
+      }
+    } catch(e) {
+      console.error('Error actualizando o notificando la subtarea:', e)
+      alert('El estado cambió en pantalla, pero hubo un error al guardar o enviar la notificación.')
     }
   }
 
@@ -3358,7 +3481,15 @@ function TareasYProyectos({ data, setData, usuario }) {
             </div>
           )
         })}
-        {modalSubtarea&&<FormProyecto form={formS} setForm={setFormS} onSave={crearSubtarea} titulo="Nueva subtarea" onClose={()=>setModalSubtarea(false)}/>}
+        {modalSubtarea&&<FormProyecto
+          form={formS}
+          setForm={setFormS}
+          onSave={crearSubtarea}
+          titulo="Nueva subtarea"
+          onClose={()=>{ if(!guardandoSubtarea) setModalSubtarea(false) }}
+          guardando={guardandoSubtarea}
+          textoGuardando="Guardando subtarea..."
+        />}
       </div>
     )
   }
@@ -3437,7 +3568,15 @@ function TareasYProyectos({ data, setData, usuario }) {
           )
         })}
       </div>
-      {modalProyecto&&<FormProyecto form={formP} setForm={setFormP} onSave={crearProyecto} titulo="Nuevo proyecto" onClose={()=>setModalProyecto(false)}/>}
+      {modalProyecto&&<FormProyecto
+        form={formP}
+        setForm={setFormP}
+        onSave={crearProyecto}
+        titulo="Nuevo proyecto"
+        onClose={()=>{ if(!guardandoProyecto) setModalProyecto(false) }}
+        guardando={guardandoProyecto}
+        textoGuardando="Guardando proyecto..."
+      />}
       </>}
     </div>
   )
