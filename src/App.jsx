@@ -8,37 +8,32 @@ let _currentUserKey = STORAGE_KEY
 
 const SHEETS_CONFIG = {
   distribucion: {
-    url: 'https://script.google.com/macros/s/AKfycbyPJ5B8iotZRFZLD_ByUxEO8Hpyj4tihylyr2qSeRC6uVfS2egNQNDulj78v6AUpml8/exec',
+    url: 'https://script.google.com/macros/s/AKfycbxzqhKZr7ue545BDwpgqQrNsognsVOtxxZNPd6P4Jm_wtdj1_Sqkd9FdswrdtfM2d8S/exec',
     spreadsheetId: '15X2WrJGDw__xFvPpe3Gcm5iR9KSKgJP20Q_kyJ0Zn0U',
     enabled: true,
   },
-
   industria: {
-    url: 'https://script.google.com/macros/s/AKfycbyPJ5B8iotZRFZLD_ByUxEO8Hpyj4tihylyr2qSeRC6uVfS2egNQNDulj78v6AUpml8/exec',
+    url: 'https://script.google.com/macros/s/AKfycbxzqhKZr7ue545BDwpgqQrNsognsVOtxxZNPd6P4Jm_wtdj1_Sqkd9FdswrdtfM2d8S/exec',
     spreadsheetId: '1YOqpzgEyLWdqAvXLIQBW9YrQ1KpnvUnEjZvHkY5Ce4A',
     enabled: true,
   },
-
   zonas: {
-    url: 'https://script.google.com/macros/s/AKfycbyPJ5B8iotZRFZLD_ByUxEO8Hpyj4tihylyr2qSeRC6uVfS2egNQNDulj78v6AUpml8/exec',
+    url: 'https://script.google.com/macros/s/AKfycbxzqhKZr7ue545BDwpgqQrNsognsVOtxxZNPd6P4Jm_wtdj1_Sqkd9FdswrdtfM2d8S/exec',
     spreadsheetId: '1OHpuBQ5Aj-NV9n-wQBlkUoT8mgC3DgZhWyAVSAfFL7Y',
     enabled: true,
   },
-
   juan: {
-    url: 'https://script.google.com/macros/s/AKfycbyPJ5B8iotZRFZLD_ByUxEO8Hpyj4tihylyr2qSeRC6uVfS2egNQNDulj78v6AUpml8/exec',
+    url: 'https://script.google.com/macros/s/AKfycbxzqhKZr7ue545BDwpgqQrNsognsVOtxxZNPd6P4Jm_wtdj1_Sqkd9FdswrdtfM2d8S/exec',
     spreadsheetId: '1s6fkyyCihzOki9Fan9EKIIvxwlra-QizwI7fy210GUI',
     enabled: true,
   },
-
   camilo: {
-    url: 'https://script.google.com/macros/s/AKfycbyPJ5B8iotZRFZLD_ByUxEO8Hpyj4tihylyr2qSeRC6uVfS2egNQNDulj78v6AUpml8/exec',
+    url: 'https://script.google.com/macros/s/AKfycbxzqhKZr7ue545BDwpgqQrNsognsVOtxxZNPd6P4Jm_wtdj1_Sqkd9FdswrdtfM2d8S/exec',
     spreadsheetId: '1jVKNc8krqeClgfzaXr-i7YIHwuYRmjkoU35NEjz4oDk',
     enabled: true,
   },
-
   julian: {
-    url: 'https://script.google.com/macros/s/AKfycbyPJ5B8iotZRFZLD_ByUxEO8Hpyj4tihylyr2qSeRC6uVfS2egNQNDulj78v6AUpml8/exec',
+    url: 'https://script.google.com/macros/s/AKfycbxzqhKZr7ue545BDwpgqQrNsognsVOtxxZNPd6P4Jm_wtdj1_Sqkd9FdswrdtfM2d8S/exec',
     spreadsheetId: '1nEdGAcy45hMckYxOC_SRfrYEqW6ifgRv9fFoJA75YlY',
     enabled: true,
   },
@@ -2671,7 +2666,10 @@ Responde en español, conciso y útil.`
 // TAREAS ASIGNADAS — vista del canal
 // ═══════════════════════════════════════════════════════
 function TareasAsignadas({ data, setData, usuario }) {
-  const tareas = data.tareasAsignadas || []
+  const responsableActual = nombrePersonaPorUsuario(usuario)
+  const tareas = (data.tareasAsignadas || []).filter(
+    t => normalizarNombreResponsable(t.responsable) === normalizarNombreResponsable(responsableActual)
+  )
   const [cerrando,setCerrando] = useState(null)
   const [guardandoCierre,setGuardandoCierre] = useState(false)
   const [editando,setEditando] = useState(null)
@@ -5092,7 +5090,13 @@ export default function App() {
     {id:'tareasasignadas',label:'Mis Tareas',icon:ListTodo},
     {id:'tareasProyectos',label:'Tareas y Proyectos',icon:BookOpen},
   ]
-  const tareasAsignadasCount = !esLider&&!esPresupuesto&&!esColaborador ? (data.tareasAsignadas||[]).filter(p=>p.estado!=='Listo'&&p.estado!=='Cancelado').length : 0
+  const responsableActualMenu = nombrePersonaPorUsuario(usuario)
+  const tareasAsignadasUsuario = (data.tareasAsignadas||[]).filter(
+    t => normalizarNombreResponsable(t.responsable) === normalizarNombreResponsable(responsableActualMenu)
+  )
+  const tareasAsignadasCount = !esLider&&!esPresupuesto&&!esColaborador
+    ? tareasAsignadasUsuario.filter(p=>p.estado!=='Finalizada'&&p.estado!=='Cancelada'&&p.estado!=='Listo').length
+    : 0
   const TABS_NORMAL = [
     {id:'dashboard',  label:'Dashboard',   icon:LayoutDashboard},
     {id:'inversiones',label:'Inversiones', icon:TrendingUp},
@@ -5170,14 +5174,20 @@ export default function App() {
           {!esLider&&!esPresupuesto&&!esColaborador&&(
             <>
               {(()=>{
-                const tareasLider = (data.tareasAsignadas||[]).filter(p=>p.estado!=='Listo'&&p.estado!=='Cancelado')
+                const tareasLider = (data.tareasAsignadas||[]).filter(
+                  p =>
+                    normalizarNombreResponsable(p.responsable) === normalizarNombreResponsable(nombrePersonaPorUsuario(usuario)) &&
+                    p.estado!=='Finalizada' &&
+                    p.estado!=='Listo' &&
+                    p.estado!=='Cancelado'
+                )
                 if(tareasLider.length===0) return null
                 return (
                   <div style={{background:'rgba(91,82,240,0.08)',border:'1px solid rgba(91,82,240,0.25)',borderRadius:12,padding:'12px 18px',marginBottom:8,display:'flex',alignItems:'center',gap:12,cursor:'pointer'}} onClick={()=>setTab('tareasasignadas')}>
                     <div style={{width:32,height:32,borderRadius:8,background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>📋</div>
                     <div style={{flex:1}}>
                       <div style={{fontWeight:600,fontSize:13,color:'var(--accent2)'}}>Tienes {tareasLider.length} actividad{tareasLider.length>1?'es':''} asignada{tareasLider.length>1?'s':''} por el Líder de Mercadeo</div>
-                      <div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>{tareasLider.map(t=>t.tarea).slice(0,2).join(' · ')}{tareasLider.length>2?' · ...':''} — Clic para ver</div>
+                      <div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>{tareasLider.map(t=>t.nombre||t.tarea).slice(0,2).join(' · ')}{tareasLider.length>2?' · ...':''} — Clic para ver</div>
                     </div>
                     <span style={{fontSize:20,color:'var(--accent2)'}}>→</span>
                   </div>
