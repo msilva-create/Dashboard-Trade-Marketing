@@ -81,8 +81,9 @@ const HOJA_MAP = {
   redenciones:       'REDENCIONES_APOYO',
   pendientes:        'PENDIENTES',
   tareasAsignadas:   'TAREAS_ASIGNADAS',
-  proyectos:         'PROYECTOS',
-  subtareasProyectos:'SUBTAREAS_PROYECTOS',
+  misTareas:          'MIS_TAREAS',
+  proyectos:          'PROYECTOS',
+  subtareasProyectos: 'SUBTAREAS_PROYECTOS',
 }
 
 const CAMPOS_MAP = {
@@ -96,15 +97,33 @@ const CAMPOS_MAP = {
   pendientes:   { id:'id', distribuidor:'distribuidor', tarea:'tarea', categoria:'categoria', fechaLimite:'fechaLimite', prioridad:'prioridad', estado:'estado', responsable:'responsable', notas:'notas', asignadoPor:'asignadoPor', fechaCreacion:'fechaCreacion' },
   tareasAsignadas: {
     id:'id',
-    distribuidor:'proyecto',
-    tarea:'nombre',
-    notas:'descripcion',
+    nombre:'nombre',
+    descripcion:'descripcion',
     responsable:'responsable',
-    fechaLimite:'fechaEntrega',
+    areas:'areas',
+    fechaLimite:'fechaLimite',
     estado:'estado',
-    categoria:'areas',
-    asignadoPor:'creadoPor',
-    fechaCreacion:'fechaCreacion'
+    asignadoPor:'asignadoPor',
+    fechaCreacion:'fechaCreacion',
+    fechaFinalizacion:'fechaFinalizacion',
+    tiempoValor:'tiempoValor',
+    tiempoUnidad:'tiempoUnidad',
+    tiempoMinutos:'tiempoMinutos'
+  },
+  misTareas: {
+    id:'id',
+    nombre:'nombre',
+    descripcion:'descripcion',
+    responsable:'responsable',
+    areas:'areas',
+    fechaLimite:'fechaLimite',
+    estado:'estado',
+    asignadoPor:'asignadoPor',
+    fechaCreacion:'fechaCreacion',
+    fechaFinalizacion:'fechaFinalizacion',
+    tiempoValor:'tiempoValor',
+    tiempoUnidad:'tiempoUnidad',
+    tiempoMinutos:'tiempoMinutos'
   },
   proyectos:    { id:'id', nombre:'nombre', descripcion:'descripcion', responsable:'responsable', areas:'areas', fechaEntrega:'fechaEntrega', estado:'estado', creadoPor:'creadoPor', subtareas:'subtareas', fechaCreacion:'fechaCreacion', correoFinalEnviado:'correoFinalEnviado' },
   subtareasProyectos: { id:'id', proyecto:'proyecto', nombre:'nombre', descripcion:'descripcion', responsable:'responsable', fechaEntrega:'fechaEntrega', estado:'estado', areas:'areas', creadoPor:'creadoPor', fechaCreacion:'fechaCreacion' },
@@ -169,7 +188,7 @@ function fromSheetRow(tipo, row) {
     if(appKey === 'mes' && typeof val === 'string' && val.trim()) {
       val = normMes(val)
     }
-    if(['anio','inversion','galonesPlan','galones','ventaNeta','monto','metaGalones','metaVenta','valor'].includes(appKey)) {
+    if(['anio','inversion','galonesPlan','galones','ventaNeta','monto','metaGalones','metaVenta','valor','tiempoValor','tiempoMinutos'].includes(appKey)) {
       val = Number(val) || 0
     }
     if(appKey === 'tiposPlan' && typeof val === 'string') {
@@ -228,6 +247,7 @@ async function cargarDesdeSheets(uid) {
       gastosPresupuesto:(d.gastos_presupuesto||[]).map(r=>fromSheetRow('gastosPresupuesto',r)),
       pendientes:       (d.pendientes       ||[]).map(r=>fromSheetRow('pendientes',r)),
       tareasAsignadas:  (d.tareas_asignadas ||[]).map(r=>fromSheetRow('tareasAsignadas',r)),
+      misTareas:         (d.mis_tareas ||[]).map(r=>fromSheetRow('misTareas',r)),
       proyectos:        (d.proyectos         ||[]).map(r=>fromSheetRow('proyectos',r)),
     }
   } catch(e) {
@@ -351,6 +371,7 @@ function load() {
     ],
     gastosPresupuesto: [],
     tareasAsignadas: [],
+    misTareas: [],
     proyectos: [],
     pendientes: [
       { id:1, distribuidor:'CVS- SERVITECAS S.A.S', tarea:'Revisar cumplimiento meta Q1', categoria:'Seguimiento', fechaLimite:'2026-03-31', prioridad:'Alta', estado:'Pendiente', responsable:'', notas:'' },
@@ -2646,88 +2667,86 @@ Responde en español, conciso y útil.`
 // ═══════════════════════════════════════════════════════
 function TareasAsignadas({ data, setData, usuario }) {
   const tareas = data.tareasAsignadas || []
-  const abiertas = tareas.filter(t=>t.estado!=='Listo'&&t.estado!=='Cancelado')
-  const cerradas = tareas.filter(t=>t.estado==='Listo'||t.estado==='Cancelado')
+  const [cerrando,setCerrando] = useState(null)
+  const [guardandoCierre,setGuardandoCierre] = useState(false)
 
-  const PRIORIDAD_COLOR = { Alta:'var(--red)', Media:'var(--orange)', Baja:'var(--green)' }
-  const ESTADO_COLOR    = { Pendiente:'var(--yellow)', 'En curso':'var(--accent)', Listo:'var(--green)', Cancelado:'var(--text3)' }
+  const abiertas = tareas.filter(t=>t.estado!=='Finalizada'&&t.estado!=='Cancelada')
+  const cerradas = tareas.filter(t=>t.estado==='Finalizada'||t.estado==='Cancelada')
 
-  const cambiarEstado = (tarea) => {
-    const ciclo = { Pendiente:'En curso', 'En curso':'Listo', Listo:'Pendiente' }
-    const nuevo = { ...tarea, estado: ciclo[tarea.estado] || 'Pendiente' }
-    const tareasAsignadas = tareas.map(p => p.id===tarea.id ? nuevo : p)
-    const nd = { ...data, tareasAsignadas }
-    setData(nd)
-    eliminarFilaSheets(usuario.id,'tareasAsignadas',tarea.id)
-      .then(()=>insertarFilaSheets(usuario.id,'tareasAsignadas',nuevo))
-      .catch(e=>console.error('Error actualizando tarea asignada:',e))
+  const persistir = async actualizada => {
+    const lista = tareas.map(t=>String(t.id)===String(actualizada.id)?actualizada:t)
+    setData({...data,tareasAsignadas:lista})
+    const uid = uidPersonaPorUsuario(usuario)
+    await eliminarFilaSheets(uid,'tareasAsignadas',actualizada.id)
+    await insertarFilaSheets(uid,'tareasAsignadas',actualizada)
+    if(uid!=='distribucion') {
+      await eliminarFilaSheets('distribucion','tareasAsignadas',actualizada.id)
+      await insertarFilaSheets('distribucion','tareasAsignadas',actualizada)
+    }
   }
 
-  const eliminar = (id) => {
-    if(!window.confirm('¿Marcar como cancelada esta tarea?')) return
-    const tareasAsignadas = tareas.map(p => p.id===id ? {...p, estado:'Cancelado'} : p)
-    const nd = { ...data, tareasAsignadas }
-    const actualizada = tareasAsignadas.find(p=>p.id===id)
-    setData(nd)
-    eliminarFilaSheets(usuario.id,'tareasAsignadas',id)
-      .then(()=>actualizada&&insertarFilaSheets(usuario.id,'tareasAsignadas',actualizada))
-      .catch(e=>console.error('Error cancelando tarea asignada:',e))
+  const cambiarEstado = async (t,estado) => {
+    if(estado==='Finalizada'&&t.estado!=='Finalizada') {
+      setCerrando(t)
+      return
+    }
+    try { await persistir({...t,estado}) }
+    catch(e){ console.error(e); alert('No se pudo actualizar la tarea.') }
   }
 
-  const TarjetaTarea = ({ t }) => (
-    <div style={{...S.card, padding:'16px 20px', display:'flex', gap:14, alignItems:'flex-start', borderLeft:'3px solid '+PRIORIDAD_COLOR[t.prioridad]}}>
-      <div style={{flex:1, minWidth:0}}>
-        <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginBottom:6}}>
-          <span style={{fontWeight:600, fontSize:14, color:'var(--text)', textDecoration:t.estado==='Cancelado'?'line-through':'none'}}>{t.tarea}</span>
-          <span style={{fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:5, background:'rgba(91,82,240,0.1)', color:'var(--accent2)'}}>📋 Líder</span>
-          <span style={{fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:5, color:PRIORIDAD_COLOR[t.prioridad], background:'var(--bg3)', border:'1px solid '+PRIORIDAD_COLOR[t.prioridad]}}>{t.prioridad}</span>
+  const confirmarFinalizacion = async tiempo => {
+    if(!cerrando||guardandoCierre) return
+    setGuardandoCierre(true)
+    const actualizada = {...cerrando,estado:'Finalizada',fechaFinalizacion:new Date().toLocaleString('es-CO'),...tiempo}
+    try {
+      await persistir(actualizada)
+      await enviarCorreoFinalizacion({
+        tipo:'tarea_finalizada',
+        proyecto:{nombre:'Tarea asignada'},
+        subtarea:{nombre:actualizada.nombre,responsable:actualizada.responsable,descripcion:actualizada.descripcion},
+        destinatarios:[obtenerCorreoResponsable(actualizada.responsable)],
+      })
+      setCerrando(null)
+    } catch(e) {
+      console.error(e)
+      alert('No se pudo finalizar la tarea.')
+    } finally {
+      setGuardandoCierre(false)
+    }
+  }
+
+  const Tarjeta = ({t}) => (
+    <div style={{...S.card,padding:'15px 18px',display:'flex',gap:14,alignItems:'flex-start'}}>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',marginBottom:6}}>
+          <span style={{fontWeight:700,fontSize:14}}>{t.nombre}</span>
+          <span style={{fontSize:10,padding:'2px 8px',borderRadius:6,background:'var(--accent-soft)',color:'var(--accent2)'}}>Asignada por Paola</span>
         </div>
-        <div style={{display:'flex', gap:14, fontSize:12, color:'var(--text2)', flexWrap:'wrap'}}>
-          {t.distribuidor&&<span>🏢 {t.distribuidor}</span>}
-          {t.categoria&&<span>🏷️ {t.categoria}</span>}
-          {t.fechaLimite&&<span style={{color:new Date(t.fechaLimite)<new Date()&&t.estado!=='Listo'?'var(--red)':'var(--text2)'}}>📅 {t.fechaLimite}</span>}
-          {t.responsable&&<span>👤 {t.responsable}</span>}
+        {t.descripcion&&<p style={{fontSize:12,color:'var(--text2)',margin:'0 0 7px'}}>{t.descripcion}</p>}
+        <div style={{display:'flex',gap:12,flexWrap:'wrap',fontSize:11,color:'var(--text3)'}}>
+          {t.fechaLimite&&<span>📅 Límite: {String(t.fechaLimite).slice(0,10)}</span>}
+          {t.areas&&<span>👥 {Array.isArray(t.areas)?t.areas.join(', '):t.areas}</span>}
+          {t.fechaFinalizacion&&<span>✅ {t.fechaFinalizacion}</span>}
+          {Number(t.tiempoMinutos)>0&&<span>⏱️ {formatoTiempoTarea(t)}</span>}
         </div>
-        {t.notas&&<p style={{margin:'6px 0 0', fontSize:12, color:'var(--text3)', borderLeft:'2px solid var(--border2)', paddingLeft:8}}>{t.notas}</p>}
       </div>
-      <div style={{display:'flex', flexDirection:'column', gap:6, alignItems:'flex-end', flexShrink:0}}>
-        <button onClick={()=>cambiarEstado(t)} style={{...S.btn('var(--bg3)','var(--text)'), fontSize:11, padding:'4px 10px', border:'1px solid '+ESTADO_COLOR[t.estado], color:ESTADO_COLOR[t.estado], fontWeight:600}}>
-          {t.estado}
-        </button>
-        {t.estado!=='Listo'&&<button onClick={()=>eliminar(t.id)} style={{...S.btn('var(--red-soft)','var(--red)'), padding:'3px 8px', fontSize:11}}>Cancelar</button>}
-      </div>
+      <select value={t.estado||'Pendiente'} onChange={e=>cambiarEstado(t,e.target.value)} style={{fontSize:11,padding:'5px 8px'}}>
+        {['Pendiente','En proceso','Finalizada','Cancelada'].map(s=><option key={s}>{s}</option>)}
+      </select>
     </div>
   )
 
   return (
-    <div style={{display:'flex', flexDirection:'column', gap:18}}>
-      <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:12}}>
-        <KpiCard icon={ListTodo} label="Total asignadas" value={tareas.length} accent="var(--accent2)"/>
+    <div style={{display:'flex',flexDirection:'column',gap:16}}>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}>
+        <KpiCard icon={ListTodo} label="Asignadas" value={tareas.length} accent="var(--accent2)"/>
         <KpiCard icon={ListTodo} label="Abiertas" value={abiertas.length} accent="var(--yellow)"/>
-        <KpiCard icon={Check}    label="Completadas" value={cerradas.filter(t=>t.estado==='Listo').length} accent="var(--green)"/>
+        <KpiCard icon={Check} label="Finalizadas" value={cerradas.filter(t=>t.estado==='Finalizada').length} accent="var(--green)"/>
       </div>
-
-      {abiertas.length===0&&cerradas.length===0&&(
-        <div style={{...S.card, padding:48, textAlign:'center', color:'var(--text3)'}}>
-          <div style={{fontSize:32, marginBottom:12}}>📋</div>
-          <div style={{fontWeight:600, fontSize:15, marginBottom:6}}>Sin tareas asignadas</div>
-          <div style={{fontSize:13}}>El Líder de Mercadeo aún no ha asignado tareas a tu unidad</div>
-        </div>
-      )}
-
-      {abiertas.length>0&&(
-        <div style={{display:'flex', flexDirection:'column', gap:10}}>
-          <div style={{fontSize:11, fontWeight:600, color:'var(--text2)', textTransform:'uppercase', letterSpacing:'0.05em'}}>Pendientes · {abiertas.length}</div>
-          {abiertas.sort((a,b)=>['Alta','Media','Baja'].indexOf(a.prioridad)-['Alta','Media','Baja'].indexOf(b.prioridad)).map((t,i)=><TarjetaTarea key={i} t={t}/>)}
-        </div>
-      )}
-
-      {cerradas.length>0&&(
-        <div style={{display:'flex', flexDirection:'column', gap:10}}>
-          <div style={{fontSize:11, fontWeight:600, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'0.05em'}}>Completadas / Canceladas · {cerradas.length}</div>
-          {cerradas.map((t,i)=><TarjetaTarea key={i} t={t}/>)}
-        </div>
-      )}
+      {tareas.length===0&&<div style={{...S.card,padding:44,textAlign:'center',color:'var(--text3)'}}>Sin tareas asignadas</div>}
+      {abiertas.map(t=><Tarjeta key={t.id} t={t}/>)}
+      {cerradas.map(t=><Tarjeta key={t.id} t={t}/>)}
+      {cerrando&&<ModalTiempoTarea tarea={cerrando} onClose={()=>setCerrando(null)} onConfirm={confirmarFinalizacion} guardando={guardandoCierre}/>}
     </div>
   )
 }
@@ -2995,121 +3014,241 @@ function FormProyecto({ form, setForm, onSave, titulo, onClose, guardando=false,
   )
 }
 
+const OPCIONES_TIEMPO = [
+  {label:'15 min', minutos:15, valor:15, unidad:'minutos'},
+  {label:'30 min', minutos:30, valor:30, unidad:'minutos'},
+  {label:'45 min', minutos:45, valor:45, unidad:'minutos'},
+  {label:'1 hora', minutos:60, valor:1, unidad:'horas'},
+  {label:'1 h 15 min', minutos:75, valor:1.25, unidad:'horas'},
+  {label:'1 h 30 min', minutos:90, valor:1.5, unidad:'horas'},
+  {label:'1 h 45 min', minutos:105, valor:1.75, unidad:'horas'},
+  {label:'2 horas', minutos:120, valor:2, unidad:'horas'},
+  {label:'2 h 15 min', minutos:135, valor:2.25, unidad:'horas'},
+  {label:'2 h 30 min', minutos:150, valor:2.5, unidad:'horas'},
+  {label:'2 h 45 min', minutos:165, valor:2.75, unidad:'horas'},
+  {label:'3 horas', minutos:180, valor:3, unidad:'horas'},
+  {label:'4 horas', minutos:240, valor:4, unidad:'horas'},
+  {label:'5 horas', minutos:300, valor:5, unidad:'horas'},
+  {label:'6 horas', minutos:360, valor:6, unidad:'horas'},
+  {label:'7 horas', minutos:420, valor:7, unidad:'horas'},
+  {label:'8 horas', minutos:480, valor:8, unidad:'horas'},
+]
+
+function nombrePersonaPorUsuario(usuario) {
+  const mapa = {
+    industria:'Emma',
+    distribucion:'María P',
+    presupuesto:'Juan',
+    diseno:'Camilo',
+    julian:'Julian',
+    lider:'Paola',
+  }
+  return mapa[usuario?.id] || usuario?.nombre || ''
+}
+
+function uidPersonaPorUsuario(usuario) {
+  const mapa = {
+    industria:'industria',
+    distribucion:'distribucion',
+    presupuesto:'juan',
+    diseno:'camilo',
+    julian:'julian',
+  }
+  return mapa[usuario?.id] || usuario?.id || 'distribucion'
+}
+
+function formatoTiempoTarea(t) {
+  const minutos = Number(t?.tiempoMinutos || 0)
+  if(!minutos) return '—'
+  if(minutos < 60) return minutos + ' min'
+  if(minutos < 480) {
+    const h = Math.floor(minutos/60)
+    const m = Math.round(minutos%60)
+    return m ? `${h} h ${m} min` : `${h} h`
+  }
+  const dias = minutos/480
+  return Number.isInteger(dias) ? `${dias} día${dias===1?'':'s'}` : `${dias.toFixed(1)} días`
+}
+
+function ModalTiempoTarea({ tarea, onClose, onConfirm, guardando=false }) {
+  const [tipo, setTipo] = useState('lista')
+  const [opcion, setOpcion] = useState('60')
+  const [dias, setDias] = useState('1')
+
+  const confirmar = () => {
+    if(tipo==='dias') {
+      const n = Math.max(1, Number(dias)||1)
+      onConfirm({tiempoValor:n,tiempoUnidad:'dias',tiempoMinutos:n*480})
+      return
+    }
+    const opt = OPCIONES_TIEMPO.find(o=>String(o.minutos)===String(opcion)) || OPCIONES_TIEMPO[3]
+    onConfirm({tiempoValor:opt.valor,tiempoUnidad:opt.unidad,tiempoMinutos:opt.minutos})
+  }
+
+  return (
+    <Modal title="Finalizar tarea" onClose={()=>!guardando&&onClose()}>
+      <div style={{display:'flex',flexDirection:'column',gap:16}}>
+        <div style={{background:'var(--bg3)',padding:14,borderRadius:10}}>
+          <div style={{fontSize:11,color:'var(--text3)',marginBottom:4}}>Tarea</div>
+          <div style={{fontWeight:700,fontSize:14}}>{tarea?.nombre}</div>
+        </div>
+        <div style={{fontSize:13,color:'var(--text2)'}}>¿Cuánto tiempo te tomó completar esta tarea?</div>
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={()=>setTipo('lista')} disabled={guardando}
+            style={{...S.btn(tipo==='lista'?'var(--accent)':'var(--bg3)',tipo==='lista'?'#fff':'var(--text2)'),flex:1,justifyContent:'center'}}>
+            Minutos / horas
+          </button>
+          <button onClick={()=>setTipo('dias')} disabled={guardando}
+            style={{...S.btn(tipo==='dias'?'var(--accent)':'var(--bg3)',tipo==='dias'?'#fff':'var(--text2)'),flex:1,justifyContent:'center'}}>
+            Días
+          </button>
+        </div>
+        {tipo==='lista' ? (
+          <Field label="Tiempo empleado">
+            <select value={opcion} onChange={e=>setOpcion(e.target.value)}>
+              {OPCIONES_TIEMPO.map(o=><option key={o.minutos} value={o.minutos}>{o.label}</option>)}
+            </select>
+          </Field>
+        ) : (
+          <Field label="Cantidad de días">
+            <input type="number" min="1" step="1" value={dias} onChange={e=>setDias(e.target.value)}/>
+          </Field>
+        )}
+        <button onClick={confirmar} disabled={guardando}
+          style={{...S.btn(guardando?'var(--bg3)':'var(--green)',guardando?'var(--text3)':'#fff'),justifyContent:'center',minHeight:40}}>
+          {guardando ? '⏳ Guardando cierre...' : '✅ Finalizar tarea'}
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
+
 // ═══════════════════════════════════════════════════════
 // MIS TAREAS — tareas personales del usuario
 // ═══════════════════════════════════════════════════════
 function MisTareas({ data, setData, usuario }) {
-  const tareas = (data.pendientes||[]).filter(p=>!p.asignadoPor||p.asignadoPor===usuario.nombre)
-  const [modal, setModal] = useState(false)
-  const [form, setForm] = useState({tarea:'',categoria:'',fechaLimite:'',prioridad:'Media',estado:'Pendiente',notas:''})
-  const PRIORIDAD_COLOR = { Alta:'var(--red)', Media:'var(--orange)', Baja:'var(--green)' }
-  const ESTADO_COLOR = { Pendiente:'var(--yellow)', 'En curso':'var(--accent2)', Listo:'var(--green)', Cancelado:'var(--text3)' }
-  const crear = () => {
-    if(!form.tarea) return
-    const nueva = {...form, id:Date.now(), asignadoPor:usuario.nombre, fechaCreacion:new Date().toLocaleDateString('es-CO')}
-    const nd = {...data, pendientes:[...(data.pendientes||[]), nueva]}
-    setData(nd, {insertar:nueva, tipo:'pendientes'})
-    setModal(false)
-    setForm({tarea:'',categoria:'',fechaLimite:'',prioridad:'Media',estado:'Pendiente',notas:''})
+  const tareas = data.misTareas || []
+  const [modal,setModal] = useState(false)
+  const [guardando,setGuardando] = useState(false)
+  const [cerrando,setCerrando] = useState(null)
+  const [guardandoCierre,setGuardandoCierre] = useState(false)
+  const [form,setForm] = useState({nombre:'',descripcion:'',areas:[],fechaLimite:'',estado:'Pendiente'})
+
+  const persona = nombrePersonaPorUsuario(usuario)
+  const uid = uidPersonaPorUsuario(usuario)
+
+  const crear = async () => {
+    if(guardando) return
+    if(!form.nombre) return alert('Escribe el nombre de la tarea.')
+    setGuardando(true)
+    const nueva = {
+      id:Date.now(),...form,responsable:persona,asignadoPor:persona,
+      fechaCreacion:new Date().toLocaleString('es-CO'),
+      fechaFinalizacion:'',tiempoValor:'',tiempoUnidad:'',tiempoMinutos:0
+    }
+    try {
+      setData({...data,misTareas:[...tareas,nueva]})
+      await insertarFilaSheets(uid,'misTareas',nueva)
+      if(uid!=='distribucion') await insertarFilaSheets('distribucion','misTareas',nueva)
+      setModal(false)
+      setForm({nombre:'',descripcion:'',areas:[],fechaLimite:'',estado:'Pendiente'})
+    } catch(e) {
+      console.error(e)
+      alert('No se pudo guardar la tarea.')
+    } finally { setGuardando(false) }
   }
 
-  const cambiarEstado = (id) => {
-    const ciclo = {Pendiente:'En curso','En curso':'Listo',Listo:'Pendiente'}
-    const pendientes = (data.pendientes||[]).map(p=>p.id===id?{...p,estado:ciclo[p.estado]||'Pendiente'}:p)
-    const nd = {...data, pendientes}
-    const actualizada = pendientes.find(p=>p.id===id)
-    setData(nd)
-    eliminarFilaSheets(usuario.id,'pendientes',id)
-      .then(()=>actualizada&&insertarFilaSheets(usuario.id,'pendientes',actualizada))
-      .catch(e=>console.error('Error actualizando tarea personal:',e))
+  const persistir = async actualizada => {
+    const lista = tareas.map(t=>String(t.id)===String(actualizada.id)?actualizada:t)
+    setData({...data,misTareas:lista})
+    await eliminarFilaSheets(uid,'misTareas',actualizada.id)
+    await insertarFilaSheets(uid,'misTareas',actualizada)
+    if(uid!=='distribucion') {
+      await eliminarFilaSheets('distribucion','misTareas',actualizada.id)
+      await insertarFilaSheets('distribucion','misTareas',actualizada)
+    }
   }
 
-  const eliminar = (id) => {
-    const nd = {...data, pendientes:(data.pendientes||[]).filter(p=>p.id!==id)}
-    setData(nd, {eliminar:id, tipo:'pendientes'})
+  const cambiarEstado = async (t,estado) => {
+    if(estado==='Finalizada'&&t.estado!=='Finalizada') return setCerrando(t)
+    try { await persistir({...t,estado}) } catch(e){console.error(e)}
   }
 
-  const abiertas = tareas.filter(t=>t.estado!=='Listo'&&t.estado!=='Cancelado')
-  const cerradas = tareas.filter(t=>t.estado==='Listo'||t.estado==='Cancelado')
+  const confirmarFinalizacion = async tiempo => {
+    if(!cerrando||guardandoCierre) return
+    setGuardandoCierre(true)
+    const actualizada = {...cerrando,estado:'Finalizada',fechaFinalizacion:new Date().toLocaleString('es-CO'),...tiempo}
+    try {
+      await persistir(actualizada)
+      await enviarCorreoFinalizacion({
+        tipo:'tarea_finalizada',
+        proyecto:{nombre:'Tarea personal'},
+        subtarea:{nombre:actualizada.nombre,responsable:persona,descripcion:actualizada.descripcion},
+        destinatarios:[obtenerCorreoResponsable(persona)],
+      })
+      setCerrando(null)
+    } finally { setGuardandoCierre(false) }
+  }
+
+  const eliminar = async id => {
+    if(!confirm('¿Eliminar esta tarea personal?')) return
+    setData({...data,misTareas:tareas.filter(t=>String(t.id)!==String(id))})
+    await eliminarFilaSheets(uid,'misTareas',id)
+    if(uid!=='distribucion') await eliminarFilaSheets('distribucion','misTareas',id)
+  }
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:14}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <div style={{display:'flex',gap:8}}>
-          <span style={{fontSize:12,background:'var(--bg3)',padding:'4px 12px',borderRadius:6,color:'var(--text2)'}}>Abiertas: {abiertas.length}</span>
-          <span style={{fontSize:12,background:'var(--green-soft)',padding:'4px 12px',borderRadius:6,color:'var(--green)'}}>Completadas: {cerradas.filter(t=>t.estado==='Listo').length}</span>
-        </div>
-        <button onClick={()=>setModal(true)} style={{...S.btn('var(--accent)','#fff')}}><PlusCircle size={15}/> Nueva tarea</button>
+        <div style={{fontSize:12,color:'var(--text2)'}}>Tareas personales: {tareas.length}</div>
+        <button onClick={()=>setModal(true)} style={S.btn('var(--accent)','#fff')}><PlusCircle size={15}/> Nueva tarea</button>
       </div>
 
-      {tareas.length===0&&(
-        <div style={{...S.card,padding:48,textAlign:'center',color:'var(--text3)'}}>
-          <div style={{fontSize:32,marginBottom:10}}>✅</div>
-          <div style={{fontWeight:600,marginBottom:6}}>Sin tareas personales</div>
-          <div style={{fontSize:13}}>Crea tu primera tarea con <strong>Nueva tarea</strong></div>
-        </div>
-      )}
-
-      {abiertas.length>0&&(
-        <div style={{display:'flex',flexDirection:'column',gap:8}}>
-          <div style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Pendientes · {abiertas.length}</div>
-          {abiertas.map((t,i)=>(
-            <div key={i} style={{...S.card,padding:'12px 16px',display:'flex',gap:12,alignItems:'flex-start',borderLeft:'3px solid '+PRIORIDAD_COLOR[t.prioridad]}}>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',marginBottom:4}}>
-                  <span style={{fontWeight:600,fontSize:14}}>{t.tarea}</span>
-                  <span style={{fontSize:10,padding:'2px 7px',borderRadius:5,color:PRIORIDAD_COLOR[t.prioridad],border:'1px solid '+PRIORIDAD_COLOR[t.prioridad]}}>{t.prioridad}</span>
-                </div>
-                <div style={{display:'flex',gap:12,fontSize:12,color:'var(--text3)',flexWrap:'wrap'}}>
-                  {t.categoria&&<span>🏷️ {t.categoria}</span>}
-                  {t.fechaLimite&&<span style={{color:new Date(t.fechaLimite)<new Date()?'var(--red)':'var(--text3)'}}>📅 {String(t.fechaLimite).slice(0,10)}</span>}
-                </div>
-                {t.notas&&<p style={{margin:'5px 0 0',fontSize:12,color:'var(--text3)',borderLeft:'2px solid var(--border2)',paddingLeft:8}}>{t.notas}</p>}
-              </div>
-              <div style={{display:'flex',gap:6,flexShrink:0}}>
-                <button onClick={()=>cambiarEstado(t.id)} style={{...S.btn('var(--bg3)','var(--text2)'),fontSize:11,padding:'4px 10px',border:'1px solid '+ESTADO_COLOR[t.estado],color:ESTADO_COLOR[t.estado]}}>{t.estado}</button>
-                <button onClick={()=>eliminar(t.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'4px 7px'}}><Trash2 size={12}/></button>
-              </div>
+      {tareas.map(t=>(
+        <div key={t.id} style={{...S.card,padding:'14px 17px',display:'flex',gap:12,alignItems:'flex-start'}}>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:700,fontSize:14,marginBottom:5}}>{t.nombre}</div>
+            {t.descripcion&&<div style={{fontSize:12,color:'var(--text2)',marginBottom:6}}>{t.descripcion}</div>}
+            <div style={{display:'flex',gap:12,fontSize:11,color:'var(--text3)',flexWrap:'wrap'}}>
+              {t.fechaLimite&&<span>📅 {String(t.fechaLimite).slice(0,10)}</span>}
+              {t.areas&&<span>👥 {Array.isArray(t.areas)?t.areas.join(', '):t.areas}</span>}
+              {Number(t.tiempoMinutos)>0&&<span>⏱️ {formatoTiempoTarea(t)}</span>}
             </div>
-          ))}
+          </div>
+          <select value={t.estado||'Pendiente'} onChange={e=>cambiarEstado(t,e.target.value)} style={{fontSize:11}}>
+            {['Pendiente','En proceso','Finalizada','Cancelada'].map(s=><option key={s}>{s}</option>)}
+          </select>
+          <button onClick={()=>eliminar(t.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'5px 7px'}}><Trash2 size={12}/></button>
         </div>
-      )}
-
-      {cerradas.length>0&&(
-        <div style={{display:'flex',flexDirection:'column',gap:8}}>
-          <div style={{fontSize:11,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Completadas · {cerradas.length}</div>
-          {cerradas.map((t,i)=>(
-            <div key={i} style={{...S.card,padding:'10px 16px',display:'flex',justifyContent:'space-between',alignItems:'center',opacity:0.6}}>
-              <span style={{fontSize:13,textDecoration:'line-through',color:'var(--text2)'}}>{t.tarea}</span>
-              <button onClick={()=>eliminar(t.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'3px 6px'}}><Trash2 size={11}/></button>
-            </div>
-          ))}
-        </div>
-      )}
+      ))}
 
       {modal&&(
-        <Modal title="Nueva tarea personal" onClose={()=>setModal(false)}>
+        <Modal title="Nueva tarea personal" onClose={()=>!guardando&&setModal(false)}>
           <div style={{display:'flex',flexDirection:'column',gap:14}}>
-            <Field label="Tarea *"><input value={form.tarea} onChange={e=>setForm({...form,tarea:e.target.value})} placeholder="¿Qué necesitas hacer?"/></Field>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-              <Field label="Categoría"><input value={form.categoria} onChange={e=>setForm({...form,categoria:e.target.value})} placeholder="Ej: Diseño, Seguimiento..."/></Field>
-              <Field label="Fecha límite"><input type="date" value={form.fechaLimite} onChange={e=>setForm({...form,fechaLimite:e.target.value})}/></Field>
-              <Field label="Prioridad">
-                <select value={form.prioridad} onChange={e=>setForm({...form,prioridad:e.target.value})}>
-                  {['Alta','Media','Baja'].map(p=><option key={p}>{p}</option>)}
-                </select>
-              </Field>
-              <Field label="Estado">
-                <select value={form.estado} onChange={e=>setForm({...form,estado:e.target.value})}>
-                  {['Pendiente','En curso','Listo'].map(s=><option key={s}>{s}</option>)}
-                </select>
-              </Field>
-            </div>
-            <Field label="Notas"><textarea value={form.notas} onChange={e=>setForm({...form,notas:e.target.value})} rows={2} style={{resize:'vertical'}} placeholder="Detalles adicionales..."/></Field>
-            <button onClick={crear} style={{...S.btn('var(--accent)','#fff')}}><Check size={15}/> Crear tarea</button>
+            <Field label="Nombre *"><input value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})}/></Field>
+            <Field label="Descripción"><textarea rows={2} value={form.descripcion} onChange={e=>setForm({...form,descripcion:e.target.value})}/></Field>
+            <Field label="Fecha límite"><input type="date" value={form.fechaLimite} onChange={e=>setForm({...form,fechaLimite:e.target.value})}/></Field>
+            <Field label="Áreas que intervienen">
+              <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>
+                {AREAS.map(a=>(
+                  <label key={a} style={{fontSize:12,padding:'5px 9px',border:'1px solid var(--border2)',borderRadius:6,cursor:'pointer',background:form.areas.includes(a)?'var(--accent-soft)':'var(--bg3)'}}>
+                    <input type="checkbox" style={{display:'none'}} checked={form.areas.includes(a)}
+                      onChange={e=>setForm({...form,areas:e.target.checked?[...form.areas,a]:form.areas.filter(x=>x!==a)})}/>
+                    {a}
+                  </label>
+                ))}
+              </div>
+            </Field>
+            <button onClick={crear} disabled={guardando}
+              style={{...S.btn(guardando?'var(--bg3)':'var(--accent)',guardando?'var(--text3)':'#fff'),justifyContent:'center'}}>
+              {guardando?'⏳ Guardando tarea...':'Crear tarea'}
+            </button>
           </div>
         </Modal>
       )}
+
+      {cerrando&&<ModalTiempoTarea tarea={cerrando} onClose={()=>setCerrando(null)} onConfirm={confirmarFinalizacion} guardando={guardandoCierre}/>}
     </div>
   )
 }
@@ -3667,7 +3806,15 @@ function DashboardLider() {
   const [filtroUnidad, setFiltroUnidad] = useState('')
   const [filtroMes, setFiltroMes] = useState('')
   const [modalPendiente, setModalPendiente] = useState(false)
-  const [formPend, setFormPend] = useState({unidad:'', distribuidor:'', tarea:'', categoria:'', fechaLimite:'', prioridad:'Media', estado:'Pendiente', responsable:'', notas:''})
+  const [guardandoPendiente, setGuardandoPendiente] = useState(false)
+  const [tareasCentral, setTareasCentral] = useState({asignadas:[],personales:[]})
+  const [formPend, setFormPend] = useState({nombre:'',descripcion:'',responsable:'',areas:[],fechaLimite:'',estado:'Pendiente'})
+
+  useEffect(()=>{
+    cargarDesdeSheets('distribucion').then(d=>{
+      if(d) setTareasCentral({asignadas:d.tareasAsignadas||[],personales:d.misTareas||[]})
+    })
+  },[])
 
   const unidades = USUARIOS.filter(u=>u.rol==='normal')
   const allData = unidades.map(u=>{
@@ -3724,77 +3871,42 @@ function DashboardLider() {
   const SHEETS_URL_LIDER = 'https://script.google.com/macros/s/AKfycbxzqhKZr7ue545BDwpgqQrNsognsVOtxxZNPd6P4Jm_wtdj1_Sqkd9FdswrdtfM2d8S/exec'
 
   const crearPendiente = async () => {
-    if(!formPend.unidad||!formPend.tarea) return
-    const u = USUARIOS.find(u=>u.id===formPend.unidad)
-    if(!u) return
+    if(guardandoPendiente) return
+    if(!formPend.nombre||!formPend.responsable) return alert('Completa nombre y responsable.')
+    setGuardandoPendiente(true)
+
+    const nuevo = {
+      id:Date.now(),...formPend,asignadoPor:'Paola',
+      fechaCreacion:new Date().toLocaleString('es-CO'),
+      fechaFinalizacion:'',tiempoValor:'',tiempoUnidad:'',tiempoMinutos:0
+    }
+    const destinoUid = obtenerUidResponsable(nuevo.responsable)
+
     try {
-      const key = getStorageKey(u.id)
-      const raw = localStorage.getItem(key)
-      const ud = raw ? JSON.parse(raw) : {inversiones:[],ventas:[],planes:[],presupuestos:[],pendientes:[],gastosPresupuesto:[]}
-      const nuevo = {...formPend, id:Date.now(), distribuidor:formPend.distribuidor||'', asignadoPor:'Líder de Mercadeo', fechaCreacion:new Date().toLocaleDateString('es-CO')}
-      delete nuevo.unidad
-      ud.tareasAsignadas = [...(ud.tareasAsignadas||[]), nuevo]
-      localStorage.setItem(key, JSON.stringify(ud))
+      await insertarFilaSheets('distribucion','tareasAsignadas',nuevo)
+      if(destinoUid!=='distribucion') await insertarFilaSheets(destinoUid,'tareasAsignadas',nuevo)
 
-      const nombreResponsable = nuevo.responsable || u.nombre
-      const destinoUid = obtenerUidResponsable(nombreResponsable)
-
-      // Guardar la tarea usando la misma función confiable que ya funciona
-      // para proyectos. Esta función usa POST y envía el spreadsheetId
-      // cuando el responsable tiene archivo personal.
-      try {
-        await insertarFilaSheets(destinoUid, 'tareasAsignadas', nuevo)
-        console.log('Tarea guardada en el archivo de', nombreResponsable)
-      } catch (errorGuardado) {
-        console.error('No se pudo guardar la tarea de', nombreResponsable, errorGuardado)
-        throw errorGuardado
+      const email = obtenerCorreoResponsable(nuevo.responsable)
+      if(email) {
+        await enviarViaJsonp(SHEETS_CONFIG.distribucion.url,{
+          accion:'enviar_correo_tarea',
+          destinatario:email,copia:EMAIL_LIDER_PROY,
+          comercial:nuevo.responsable,responsable:nuevo.responsable,
+          tarea:nuevo.nombre,producto:nuevo.nombre,
+          notas:nuevo.descripcion||'',descripcion:nuevo.descripcion||'',
+          fechaLimite:nuevo.fechaLimite||'',mes:nuevo.fechaLimite||'',
+          fecha:new Date().toLocaleDateString('es-CO'),
+          areas:(nuevo.areas||[]).join(', '),
+        })
       }
 
-      // El correo siempre lo procesa el Apps Script central de Distribución,
-      // que ya fue probado directamente y sí envía MailApp correctamente.
-      const urlCorreo = SHEETS_CONFIG.distribucion.url
-
-      
-      const emailDest =
-        obtenerCorreoResponsable(nombreResponsable) ||
-        EMAILS_UNIDAD_LIDER[u.id]
-
-      if(emailDest && urlCorreo) {
-        try {
-          const respuestaCorreo = await enviarViaJsonp(urlCorreo, {
-            accion: 'enviar_correo_tarea',
-            destinatario: emailDest,
-            copia: EMAIL_LIDER_PROY,
-            comercial: nombreResponsable,
-            responsable: nombreResponsable,
-            tarea: nuevo.tarea,
-            producto: nuevo.tarea,
-            cliente: nuevo.distribuidor || '',
-            distribuidor: nuevo.distribuidor || '',
-            notas: nuevo.notas || '',
-            descripcion: nuevo.notas || '',
-            mes: nuevo.fechaLimite || '',
-            fechaLimite: nuevo.fechaLimite || '',
-            fecha: new Date().toLocaleDateString('es-CO'),
-          })
-
-          console.log('Correo tarea:', respuestaCorreo)
-
-          if(!respuestaCorreo?.ok) {
-            console.error('Apps Script no confirmó el correo de la tarea:', respuestaCorreo)
-          }
-        } catch(e) {
-          console.error('Error notificación email:', e)
-        }
-      } else {
-        console.error('No se encontró correo para la tarea:', nombreResponsable)
-        throw new Error(`No se encontró correo para ${nombreResponsable}`)
-      }
-
+      setTareasCentral(prev=>({...prev,asignadas:[...prev.asignadas,nuevo]}))
       setModalPendiente(false)
-      setFormPend({unidad:'',distribuidor:'',tarea:'',categoria:'',fechaLimite:'',prioridad:'Media',estado:'Pendiente',responsable:'',notas:''})
-      alert('✅ Tarea asignada a '+nombreResponsable+' y notificación enviada por correo')
-    } catch(e) { alert('Error: '+e.message) }
+      setFormPend({nombre:'',descripcion:'',responsable:'',areas:[],fechaLimite:'',estado:'Pendiente'})
+    } catch(e) {
+      console.error(e)
+      alert('Error guardando la tarea: '+e.message)
+    } finally { setGuardandoPendiente(false) }
   }
 
   const CT2 = ({active,payload,label}) => {
@@ -3805,7 +3917,22 @@ function DashboardLider() {
     </div>
   }
 
-  const TABS_L = [{id:'dashboard',label:'Dashboard'},{id:'actividades',label:'Actividades'},{id:'clientes',label:'Por Cliente'},{id:'presupuesto',label:'Presupuesto'}]
+  const TABS_L = [
+    {id:'dashboard',label:'Dashboard'},
+    {id:'actividades',label:'Tareas del equipo'},
+    {id:'tiempos',label:'Tiempos del equipo'},
+    {id:'clientes',label:'Por Cliente'},
+    {id:'presupuesto',label:'Presupuesto'}
+  ]
+
+  const tareasMedibles = [...tareasCentral.asignadas,...tareasCentral.personales]
+    .filter(t=>t.estado==='Finalizada'&&Number(t.tiempoMinutos||0)>0)
+
+  const resumenTiempos = RESPONSABLES.map(nombre=>{
+    const lista = tareasMedibles.filter(t=>normalizarNombreResponsable(t.responsable)===normalizarNombreResponsable(nombre))
+    const promedio = lista.length?lista.reduce((s,t)=>s+Number(t.tiempoMinutos||0),0)/lista.length:0
+    return {nombre,cerradas:lista.length,promedio}
+  }).filter(r=>r.cerradas>0)
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:20}}>
@@ -3828,7 +3955,7 @@ function DashboardLider() {
         </select>
         {(filtroUnidad||filtroMes)&&<button onClick={()=>{setFiltroUnidad('');setFiltroMes('')}} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:12}}>✕</button>}
         {tabLider==='actividades'&&(
-          <button onClick={()=>setModalPendiente(true)} style={{...S.btn('var(--accent)','#fff'),marginLeft:'auto'}}><PlusCircle size={14}/> Asignar actividad</button>
+          <button onClick={()=>setModalPendiente(true)} style={{...S.btn('var(--accent)','#fff'),marginLeft:'auto'}}><PlusCircle size={14}/> Nueva tarea</button>
         )}
       </div>
 
@@ -3935,6 +4062,31 @@ function DashboardLider() {
         </div>
       )}
 
+      {tabLider==='tiempos'&&(
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}>
+            <KpiCard icon={Check} label="Tareas medidas" value={tareasMedibles.length} accent="var(--green)"/>
+            <KpiCard icon={ListTodo} label="Asignadas finalizadas" value={tareasCentral.asignadas.filter(t=>t.estado==='Finalizada').length} accent="var(--orange)"/>
+            <KpiCard icon={ListTodo} label="Personales finalizadas" value={tareasCentral.personales.filter(t=>t.estado==='Finalizada').length} accent="var(--accent2)"/>
+          </div>
+          <div style={S.card}>
+            <table style={{width:'100%',borderCollapse:'collapse'}}>
+              <thead><tr>{['Persona','Tareas cerradas','Tiempo promedio'].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {resumenTiempos.length===0&&<tr><td colSpan={3} style={{...S.td,textAlign:'center',padding:35,color:'var(--text3)'}}>Aún no hay tareas finalizadas con tiempo reportado.</td></tr>}
+                {resumenTiempos.map(r=>(
+                  <tr key={r.nombre}>
+                    <td style={{...S.td,fontWeight:700}}>{r.nombre}</td>
+                    <td style={S.td}>{r.cerradas}</td>
+                    <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--accent2)'}}>{formatoTiempoTarea({tiempoMinutos:r.promedio})}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {tabLider==='clientes'&&(
         <div style={S.card}>
           <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}><h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Inversión por cliente/distribuidor</h4></div>
@@ -4033,25 +4185,36 @@ function DashboardLider() {
       )}
 
       {modalPendiente&&(
-        <Modal title="Asignar actividad a unidad" onClose={()=>setModalPendiente(false)} wide>
+        <Modal title="Asignar nueva tarea" onClose={()=>!guardandoPendiente&&setModalPendiente(false)} wide>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
-            <Field label="Unidad destino *"><select value={formPend.unidad} onChange={e=>setFormPend({...formPend,unidad:e.target.value})}><option value="">Selecciona unidad...</option>{unidades.map(u=><option key={u.id} value={u.id}>{u.nombre}</option>)}</select></Field>
-            <Field label="Distribuidor (opcional)"><input value={formPend.distribuidor} onChange={e=>setFormPend({...formPend,distribuidor:e.target.value})} placeholder="Nombre del distribuidor..."/></Field>
-            <Field label="Tarea / Actividad *" span><input value={formPend.tarea} onChange={e=>setFormPend({...formPend,tarea:e.target.value})} placeholder="Describe la actividad..."/></Field>
-            <Field label="Categoría"><input value={formPend.categoria} onChange={e=>setFormPend({...formPend,categoria:e.target.value})} placeholder="Ej: Seguimiento, Diseño..."/></Field>
-            <Field label="Fecha límite"><input type="date" value={formPend.fechaLimite} onChange={e=>setFormPend({...formPend,fechaLimite:e.target.value})}/></Field>
-            <Field label="Prioridad"><select value={formPend.prioridad} onChange={e=>setFormPend({...formPend,prioridad:e.target.value})}>{['Alta','Media','Baja'].map(p=><option key={p}>{p}</option>)}</select></Field>
-            <Field label="Responsable">
+            <Field label="Nombre *" span><input value={formPend.nombre} onChange={e=>setFormPend({...formPend,nombre:e.target.value})}/></Field>
+            <Field label="Descripción" span><textarea rows={3} value={formPend.descripcion} onChange={e=>setFormPend({...formPend,descripcion:e.target.value})}/></Field>
+            <Field label="Responsable *">
               <select value={formPend.responsable} onChange={e=>setFormPend({...formPend,responsable:e.target.value})}>
                 <option value="">Selecciona responsable...</option>
-                {RESPONSABLES.map(r=><option key={r} value={r}>{r}</option>)}
+                {RESPONSABLES.map(r=><option key={r}>{r}</option>)}
               </select>
             </Field>
-            <Field label="Notas" span><textarea value={formPend.notas} onChange={e=>setFormPend({...formPend,notas:e.target.value})} rows={2} style={{resize:'vertical'}} placeholder="Detalles adicionales..."/></Field>
+            <Field label="Fecha límite"><input type="date" value={formPend.fechaLimite} onChange={e=>setFormPend({...formPend,fechaLimite:e.target.value})}/></Field>
+            <Field label="Estado"><select value={formPend.estado} onChange={e=>setFormPend({...formPend,estado:e.target.value})}>{['Pendiente','En proceso'].map(s=><option key={s}>{s}</option>)}</select></Field>
+            <Field label="Áreas que intervienen" span>
+              <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                {AREAS.map(a=>(
+                  <label key={a} style={{fontSize:12,padding:'6px 10px',border:'1px solid var(--border2)',borderRadius:7,cursor:'pointer',background:formPend.areas.includes(a)?'var(--accent-soft)':'var(--bg3)'}}>
+                    <input type="checkbox" style={{display:'none'}} checked={formPend.areas.includes(a)}
+                      onChange={e=>setFormPend({...formPend,areas:e.target.checked?[...formPend.areas,a]:formPend.areas.filter(x=>x!==a)})}/>
+                    {a}
+                  </label>
+                ))}
+              </div>
+            </Field>
           </div>
-          <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:20}}>
-            <button onClick={()=>setModalPendiente(false)} style={S.btn('var(--bg3)','var(--text2)')}>Cancelar</button>
-            <button onClick={crearPendiente} style={S.btn('var(--accent)','#fff')}><Check size={15}/> Asignar actividad</button>
+          <div style={{display:'flex',justifyContent:'flex-end',gap:8,marginTop:20}}>
+            <button onClick={()=>setModalPendiente(false)} disabled={guardandoPendiente} style={S.btn('var(--bg3)','var(--text2)')}>Cancelar</button>
+            <button onClick={crearPendiente} disabled={guardandoPendiente}
+              style={S.btn(guardandoPendiente?'var(--bg3)':'var(--accent)',guardandoPendiente?'var(--text3)':'#fff')}>
+              {guardandoPendiente?'⏳ Guardando tarea...':'Asignar tarea'}
+            </button>
           </div>
         </Modal>
       )}
