@@ -1,4 +1,3 @@
-```js
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
@@ -6,16 +5,8 @@ import { VitePWA } from 'vite-plugin-pwa'
 export default defineConfig({
   plugins: [
     react(),
-
     VitePWA({
       registerType: 'autoUpdate',
-
-      includeAssets: [
-        'favicon.ico',
-        'apple-touch-icon.png',
-        'pwa-192x192.png',
-        'pwa-512x512.png',
-      ],
 
       manifest: {
         name: 'Prolub Trade Marketing',
@@ -24,7 +15,6 @@ export default defineConfig({
         theme_color: '#21113f',
         background_color: '#f3f4f8',
         display: 'standalone',
-        orientation: 'portrait',
         start_url: '/',
         scope: '/',
 
@@ -38,12 +28,6 @@ export default defineConfig({
             src: '/pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png',
-          },
-          {
-            src: '/pwa-512x512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'any maskable',
           },
         ],
       },
