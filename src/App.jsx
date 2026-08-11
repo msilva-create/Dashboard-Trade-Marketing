@@ -2669,19 +2669,29 @@ function TareasAsignadas({ data, setData, usuario }) {
   const tareas = data.tareasAsignadas || []
   const [cerrando,setCerrando] = useState(null)
   const [guardandoCierre,setGuardandoCierre] = useState(false)
+  const [editando,setEditando] = useState(null)
+  const [guardandoEdicion,setGuardandoEdicion] = useState(false)
 
   const abiertas = tareas.filter(t=>t.estado!=='Finalizada'&&t.estado!=='Cancelada')
   const cerradas = tareas.filter(t=>t.estado==='Finalizada'||t.estado==='Cancelada')
 
-  const persistir = async actualizada => {
+  const persistir = async (actualizada, anterior=null) => {
     const lista = tareas.map(t=>String(t.id)===String(actualizada.id)?actualizada:t)
     setData({...data,tareasAsignadas:lista})
-    const uid = uidPersonaPorUsuario(usuario)
-    await eliminarFilaSheets(uid,'tareasAsignadas',actualizada.id)
-    await insertarFilaSheets(uid,'tareasAsignadas',actualizada)
-    if(uid!=='distribucion') {
-      await eliminarFilaSheets('distribucion','tareasAsignadas',actualizada.id)
-      await insertarFilaSheets('distribucion','tareasAsignadas',actualizada)
+
+    const uidAnterior = anterior ? obtenerUidResponsable(anterior.responsable) : uidPersonaPorUsuario(usuario)
+    const uidNuevo = obtenerUidResponsable(actualizada.responsable) || uidPersonaPorUsuario(usuario)
+
+    await eliminarFilaSheets('distribucion','tareasAsignadas',actualizada.id)
+    await insertarFilaSheets('distribucion','tareasAsignadas',actualizada)
+
+    if(uidAnterior && uidAnterior!=='distribucion' && uidAnterior!==uidNuevo) {
+      await eliminarFilaSheets(uidAnterior,'tareasAsignadas',actualizada.id)
+    }
+
+    if(uidNuevo && uidNuevo!=='distribucion') {
+      await eliminarFilaSheets(uidNuevo,'tareasAsignadas',actualizada.id)
+      await insertarFilaSheets(uidNuevo,'tareasAsignadas',actualizada)
     }
   }
 
@@ -2690,7 +2700,7 @@ function TareasAsignadas({ data, setData, usuario }) {
       setCerrando(t)
       return
     }
-    try { await persistir({...t,estado}) }
+    try { await persistir({...t,estado},t) }
     catch(e){ console.error(e); alert('No se pudo actualizar la tarea.') }
   }
 
@@ -2699,7 +2709,7 @@ function TareasAsignadas({ data, setData, usuario }) {
     setGuardandoCierre(true)
     const actualizada = {...cerrando,estado:'Finalizada',fechaFinalizacion:new Date().toLocaleString('es-CO'),...tiempo}
     try {
-      await persistir(actualizada)
+      await persistir(actualizada,cerrando)
       await enviarCorreoFinalizacion({
         tipo:'tarea_finalizada',
         proyecto:{nombre:'Tarea asignada'},
@@ -2712,6 +2722,42 @@ function TareasAsignadas({ data, setData, usuario }) {
       alert('No se pudo finalizar la tarea.')
     } finally {
       setGuardandoCierre(false)
+    }
+  }
+
+  const guardarEdicion = async form => {
+    if(!form.nombre) return alert('La tarea debe tener nombre.')
+    setGuardandoEdicion(true)
+    try {
+      const anterior = editando
+      const actualizada = {...anterior,...form}
+      await persistir(actualizada,anterior)
+
+      if(normalizarNombreResponsable(anterior.responsable)!==normalizarNombreResponsable(actualizada.responsable)) {
+        const email = obtenerCorreoResponsable(actualizada.responsable)
+        if(email) {
+          await enviarViaJsonp(SHEETS_CONFIG.distribucion.url,{
+            accion:'enviar_correo_tarea',
+            destinatario:email,
+            copia:EMAIL_LIDER_PROY,
+            comercial:actualizada.responsable,
+            responsable:actualizada.responsable,
+            tarea:actualizada.nombre,
+            producto:actualizada.nombre,
+            notas:actualizada.descripcion||'',
+            descripcion:actualizada.descripcion||'',
+            fechaLimite:actualizada.fechaLimite||'',
+            mes:actualizada.fechaLimite||'',
+            fecha:new Date().toLocaleDateString('es-CO'),
+          })
+        }
+      }
+      setEditando(null)
+    } catch(e) {
+      console.error(e)
+      alert('No se pudo guardar la edición.')
+    } finally {
+      setGuardandoEdicion(false)
     }
   }
 
@@ -2730,9 +2776,12 @@ function TareasAsignadas({ data, setData, usuario }) {
           {Number(t.tiempoMinutos)>0&&<span>⏱️ {formatoTiempoTarea(t)}</span>}
         </div>
       </div>
-      <select value={t.estado||'Pendiente'} onChange={e=>cambiarEstado(t,e.target.value)} style={{fontSize:11,padding:'5px 8px'}}>
-        {['Pendiente','En proceso','Finalizada','Cancelada'].map(s=><option key={s}>{s}</option>)}
-      </select>
+      <div style={{display:'flex',gap:6,alignItems:'center'}}>
+        <select value={t.estado||'Pendiente'} onChange={e=>cambiarEstado(t,e.target.value)} style={{fontSize:11,padding:'5px 8px'}}>
+          {['Pendiente','En proceso','Finalizada','Cancelada'].map(s=><option key={s}>{s}</option>)}
+        </select>
+        <button onClick={()=>setEditando(t)} style={{...S.btn('var(--accent-soft)','var(--accent2)'),padding:'5px 7px'}}><Edit2 size={12}/></button>
+      </div>
     </div>
   )
 
@@ -2747,6 +2796,7 @@ function TareasAsignadas({ data, setData, usuario }) {
       {abiertas.map(t=><Tarjeta key={t.id} t={t}/>)}
       {cerradas.map(t=><Tarjeta key={t.id} t={t}/>)}
       {cerrando&&<ModalTiempoTarea tarea={cerrando} onClose={()=>setCerrando(null)} onConfirm={confirmarFinalizacion} guardando={guardandoCierre}/>}
+      {editando&&<ModalEditarTarea tarea={editando} onClose={()=>setEditando(null)} onSave={guardarEdicion} guardando={guardandoEdicion} titulo="Editar tarea asignada"/>}
     </div>
   )
 }
@@ -3124,6 +3174,80 @@ function ModalTiempoTarea({ tarea, onClose, onConfirm, guardando=false }) {
 }
 
 
+
+function ModalEditarTarea({ tarea, onClose, onSave, guardando=false, permiteResponsable=true, titulo='Editar tarea' }) {
+  const [form,setForm] = useState({
+    ...tarea,
+    areas:Array.isArray(tarea?.areas)
+      ? tarea.areas
+      : String(tarea?.areas||'').split(',').map(x=>x.trim()).filter(Boolean)
+  })
+
+  return (
+    <Modal title={titulo} onClose={()=>!guardando&&onClose()} wide>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+        <Field label="Nombre *" span>
+          <input value={form.nombre||''} onChange={e=>setForm({...form,nombre:e.target.value})}/>
+        </Field>
+        <Field label="Descripción" span>
+          <textarea rows={3} value={form.descripcion||''} onChange={e=>setForm({...form,descripcion:e.target.value})}/>
+        </Field>
+
+        {permiteResponsable&&(
+          <Field label="Responsable">
+            <select value={form.responsable||''} onChange={e=>setForm({...form,responsable:e.target.value})}>
+              <option value="">Sin asignar</option>
+              {RESPONSABLES.map(r=><option key={r}>{r}</option>)}
+            </select>
+          </Field>
+        )}
+
+        <Field label="Fecha límite">
+          <input type="date" value={String(form.fechaLimite||'').slice(0,10)} onChange={e=>setForm({...form,fechaLimite:e.target.value})}/>
+        </Field>
+
+        <Field label="Estado">
+          <select value={form.estado||'Pendiente'} onChange={e=>setForm({...form,estado:e.target.value})}>
+            {['Pendiente','En proceso','Finalizada','Cancelada'].map(s=><option key={s}>{s}</option>)}
+          </select>
+        </Field>
+
+        <Field label="Áreas que intervienen" span>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+            {AREAS.map(a=>(
+              <label key={a} style={{
+                fontSize:12,padding:'6px 10px',border:'1px solid var(--border2)',
+                borderRadius:7,cursor:'pointer',
+                background:form.areas.includes(a)?'var(--accent-soft)':'var(--bg3)',
+                color:form.areas.includes(a)?'var(--accent2)':'var(--text2)'
+              }}>
+                <input
+                  type="checkbox"
+                  style={{display:'none'}}
+                  checked={form.areas.includes(a)}
+                  onChange={e=>setForm({
+                    ...form,
+                    areas:e.target.checked?[...form.areas,a]:form.areas.filter(x=>x!==a)
+                  })}
+                />
+                {a}
+              </label>
+            ))}
+          </div>
+        </Field>
+      </div>
+
+      <div style={{display:'flex',justifyContent:'flex-end',gap:8,marginTop:20}}>
+        <button disabled={guardando} onClick={onClose} style={S.btn('var(--bg3)','var(--text2)')}>Cancelar</button>
+        <button disabled={guardando} onClick={()=>onSave(form)}
+          style={S.btn(guardando?'var(--bg3)':'var(--accent)',guardando?'var(--text3)':'#fff')}>
+          {guardando?'⏳ Guardando cambios...':'Guardar cambios'}
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
 // ═══════════════════════════════════════════════════════
 // MIS TAREAS — tareas personales del usuario
 // ═══════════════════════════════════════════════════════
@@ -3133,6 +3257,9 @@ function MisTareas({ data, setData, usuario }) {
   const [guardando,setGuardando] = useState(false)
   const [cerrando,setCerrando] = useState(null)
   const [guardandoCierre,setGuardandoCierre] = useState(false)
+  const [editando,setEditando] = useState(null)
+  const [guardandoEdicion,setGuardandoEdicion] = useState(false)
+  const [eliminandoId,setEliminandoId] = useState(null)
   const [form,setForm] = useState({nombre:'',descripcion:'',areas:[],fechaLimite:'',estado:'Pendiente'})
 
   const persona = nombrePersonaPorUsuario(usuario)
@@ -3191,11 +3318,32 @@ function MisTareas({ data, setData, usuario }) {
     } finally { setGuardandoCierre(false) }
   }
 
+  const guardarEdicion = async formEdit => {
+    if(!formEdit.nombre) return alert('La tarea debe tener nombre.')
+    setGuardandoEdicion(true)
+    try {
+      await persistir({...editando,...formEdit,responsable:persona,asignadoPor:persona})
+      setEditando(null)
+    } catch(e) {
+      console.error(e)
+      alert('No se pudo guardar la edición.')
+    } finally {
+      setGuardandoEdicion(false)
+    }
+  }
+
   const eliminar = async id => {
     if(!confirm('¿Eliminar esta tarea personal?')) return
-    setData({...data,misTareas:tareas.filter(t=>String(t.id)!==String(id))})
-    await eliminarFilaSheets(uid,'misTareas',id)
-    if(uid!=='distribucion') await eliminarFilaSheets('distribucion','misTareas',id)
+    setEliminandoId(id)
+    try {
+      setData({...data,misTareas:tareas.filter(t=>String(t.id)!==String(id))})
+      await eliminarFilaSheets(uid,'misTareas',id)
+      if(uid!=='distribucion') await eliminarFilaSheets('distribucion','misTareas',id)
+    } catch(e) {
+      console.error(e)
+    } finally {
+      setEliminandoId(null)
+    }
   }
 
   return (
@@ -3219,7 +3367,10 @@ function MisTareas({ data, setData, usuario }) {
           <select value={t.estado||'Pendiente'} onChange={e=>cambiarEstado(t,e.target.value)} style={{fontSize:11}}>
             {['Pendiente','En proceso','Finalizada','Cancelada'].map(s=><option key={s}>{s}</option>)}
           </select>
-          <button onClick={()=>eliminar(t.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'5px 7px'}}><Trash2 size={12}/></button>
+          <button onClick={()=>setEditando(t)} style={{...S.btn('var(--accent-soft)','var(--accent2)'),padding:'5px 7px'}}><Edit2 size={12}/></button>
+          <button disabled={eliminandoId===t.id} onClick={()=>eliminar(t.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'5px 7px'}}>
+            {eliminandoId===t.id?'…':<Trash2 size={12}/>}
+          </button>
         </div>
       ))}
 
@@ -3249,6 +3400,7 @@ function MisTareas({ data, setData, usuario }) {
       )}
 
       {cerrando&&<ModalTiempoTarea tarea={cerrando} onClose={()=>setCerrando(null)} onConfirm={confirmarFinalizacion} guardando={guardandoCierre}/>}
+      {editando&&<ModalEditarTarea tarea={editando} onClose={()=>setEditando(null)} onSave={guardarEdicion} guardando={guardandoEdicion} permiteResponsable={false} titulo="Editar mi tarea"/>}
     </div>
   )
 }
@@ -3262,6 +3414,12 @@ function TareasYProyectos({ data, setData, usuario }) {
   const [modalSubtarea, setModalSubtarea] = useState(false)
   const [guardandoProyecto, setGuardandoProyecto] = useState(false)
   const [guardandoSubtarea, setGuardandoSubtarea] = useState(false)
+  const [editProyecto, setEditProyecto] = useState(null)
+  const [editSubtarea, setEditSubtarea] = useState(null)
+  const [guardandoEdicionProyecto, setGuardandoEdicionProyecto] = useState(false)
+  const [guardandoEdicionSubtarea, setGuardandoEdicionSubtarea] = useState(false)
+  const [eliminandoProyId, setEliminandoProyId] = useState(null)
+  const [eliminandoSubId, setEliminandoSubId] = useState(null)
   const [proyPadre, setProyPadre] = useState(null)
   const [filtroEstado, setFiltroEstado] = useState('')
   const [formP, setFormP] = useState({ nombre:'', descripcion:'', responsable:'', areas:[], fechaEntrega:'', estado:'Pendiente' })
@@ -3407,6 +3565,97 @@ function TareasYProyectos({ data, setData, usuario }) {
       estado:'Pendiente'
     })
     setGuardandoSubtarea(false)
+  }
+
+  const guardarEdicionProyecto = async formEdit => {
+    if(!formEdit.nombre) return alert('El proyecto debe tener nombre.')
+    setGuardandoEdicionProyecto(true)
+    const anterior = proyectos.find(p=>String(p.id)===String(editProyecto.id))
+    const actualizado = {...anterior,...formEdit}
+    const uidAnterior = obtenerUidResponsable(anterior?.responsable)
+    const uidNuevo = obtenerUidResponsable(actualizado.responsable)
+
+    try {
+      const lista = proyectos.map(p=>String(p.id)===String(actualizado.id)?actualizado:p)
+      setData({...data,proyectos:lista})
+      if(proyectoActivo?.id===actualizado.id) setProyectoActivo(actualizado)
+
+      await eliminarFilaSheets('distribucion','proyectos',actualizado.id)
+      await insertarFilaSheets('distribucion','proyectos',actualizado)
+
+      if(uidAnterior && uidAnterior!=='distribucion' && uidAnterior!==uidNuevo) {
+        await eliminarFilaSheets(uidAnterior,'proyectos',actualizado.id)
+      }
+      if(uidNuevo && uidNuevo!=='distribucion') {
+        await eliminarFilaSheets(uidNuevo,'proyectos',actualizado.id)
+        await insertarFilaSheets(uidNuevo,'proyectos',actualizado)
+      }
+
+      if(normalizarNombreResponsable(anterior?.responsable)!==normalizarNombreResponsable(actualizado.responsable)) {
+        await enviarCorreoProyecto({proyecto:actualizado,subtarea:null,uid:uidNuevo})
+      }
+      setEditProyecto(null)
+    } catch(e) {
+      console.error(e)
+      alert('No se pudo editar el proyecto.')
+    } finally {
+      setGuardandoEdicionProyecto(false)
+    }
+  }
+
+  const guardarEdicionSubtarea = async formEdit => {
+    if(!formEdit.nombre) return alert('La subtarea debe tener nombre.')
+    setGuardandoEdicionSubtarea(true)
+    const proyecto = proyectos.find(p=>String(p.id)===String(editSubtarea.pid))
+    const anterior = proyecto?.subtareas?.find(s=>String(s.id)===String(editSubtarea.subtarea.id))
+    if(!proyecto||!anterior) {
+      setGuardandoEdicionSubtarea(false)
+      return
+    }
+
+    const actualizada = {...anterior,...formEdit}
+    const proyectoActualizado = {
+      ...proyecto,
+      subtareas:(proyecto.subtareas||[]).map(s=>String(s.id)===String(actualizada.id)?actualizada:s)
+    }
+    const uidAnterior = obtenerUidResponsable(anterior.responsable)
+    const uidNuevo = obtenerUidResponsable(actualizada.responsable)
+    const fila = {
+      id:actualizada.id,proyecto:proyecto.nombre,nombre:actualizada.nombre,
+      descripcion:actualizada.descripcion||'',responsable:actualizada.responsable||'',
+      fechaEntrega:actualizada.fechaEntrega||'',estado:actualizada.estado||'Pendiente',
+      areas:Array.isArray(actualizada.areas)?actualizada.areas.join(', '):(actualizada.areas||''),
+      creadoPor:actualizada.creadoPor||'',fechaCreacion:actualizada.fechaCreacion||''
+    }
+
+    try {
+      const lista = proyectos.map(p=>String(p.id)===String(proyecto.id)?proyectoActualizado:p)
+      setData({...data,proyectos:lista})
+      if(proyectoActivo?.id===proyecto.id) setProyectoActivo(proyectoActualizado)
+
+      await eliminarFilaSheets('distribucion','proyectos',proyecto.id)
+      await insertarFilaSheets('distribucion','proyectos',proyectoActualizado)
+      await eliminarFilaSheets('distribucion','subtareasProyectos',actualizada.id)
+      await insertarFilaSheets('distribucion','subtareasProyectos',fila)
+
+      if(uidAnterior && uidAnterior!=='distribucion' && uidAnterior!==uidNuevo) {
+        await eliminarFilaSheets(uidAnterior,'subtareasProyectos',actualizada.id)
+      }
+      if(uidNuevo && uidNuevo!=='distribucion') {
+        await eliminarFilaSheets(uidNuevo,'subtareasProyectos',actualizada.id)
+        await insertarFilaSheets(uidNuevo,'subtareasProyectos',fila)
+      }
+
+      if(normalizarNombreResponsable(anterior.responsable)!==normalizarNombreResponsable(actualizada.responsable)) {
+        await enviarCorreoProyecto({proyecto,subtarea:actualizada,uid:uidNuevo})
+      }
+      setEditSubtarea(null)
+    } catch(e) {
+      console.error(e)
+      alert('No se pudo editar la subtarea.')
+    } finally {
+      setGuardandoEdicionSubtarea(false)
+    }
   }
 
   const cambiarEstadoProy = (pid, estado) => {
@@ -3567,6 +3816,7 @@ function TareasYProyectos({ data, setData, usuario }) {
           <button onClick={()=>setVista('lista')} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'6px 12px',fontSize:12}}>← Volver</button>
           <span style={{fontWeight:700,fontSize:17,color:'var(--text)',flex:1}}>{proy.nombre}</span>
           <button onClick={()=>{setProyPadre(proy);setModalSubtarea(true)}} style={{...S.btn('var(--accent)','#fff'),fontSize:12}}>+ Subtarea</button>
+          <button onClick={()=>setEditProyecto(proy)} style={{...S.btn('var(--accent-soft)','var(--accent2)'),padding:'6px 10px'}}><Edit2 size={14}/> Editar</button>
           <button onClick={()=>eliminarProy(proy.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'6px 10px'}}><Trash2 size={14}/></button>
         </div>
         <div style={{...S.card,padding:'18px 20px',display:'flex',flexDirection:'column',gap:12}}>
@@ -3615,11 +3865,32 @@ function TareasYProyectos({ data, setData, usuario }) {
                 <select value={s.estado} onChange={e=>cambiarEstadoSub(proy.id,s.id,e.target.value)} style={{fontSize:11,padding:'3px 8px',borderRadius:6,border:'1px solid '+se.color,color:se.color,background:se.bg,fontWeight:600,cursor:'pointer'}}>
                   {Object.keys(ESTADO_PROY).map(e=><option key={e}>{e}</option>)}
                 </select>
-                <button onClick={()=>eliminarSub(proy.id,s.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'3px 7px'}}><Trash2 size={11}/></button>
+                <div style={{display:'flex',gap:5}}>
+                  <button onClick={()=>setEditSubtarea({pid:proy.id,subtarea:s})} style={{...S.btn('var(--accent-soft)','var(--accent2)'),padding:'3px 7px'}}><Edit2 size={11}/></button>
+                  <button onClick={()=>eliminarSub(proy.id,s.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'3px 7px'}}><Trash2 size={11}/></button>
+                </div>
               </div>
             </div>
           )
         })}
+        {editProyecto&&<FormProyecto
+          form={editProyecto}
+          setForm={setEditProyecto}
+          onSave={()=>guardarEdicionProyecto(editProyecto)}
+          titulo="Editar proyecto"
+          onClose={()=>{if(!guardandoEdicionProyecto)setEditProyecto(null)}}
+          guardando={guardandoEdicionProyecto}
+          textoGuardando="Guardando cambios..."
+        />}
+        {editSubtarea&&<FormProyecto
+          form={editSubtarea.subtarea}
+          setForm={f=>setEditSubtarea(prev=>({...prev,subtarea:typeof f==='function'?f(prev.subtarea):f}))}
+          onSave={()=>guardarEdicionSubtarea(editSubtarea.subtarea)}
+          titulo="Editar subtarea"
+          onClose={()=>{if(!guardandoEdicionSubtarea)setEditSubtarea(null)}}
+          guardando={guardandoEdicionSubtarea}
+          textoGuardando="Guardando cambios..."
+        />}
         {modalSubtarea&&<FormProyecto
           form={formS}
           setForm={setFormS}
@@ -3676,6 +3947,7 @@ function TareasYProyectos({ data, setData, usuario }) {
               <div style={{padding:'16px 18px'}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
                   <span style={{fontWeight:700,fontSize:14,color:'var(--text)',flex:1,marginRight:8}}>{p.nombre}</span>
+                  <button onClick={e=>{e.stopPropagation();setEditProyecto(p)}} style={{...S.btn('var(--accent-soft)','var(--accent2)'),padding:'3px 6px',marginRight:5}}><Edit2 size={11}/></button>
                   <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:5,background:est.bg,color:est.color,flexShrink:0,whiteSpace:'nowrap'}}>{p.estado}</span>
                 </div>
                 {p.descripcion&&<p style={{margin:'0 0 8px',fontSize:12,color:'var(--text2)',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{p.descripcion}</p>}
@@ -3707,6 +3979,15 @@ function TareasYProyectos({ data, setData, usuario }) {
           )
         })}
       </div>
+      {editProyecto&&<FormProyecto
+        form={editProyecto}
+        setForm={setEditProyecto}
+        onSave={()=>guardarEdicionProyecto(editProyecto)}
+        titulo="Editar proyecto"
+        onClose={()=>{if(!guardandoEdicionProyecto)setEditProyecto(null)}}
+        guardando={guardandoEdicionProyecto}
+        textoGuardando="Guardando cambios..."
+      />}
       {modalProyecto&&<FormProyecto
         form={formP}
         setForm={setFormP}
@@ -3801,6 +4082,102 @@ function LoginScreen({ onLogin }) {
 // ═══════════════════════════════════════════════════════
 // DASHBOARD CONSOLIDADO — LÍDER
 // ═══════════════════════════════════════════════════════
+
+function TareasEquipoPaola({ asignadas, personales, onRefresh }) {
+  const [tipo,setTipo] = useState('asignadas')
+  const [editando,setEditando] = useState(null)
+  const [guardando,setGuardando] = useState(false)
+  const lista = tipo==='asignadas'?asignadas:personales
+
+  const guardar = async form => {
+    if(!editando) return
+    setGuardando(true)
+    const actualizada = {...editando,...form}
+    const tipoSheet = tipo==='asignadas'?'tareasAsignadas':'misTareas'
+    try {
+      await eliminarFilaSheets('distribucion',tipoSheet,actualizada.id)
+      await insertarFilaSheets('distribucion',tipoSheet,actualizada)
+
+      const uidAnterior = obtenerUidResponsable(editando.responsable)
+      const uidNuevo = obtenerUidResponsable(actualizada.responsable)
+
+      if(uidAnterior!=='distribucion' && uidAnterior!==uidNuevo) {
+        await eliminarFilaSheets(uidAnterior,tipoSheet,actualizada.id)
+      }
+      if(uidNuevo!=='distribucion') {
+        await eliminarFilaSheets(uidNuevo,tipoSheet,actualizada.id)
+        await insertarFilaSheets(uidNuevo,tipoSheet,actualizada)
+      }
+
+      if(tipo==='asignadas' && normalizarNombreResponsable(editando.responsable)!==normalizarNombreResponsable(actualizada.responsable)) {
+        const email = obtenerCorreoResponsable(actualizada.responsable)
+        if(email) {
+          await enviarViaJsonp(SHEETS_CONFIG.distribucion.url,{
+            accion:'enviar_correo_tarea',
+            destinatario:email,copia:EMAIL_LIDER_PROY,
+            responsable:actualizada.responsable,comercial:actualizada.responsable,
+            tarea:actualizada.nombre,producto:actualizada.nombre,
+            descripcion:actualizada.descripcion||'',notas:actualizada.descripcion||'',
+            fechaLimite:actualizada.fechaLimite||'',mes:actualizada.fechaLimite||'',
+            fecha:new Date().toLocaleDateString('es-CO')
+          })
+        }
+      }
+      setEditando(null)
+      await onRefresh()
+    } catch(e) {
+      console.error(e)
+      alert('No se pudo guardar la edición.')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:14}}>
+      <div style={{display:'flex',gap:8}}>
+        <button onClick={()=>setTipo('asignadas')} style={S.btn(tipo==='asignadas'?'var(--accent)':'var(--bg3)',tipo==='asignadas'?'#fff':'var(--text2)')}>
+          Asignadas por Paola · {asignadas.length}
+        </button>
+        <button onClick={()=>setTipo('personales')} style={S.btn(tipo==='personales'?'var(--accent)':'var(--bg3)',tipo==='personales'?'#fff':'var(--text2)')}>
+          Personales del equipo · {personales.length}
+        </button>
+      </div>
+
+      <div style={S.card}>
+        <div style={{padding:12,display:'flex',flexDirection:'column',gap:8}}>
+          {lista.length===0&&<div style={{padding:30,textAlign:'center',color:'var(--text3)'}}>No hay tareas registradas.</div>}
+          {lista.map(t=>(
+            <div key={t.id} style={{background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:10,padding:'11px 14px',display:'flex',gap:12,alignItems:'center'}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:700,fontSize:13}}>{t.nombre}</div>
+                <div style={{fontSize:11,color:'var(--text3)',marginTop:4,display:'flex',gap:10,flexWrap:'wrap'}}>
+                  <span>👤 {t.responsable||'Sin responsable'}</span>
+                  {t.fechaLimite&&<span>📅 {String(t.fechaLimite).slice(0,10)}</span>}
+                  <span>{t.estado||'Pendiente'}</span>
+                  {Number(t.tiempoMinutos)>0&&<span>⏱️ {formatoTiempoTarea(t)}</span>}
+                </div>
+              </div>
+              <button onClick={()=>setEditando(t)} style={{...S.btn('var(--accent-soft)','var(--accent2)'),padding:'5px 8px'}}><Edit2 size={12}/> Editar</button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {editando&&(
+        <ModalEditarTarea
+          tarea={editando}
+          onClose={()=>setEditando(null)}
+          onSave={guardar}
+          guardando={guardando}
+          permiteResponsable={tipo==='asignadas'}
+          titulo={tipo==='asignadas'?'Editar tarea asignada':'Editar tarea personal'}
+        />
+      )}
+    </div>
+  )
+}
+
 function DashboardLider() {
   const [tabLider, setTabLider] = useState('dashboard')
   const [filtroUnidad, setFiltroUnidad] = useState('')
@@ -3810,11 +4187,12 @@ function DashboardLider() {
   const [tareasCentral, setTareasCentral] = useState({asignadas:[],personales:[]})
   const [formPend, setFormPend] = useState({nombre:'',descripcion:'',responsable:'',areas:[],fechaLimite:'',estado:'Pendiente'})
 
-  useEffect(()=>{
-    cargarDesdeSheets('distribucion').then(d=>{
-      if(d) setTareasCentral({asignadas:d.tareasAsignadas||[],personales:d.misTareas||[]})
-    })
-  },[])
+  const refrescarTareasCentral = async () => {
+    const d = await cargarDesdeSheets('distribucion')
+    if(d) setTareasCentral({asignadas:d.tareasAsignadas||[],personales:d.misTareas||[]})
+  }
+
+  useEffect(()=>{ refrescarTareasCentral() },[])
 
   const unidades = USUARIOS.filter(u=>u.rol==='normal')
   const allData = unidades.map(u=>{
@@ -3900,7 +4278,7 @@ function DashboardLider() {
         })
       }
 
-      setTareasCentral(prev=>({...prev,asignadas:[...prev.asignadas,nuevo]}))
+      await refrescarTareasCentral()
       setModalPendiente(false)
       setFormPend({nombre:'',descripcion:'',responsable:'',areas:[],fechaLimite:'',estado:'Pendiente'})
     } catch(e) {
@@ -3955,111 +4333,11 @@ function DashboardLider() {
         </select>
         {(filtroUnidad||filtroMes)&&<button onClick={()=>{setFiltroUnidad('');setFiltroMes('')}} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:12}}>✕</button>}
         {tabLider==='actividades'&&(
-          <button onClick={()=>setModalPendiente(true)} style={{...S.btn('var(--accent)','#fff'),marginLeft:'auto'}}><PlusCircle size={14}/> Nueva tarea</button>
-        )}
-      </div>
-
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',gap:12,overflow:'visible'}}>
-        <KpiCard icon={TrendingUp} label="Inversión total" value={cop(totalInv)} sub={filtroMes||'Acumulado'} accent="var(--accent2)"/>
-        <KpiCard icon={ShoppingCart} label="Venta neta" value={cop(totalVenta)} accent="var(--green)"/>
-        <KpiCard icon={BarChart2} label="% Inv/Venta" value={roiPct.toFixed(1)+'%'} accent={roiPct>15?'var(--red)':roiPct>10?'var(--yellow)':'var(--green)'}/>
-        <KpiCard icon={DollarSign} label="Presupuesto" value={cop(totalPres)} sub={totalPres>0?((totalGastos/totalPres)*100).toFixed(1)+'% ejec.':''}/>
-        <KpiCard icon={DollarSign} label="Gastado presup." value={cop(totalGastos)} accent={totalGastos>totalPres?'var(--red)':'var(--text)'}/>
-        <KpiCard icon={ListTodo} label="Actividades abiertas" value={actFiltradas.filter(a=>a.estado!=='Listo'&&a.estado!=='Cancelado').length} accent="var(--yellow)"/>
-      </div>
-
-      {tabLider==='dashboard'&&(
-        <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          <div style={{display:'grid',gridTemplateColumns:'1.4fr 1fr',gap:16}}>
-            <div style={{...S.card,padding:20}}>
-              <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:14}}>Inversión vs Venta por mes</h4>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={porMesChart} barGap={3}>
-                  <XAxis dataKey="name" tick={{fill:'var(--text3)',fontSize:11}} axisLine={false} tickLine={false}/>
-                  <YAxis tickFormatter={v=>(v/1000000).toFixed(0)+'M'} tick={{fill:'var(--text3)',fontSize:10}} axisLine={false} tickLine={false}/>
-                  <Tooltip content={<CT2/>}/>
-                  <Bar dataKey="venta" name="Venta neta" fill="var(--green)" radius={[4,4,0,0]} opacity={0.7}/>
-                  <Bar dataKey="inv" name="Inversión" fill="var(--accent)" radius={[4,4,0,0]}/>
-                  <Bar dataKey="gastos" name="Gastos presup." fill="var(--orange)" radius={[4,4,0,0]}/>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <div style={{...S.card,padding:20}}>
-              <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:14}}>Inversión por unidad</h4>
-              <ResponsiveContainer width="100%" height={200}>
-                <PieChart>
-                  <Pie data={porUnidad.filter(u=>u.inv>0)} cx="50%" cy="50%" innerRadius={45} outerRadius={75} dataKey="inv" nameKey="unidad" paddingAngle={3}>
-                    {porUnidad.filter(u=>u.inv>0).map((u,i)=><Cell key={i} fill={u.color}/>)}
-                  </Pie>
-                  <Tooltip formatter={v=>cop(v)} contentStyle={{background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:10,fontSize:11}}/>
-                  <Legend iconSize={7} iconType="circle" wrapperStyle={{fontSize:10,color:'var(--text2)'}}/>
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-          <div style={S.card}>
-            <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}><h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Resumen por unidad de negocio</h4></div>
-            <table style={{width:'100%',borderCollapse:'collapse'}}>
-              <thead><tr>{['Unidad','Inversión','Venta Neta','% Inv/Venta','Presupuesto','Gastado','% Ejec.','Pendientes'].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
-              <tbody>
-                {porUnidad.map((u,i)=>(
-                  <tr key={i} onClick={()=>setFiltroUnidad(filtroUnidad===u.id?'':u.id)} style={{cursor:'pointer',background:filtroUnidad===u.id?'rgba(108,99,255,0.06)':'transparent'}}>
-                    <td style={{...S.td,fontWeight:600}}><div style={{display:'flex',alignItems:'center',gap:8}}><div style={{width:10,height:10,borderRadius:'50%',background:u.color}}/>{u.unidad}</div></td>
-                    <td style={{...S.td,fontFamily:'var(--mono)'}}>{cop(u.inv)}</td>
-                    <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--green)'}}>{cop(u.venta)}</td>
-                    <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:600,color:u.pctInv>15?'var(--red)':u.pctInv>10?'var(--yellow)':'var(--green)'}}>{u.pctInv.toFixed(1)}%</td>
-                    <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--text2)'}}>{cop(u.pres)}</td>
-                    <td style={{...S.td,fontFamily:'var(--mono)'}}>{cop(u.gastos)}</td>
-                    <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:600,color:u.pctEjec>100?'var(--red)':u.pctEjec>80?'var(--yellow)':'var(--green)'}}>{u.pres>0?u.pctEjec.toFixed(1)+'%':'—'}</td>
-                    <td style={{...S.td,textAlign:'center'}}>{u.pendientes>0?<span style={{background:'var(--yellow-soft)',color:'var(--yellow)',padding:'2px 8px',borderRadius:6,fontSize:12,fontWeight:600}}>{u.pendientes}</span>:'—'}</td>
-                  </tr>
-                ))}
-                <tr style={{borderTop:'2px solid var(--border2)',background:'var(--bg3)'}}>
-                  <td style={{...S.td,fontWeight:700}}>TOTAL</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--accent2)'}}>{cop(totalInv)}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--green)'}}>{cop(totalVenta)}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700}}>{roiPct.toFixed(1)}%</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700}}>{cop(totalPres)}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:totalGastos>totalPres?'var(--red)':'var(--text)'}}>{cop(totalGastos)}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700}}>{totalPres>0?((totalGastos/totalPres)*100).toFixed(1)+'%':'—'}</td>
-                  <td style={S.td}/>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {tabLider==='actividades'&&(
-        <div style={S.card}>
-          <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-            <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Todas las actividades — {actFiltradas.length} registros</h4>
-            <span style={{fontSize:11,color:'var(--text3)'}}>Abiertas: {actFiltradas.filter(a=>a.estado!=='Listo'&&a.estado!=='Cancelado').length}</span>
-          </div>
-          <div style={{padding:'10px 16px',display:'flex',flexDirection:'column',gap:8,maxHeight:600,overflowY:'auto'}}>
-            {actFiltradas.length===0&&<div style={{padding:32,textAlign:'center',color:'var(--text3)'}}>No hay actividades registradas</div>}
-            {actFiltradas.map((a,i)=>(
-              <div key={i} style={{background:'var(--bg3)',borderRadius:10,padding:'12px 16px',border:'1px solid var(--border2)',display:'flex',gap:12,alignItems:'flex-start'}}>
-                <div style={{width:10,height:10,borderRadius:'50%',background:a._color,flexShrink:0,marginTop:4}}/>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{display:'flex',alignItems:'center',gap:7,flexWrap:'wrap',marginBottom:4}}>
-                    <span style={{fontWeight:500,fontSize:13,textDecoration:a.estado==='Cancelado'?'line-through':'none'}}>{a.tarea}</span>
-                    <Badge label={a.prioridad}/><Badge label={a.estado}/>
-                    {a.asignadoPor&&<span style={{fontSize:10,color:'var(--accent2)',background:'var(--accent-soft)',padding:'1px 6px',borderRadius:4}}>Líder</span>}
-                  </div>
-                  <div style={{display:'flex',gap:12,fontSize:11,color:'var(--text3)',flexWrap:'wrap'}}>
-                    <span style={{color:a._color,fontWeight:600}}>{a._unidad}</span>
-                    {a.distribuidor&&<span>{a.distribuidor}</span>}
-                    {a.categoria&&<span>{a.categoria}</span>}
-                    {a.fechaLimite&&<span>📅 {a.fechaLimite}</span>}
-                    {a.responsable&&<span>👤 {a.responsable}</span>}
-                  </div>
-                  {a.notas&&<p style={{marginTop:4,fontSize:11,color:'var(--text3)',borderLeft:'2px solid var(--border2)',paddingLeft:7}}>{a.notas}</p>}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <TareasEquipoPaola
+          asignadas={tareasCentral.asignadas}
+          personales={tareasCentral.personales}
+          onRefresh={refrescarTareasCentral}
+        />
       )}
 
       {tabLider==='tiempos'&&(
