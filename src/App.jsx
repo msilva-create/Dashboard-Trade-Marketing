@@ -4431,6 +4431,8 @@ function DashboardLider() {
   const [modalPendiente, setModalPendiente] = useState(false)
   const [guardandoPendiente, setGuardandoPendiente] = useState(false)
   const [tareasCentral, setTareasCentral] = useState({asignadas:[],personales:[]})
+  const [datosUnidadesSheets, setDatosUnidadesSheets] = useState([])
+  const [cargandoDashboard, setCargandoDashboard] = useState(true)
   const [formPend, setFormPend] = useState({nombre:'',descripcion:'',responsable:'',areas:[],fechaLimite:'',estado:'Pendiente'})
 
   const refrescarTareasCentral = async () => {
@@ -4438,12 +4440,61 @@ function DashboardLider() {
     if(d) setTareasCentral({asignadas:d.tareasAsignadas||[],personales:d.misTareas||[]})
   }
 
-  useEffect(()=>{ refrescarTareasCentral() },[])
+  const cargarDashboardDesdeSheets = async () => {
+    setCargandoDashboard(true)
 
-  const unidades = USUARIOS.filter(u=>u.rol==='normal')
-  const allData = unidades.map(u=>{
-    try { const d=localStorage.getItem(getStorageKey(u.id)); return d?{...JSON.parse(d),_id:u.id,_unidad:u.nombre,_color:u.color}:{inversiones:[],ventas:[],planes:[],presupuestos:[],pendientes:[],gastosPresupuesto:[],_id:u.id,_unidad:u.nombre,_color:u.color} } catch { return {inversiones:[],ventas:[],planes:[],presupuestos:[],pendientes:[],gastosPresupuesto:[],_id:u.id,_unidad:u.nombre,_color:u.color} }
-  })
+    const unidadesDashboard = [
+      {id:'industria', nombre:'Industria', color:'#06b6d4'},
+      {id:'distribucion', nombre:'Distribución', color:'#3dd68c'},
+      {id:'zonas', nombre:'Zonas Directas', color:'#ff9f43'},
+    ]
+
+    try {
+      const resultados = await Promise.all(
+        unidadesDashboard.map(async u => {
+          const d = await cargarDesdeSheets(u.id)
+
+          if(d) {
+            try {
+              localStorage.setItem(getStorageKey(u.id), JSON.stringify(d))
+            } catch {}
+
+            return {...d,_id:u.id,_unidad:u.nombre,_color:u.color}
+          }
+
+          try {
+            const local = localStorage.getItem(getStorageKey(u.id))
+            if(local) return {...JSON.parse(local),_id:u.id,_unidad:u.nombre,_color:u.color}
+          } catch {}
+
+          return {
+            inversiones:[],ventas:[],planes:[],presupuestos:[],
+            pendientes:[],gastosPresupuesto:[],
+            _id:u.id,_unidad:u.nombre,_color:u.color
+          }
+        })
+      )
+
+      setDatosUnidadesSheets(resultados)
+    } catch(e) {
+      console.error('Error cargando Dashboard del líder desde Sheets:', e)
+    } finally {
+      setCargandoDashboard(false)
+    }
+  }
+
+  useEffect(()=>{
+    refrescarTareasCentral()
+    cargarDashboardDesdeSheets()
+  },[])
+
+  const unidades = [
+    {id:'industria', nombre:'Industria'},
+    {id:'distribucion', nombre:'Distribución'},
+    {id:'zonas', nombre:'Zonas Directas'},
+  ]
+
+  const allData = datosUnidadesSheets
 
   const filtered = filtroUnidad ? allData.filter(d=>d._id===filtroUnidad) : allData
 
@@ -4598,6 +4649,12 @@ function DashboardLider() {
         {(filtroUnidad||filtroMes)&&<button onClick={()=>{setFiltroUnidad('');setFiltroMes('')}} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:12}}>✕</button>}
         
       </div>
+
+      {cargandoDashboard&&datosUnidadesSheets.length===0&&(
+        <div style={{...S.card,padding:'12px 16px',fontSize:12,color:'var(--text2)'}}>
+          ⏳ Cargando información de Google Sheets...
+        </div>
+      )}
 
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',gap:12,overflow:'visible'}}>
         <KpiCard icon={TrendingUp} label="Inversión total" value={cop(totalInv)} sub={filtroMes||'Acumulado'} accent="var(--accent2)"/>
