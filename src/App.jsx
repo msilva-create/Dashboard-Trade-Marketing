@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { LayoutDashboard, TrendingUp, DollarSign, ListTodo, PlusCircle, Trash2, Edit2, X, Download, BarChart2, ShoppingCart, BookOpen, Check, MessageCircle, Bot, Send, Search } from 'lucide-react'
+import { LayoutDashboard, TrendingUp, DollarSign, ListTodo, PlusCircle, Trash2, Edit2, X, Download, BarChart2, Bell, ShoppingCart, BookOpen, Check, MessageCircle, Bot, Send, Search } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts'
 import * as XLSX from 'xlsx'
 
@@ -246,9 +246,9 @@ async function cargarDesdeSheets(uid) {
       redenciones:      (d.redenciones_apoyo||[]).map(r=>fromSheetRow('redenciones',r)),
       gastosPresupuesto:(d.gastos_presupuesto||[]).map(r=>fromSheetRow('gastosPresupuesto',r)),
       pendientes:       (d.pendientes       ||[]).map(r=>fromSheetRow('pendientes',r)),
-      tareasAsignadas:  (d.tareas_asignadas ||[]).map(r=>fromSheetRow('tareasAsignadas',r)),
-      misTareas:         (d.mis_tareas ||[]).map(r=>fromSheetRow('misTareas',r)),
-      proyectos:        (d.proyectos         ||[]).map(r=>fromSheetRow('proyectos',r)),
+      tareasAsignadas:  (d.tareas_asignadas || d.TAREAS_ASIGNADAS || d.tareasAsignadas || []).map(r=>fromSheetRow('tareasAsignadas',r)),
+      misTareas:         (d.mis_tareas || d.MIS_TAREAS || d.misTareas || []).map(r=>fromSheetRow('misTareas',r)),
+      proyectos:         (d.proyectos || d.PROYECTOS || []).map(r=>fromSheetRow('proyectos',r)),
     }
   } catch(e) {
     console.error('Error cargando Sheets:', e)
@@ -4178,6 +4178,252 @@ function TareasEquipoPaola({ asignadas, personales, onRefresh }) {
   )
 }
 
+
+function AsignarTareasEquipoPaola() {
+  const [tareasCentral,setTareasCentral] = useState({asignadas:[],personales:[]})
+  const [modal,setModal] = useState(false)
+  const [guardando,setGuardando] = useState(false)
+  const [form,setForm] = useState({
+    nombre:'',
+    descripcion:'',
+    responsable:'',
+    areas:[],
+    fechaLimite:'',
+    estado:'Pendiente'
+  })
+
+  const refrescar = async () => {
+    const d = await cargarDesdeSheets('distribucion')
+    if(d) {
+      setTareasCentral({
+        asignadas:d.tareasAsignadas||[],
+        personales:d.misTareas||[],
+      })
+    }
+  }
+
+  useEffect(()=>{ refrescar() },[])
+
+  const crear = async () => {
+    if(guardando) return
+    if(!form.nombre || !form.responsable) {
+      alert('Completa el nombre y el responsable.')
+      return
+    }
+
+    setGuardando(true)
+
+    const nueva = {
+      id:Date.now(),
+      ...form,
+      asignadoPor:'Paola',
+      fechaCreacion:new Date().toLocaleString('es-CO'),
+      fechaFinalizacion:'',
+      tiempoValor:'',
+      tiempoUnidad:'',
+      tiempoMinutos:0,
+    }
+
+    const destinoUid = obtenerUidResponsable(nueva.responsable)
+
+    try {
+      // Copia central de Paola.
+      await insertarFilaSheets('distribucion','tareasAsignadas',nueva)
+
+      // Copia en el archivo del responsable.
+      if(destinoUid!=='distribucion') {
+        await insertarFilaSheets(destinoUid,'tareasAsignadas',nueva)
+      }
+
+      // Correo al responsable.
+      const email = obtenerCorreoResponsable(nueva.responsable)
+      if(email) {
+        await enviarViaJsonp(SHEETS_CONFIG.distribucion.url,{
+          accion:'enviar_correo_tarea',
+          destinatario:email,
+          copia:EMAIL_LIDER_PROY,
+          comercial:nueva.responsable,
+          responsable:nueva.responsable,
+          tarea:nueva.nombre,
+          producto:nueva.nombre,
+          notas:nueva.descripcion||'',
+          descripcion:nueva.descripcion||'',
+          fechaLimite:nueva.fechaLimite||'',
+          mes:nueva.fechaLimite||'',
+          fecha:new Date().toLocaleDateString('es-CO'),
+          areas:(nueva.areas||[]).join(', '),
+        })
+      }
+
+      await refrescar()
+      setModal(false)
+      setForm({nombre:'',descripcion:'',responsable:'',areas:[],fechaLimite:'',estado:'Pendiente'})
+    } catch(e) {
+      console.error(e)
+      alert('No se pudo guardar la tarea.')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:16}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+        <div>
+          <h2 style={{fontSize:18,margin:0}}>Asignar tareas al equipo</h2>
+          <p style={{fontSize:12,color:'var(--text3)',margin:'4px 0 0'}}>
+            Paola asigna tareas independientes y consulta el consolidado del equipo.
+          </p>
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={refrescar} style={S.btn('var(--bg3)','var(--text2)')}>↻ Actualizar</button>
+          <button onClick={()=>setModal(true)} style={S.btn('var(--accent)','#fff')}><PlusCircle size={14}/> Nueva tarea</button>
+        </div>
+      </div>
+
+      <TareasEquipoPaola
+        asignadas={tareasCentral.asignadas}
+        personales={tareasCentral.personales}
+        onRefresh={refrescar}
+      />
+
+      {modal&&(
+        <Modal title="Asignar nueva tarea" onClose={()=>!guardando&&setModal(false)} wide>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+            <Field label="Nombre *" span>
+              <input value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})}/>
+            </Field>
+            <Field label="Descripción" span>
+              <textarea rows={3} value={form.descripcion} onChange={e=>setForm({...form,descripcion:e.target.value})}/>
+            </Field>
+            <Field label="Responsable *">
+              <select value={form.responsable} onChange={e=>setForm({...form,responsable:e.target.value})}>
+                <option value="">Selecciona responsable...</option>
+                {RESPONSABLES.map(r=><option key={r}>{r}</option>)}
+              </select>
+            </Field>
+            <Field label="Fecha límite">
+              <input type="date" value={form.fechaLimite} onChange={e=>setForm({...form,fechaLimite:e.target.value})}/>
+            </Field>
+            <Field label="Estado">
+              <select value={form.estado} onChange={e=>setForm({...form,estado:e.target.value})}>
+                {['Pendiente','En proceso'].map(s=><option key={s}>{s}</option>)}
+              </select>
+            </Field>
+            <Field label="Áreas que intervienen" span>
+              <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                {AREAS.map(a=>(
+                  <label key={a} style={{
+                    fontSize:12,padding:'6px 10px',border:'1px solid var(--border2)',
+                    borderRadius:7,cursor:'pointer',
+                    background:form.areas.includes(a)?'var(--accent-soft)':'var(--bg3)'
+                  }}>
+                    <input
+                      type="checkbox"
+                      style={{display:'none'}}
+                      checked={form.areas.includes(a)}
+                      onChange={e=>setForm({
+                        ...form,
+                        areas:e.target.checked?[...form.areas,a]:form.areas.filter(x=>x!==a)
+                      })}
+                    />
+                    {a}
+                  </label>
+                ))}
+              </div>
+            </Field>
+          </div>
+
+          <div style={{display:'flex',justifyContent:'flex-end',gap:8,marginTop:20}}>
+            <button disabled={guardando} onClick={()=>setModal(false)} style={S.btn('var(--bg3)','var(--text2)')}>Cancelar</button>
+            <button disabled={guardando} onClick={crear}
+              style={S.btn(guardando?'var(--bg3)':'var(--accent)',guardando?'var(--text3)':'#fff')}>
+              {guardando?'⏳ Guardando tarea...':'Asignar tarea'}
+            </button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  )
+}
+
+function NotificacionesEquipoPaola() {
+  const [datos,setDatos] = useState({asignadas:[],personales:[]})
+  const [cargando,setCargando] = useState(true)
+
+  const refrescar = async () => {
+    setCargando(true)
+    const d = await cargarDesdeSheets('distribucion')
+    if(d) setDatos({asignadas:d.tareasAsignadas||[],personales:d.misTareas||[]})
+    setCargando(false)
+  }
+
+  useEffect(()=>{ refrescar() },[])
+
+  const movimientos = [
+    ...datos.asignadas.map(t=>({
+      id:'a-'+t.id,
+      titulo:t.estado==='Finalizada'?'Tarea finalizada':'Tarea asignada por Paola',
+      detalle:`${t.responsable||'Sin responsable'} · ${t.nombre||'Tarea'}`,
+      fecha:t.fechaFinalizacion||t.fechaCreacion||'',
+      estado:t.estado||'Pendiente',
+      finalizada:t.estado==='Finalizada'
+    })),
+    ...datos.personales.map(t=>({
+      id:'p-'+t.id,
+      titulo:t.estado==='Finalizada'?'Tarea personal finalizada':'Tarea personal creada',
+      detalle:`${t.responsable||'Equipo'} · ${t.nombre||'Tarea'}`,
+      fecha:t.fechaFinalizacion||t.fechaCreacion||'',
+      estado:t.estado||'Pendiente',
+      finalizada:t.estado==='Finalizada'
+    })),
+  ]
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:16}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div>
+          <h2 style={{fontSize:18,margin:0}}>Notificaciones</h2>
+          <p style={{fontSize:12,color:'var(--text3)',margin:'4px 0 0'}}>Movimientos registrados en las tareas del equipo.</p>
+        </div>
+        <button disabled={cargando} onClick={refrescar} style={S.btn('var(--bg3)','var(--text2)')}>
+          {cargando?'⏳ Cargando...':'↻ Actualizar'}
+        </button>
+      </div>
+
+      <div style={S.card}>
+        <div style={{padding:12,display:'flex',flexDirection:'column',gap:8}}>
+          {!cargando&&movimientos.length===0&&(
+            <div style={{padding:35,textAlign:'center',color:'var(--text3)'}}>Aún no hay movimientos registrados.</div>
+          )}
+          {movimientos.map(n=>(
+            <div key={n.id} style={{
+              display:'flex',gap:12,alignItems:'center',padding:'11px 12px',
+              border:'1px solid var(--border2)',borderRadius:10,background:'var(--bg3)'
+            }}>
+              <div style={{
+                width:34,height:34,borderRadius:10,display:'grid',placeItems:'center',
+                background:n.finalizada?'var(--green-soft)':'var(--accent-soft)',
+                color:n.finalizada?'var(--green)':'var(--accent2)',fontWeight:800
+              }}>
+                {n.finalizada?'✓':'!'}
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13,fontWeight:700}}>{n.titulo}</div>
+                <div style={{fontSize:12,color:'var(--text2)',marginTop:2}}>{n.detalle}</div>
+              </div>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontSize:11,fontWeight:700,color:n.finalizada?'var(--green)':'var(--orange)'}}>{n.estado}</div>
+                {n.fecha&&<div style={{fontSize:10,color:'var(--text3)',marginTop:3}}>{String(n.fecha)}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function DashboardLider() {
   const [tabLider, setTabLider] = useState('dashboard')
   const [filtroUnidad, setFiltroUnidad] = useState('')
@@ -4297,8 +4543,6 @@ function DashboardLider() {
 
   const TABS_L = [
     {id:'dashboard',label:'Dashboard'},
-    {id:'actividades',label:'Tareas del equipo'},
-    {id:'notificaciones',label:'Notificaciones'},
     {id:'tiempos',label:'Tiempos del equipo'},
     {id:'clientes',label:'Por Cliente'},
     {id:'presupuesto',label:'Presupuesto'}
@@ -4352,48 +4596,8 @@ function DashboardLider() {
           {MESES.map(m=><option key={m}>{m}</option>)}
         </select>
         {(filtroUnidad||filtroMes)&&<button onClick={()=>{setFiltroUnidad('');setFiltroMes('')}} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:12}}>✕</button>}
-        {tabLider==='actividades'&&<button onClick={()=>setModalPendiente(true)} style={{...S.btn('var(--accent)','#fff'),marginLeft:'auto'}}><PlusCircle size={14}/> Nueva tarea</button>}
+        
       </div>
-
-      {tabLider==='actividades'&&(
-        <TareasEquipoPaola
-          asignadas={tareasCentral.asignadas}
-          personales={tareasCentral.personales}
-          onRefresh={refrescarTareasCentral}
-        />
-      )}
-
-      {tabLider==='notificaciones'&&(
-        <div style={{display:'flex',flexDirection:'column',gap:12}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-            <div>
-              <h3 style={{fontSize:16,margin:0}}>Notificaciones del equipo</h3>
-              <p style={{fontSize:12,color:'var(--text3)',margin:'4px 0 0'}}>Aquí Paola puede ver tareas asignadas, tareas personales y cierres reportados por el equipo.</p>
-            </div>
-            <button onClick={refrescarTareasCentral} style={S.btn('var(--bg3)','var(--text2)')}>↻ Actualizar</button>
-          </div>
-          <div style={S.card}>
-            <div style={{padding:12,display:'flex',flexDirection:'column',gap:8}}>
-              {notificacionesPaola.length===0&&<div style={{padding:35,textAlign:'center',color:'var(--text3)'}}>Aún no hay movimientos del equipo.</div>}
-              {notificacionesPaola.map(n=>(
-                <div key={n.id} style={{display:'flex',gap:12,alignItems:'center',padding:'11px 12px',border:'1px solid var(--border2)',borderRadius:10,background:'var(--bg3)'}}>
-                  <div style={{width:34,height:34,borderRadius:10,display:'grid',placeItems:'center',background:n.tipo==='finalizada'?'var(--green-soft)':'var(--accent-soft)',color:n.tipo==='finalizada'?'var(--green)':'var(--accent2)',fontWeight:800}}>
-                    {n.tipo==='finalizada'?'✓':'!'}
-                  </div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:700}}>{n.titulo}</div>
-                    <div style={{fontSize:12,color:'var(--text2)',marginTop:2}}>{n.detalle}</div>
-                  </div>
-                  <div style={{textAlign:'right'}}>
-                    <div style={{fontSize:11,fontWeight:700,color:n.estado==='Finalizada'?'var(--green)':'var(--orange)'}}>{n.estado}</div>
-                    {n.fecha&&<div style={{fontSize:10,color:'var(--text3)',marginTop:3}}>{String(n.fecha)}</div>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
 
       {tabLider==='tiempos'&&(
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
@@ -4744,7 +4948,12 @@ export default function App() {
   const esPresupuesto = usuario.rol==='presupuesto'
   const esColaborador = usuario.rol==='colaborador'
 
-  const TABS_LIDER = [{id:'dashboard',label:'Dashboard Consolidado',icon:LayoutDashboard},{id:'tareasProyectos',label:'Tareas y Proyectos',icon:BookOpen}]
+  const TABS_LIDER = [
+    {id:'dashboard',label:'Dashboard Consolidado',icon:LayoutDashboard},
+    {id:'asignarTareas',label:'Asignar tareas al equipo',icon:ListTodo},
+    {id:'notificaciones',label:'Notificaciones',icon:Bell},
+    {id:'tareasProyectos',label:'Tareas y Proyectos',icon:BookOpen}
+  ]
   const TABS_PRES = [{id:'dashboard',label:'Presupuesto Consolidado',icon:DollarSign}]
   const TABS_COLAB = [
     {id:'tareasasignadas',label:'Mis Tareas',icon:ListTodo},
@@ -4815,6 +5024,8 @@ export default function App() {
         <main style={{flex:1,padding:'24px 28px',overflowY:'auto',minWidth:0}}>
         <div key={tab+usuario.id}>
           {esLider && tab==='dashboard' && <DashboardLider/>}
+          {esLider && tab==='asignarTareas' && <AsignarTareasEquipoPaola/>}
+          {esLider && tab==='notificaciones' && <NotificacionesEquipoPaola/>}
           {esLider && tab==='tareasProyectos' && <TareasYProyectos data={data} setData={setDataUser} usuario={usuario}/>}
           {esPresupuesto && <PresupuestoConsolidado/>}
           {esColaborador && (
