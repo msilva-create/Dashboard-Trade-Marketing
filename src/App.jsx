@@ -4332,7 +4332,10 @@ function DashboardLider() {
           {MESES.map(m=><option key={m}>{m}</option>)}
         </select>
         {(filtroUnidad||filtroMes)&&<button onClick={()=>{setFiltroUnidad('');setFiltroMes('')}} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:12}}>✕</button>}
-        {tabLider==='actividades'&&(
+        {tabLider==='actividades'&&<button onClick={()=>setModalPendiente(true)} style={{...S.btn('var(--accent)','#fff'),marginLeft:'auto'}}><PlusCircle size={14}/> Nueva tarea</button>}
+      </div>
+
+      {tabLider==='actividades'&&(
         <TareasEquipoPaola
           asignadas={tareasCentral.asignadas}
           personales={tareasCentral.personales}
