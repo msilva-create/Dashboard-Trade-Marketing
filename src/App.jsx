@@ -4298,6 +4298,7 @@ function DashboardLider() {
   const TABS_L = [
     {id:'dashboard',label:'Dashboard'},
     {id:'actividades',label:'Tareas del equipo'},
+    {id:'notificaciones',label:'Notificaciones'},
     {id:'tiempos',label:'Tiempos del equipo'},
     {id:'clientes',label:'Por Cliente'},
     {id:'presupuesto',label:'Presupuesto'}
@@ -4305,6 +4306,25 @@ function DashboardLider() {
 
   const tareasMedibles = [...tareasCentral.asignadas,...tareasCentral.personales]
     .filter(t=>t.estado==='Finalizada'&&Number(t.tiempoMinutos||0)>0)
+
+  const notificacionesPaola = [
+    ...tareasCentral.asignadas.map(t=>({
+      id:'a-'+t.id,
+      tipo:t.estado==='Finalizada'?'finalizada':'asignada',
+      titulo:t.estado==='Finalizada'?'Tarea finalizada':'Tarea asignada',
+      detalle:`${t.responsable||'Sin responsable'} · ${t.nombre||'Tarea'}`,
+      fecha:t.fechaFinalizacion||t.fechaCreacion||'',
+      estado:t.estado||'Pendiente'
+    })),
+    ...tareasCentral.personales.map(t=>({
+      id:'p-'+t.id,
+      tipo:t.estado==='Finalizada'?'finalizada':'personal',
+      titulo:t.estado==='Finalizada'?'Tarea personal finalizada':'Nueva tarea personal',
+      detalle:`${t.responsable||'Equipo'} · ${t.nombre||'Tarea'}`,
+      fecha:t.fechaFinalizacion||t.fechaCreacion||'',
+      estado:t.estado||'Pendiente'
+    }))
+  ].sort((a,b)=>String(b.fecha||'').localeCompare(String(a.fecha||'')))
 
   const resumenTiempos = RESPONSABLES.map(nombre=>{
     const lista = tareasMedibles.filter(t=>normalizarNombreResponsable(t.responsable)===normalizarNombreResponsable(nombre))
@@ -4341,6 +4361,38 @@ function DashboardLider() {
           personales={tareasCentral.personales}
           onRefresh={refrescarTareasCentral}
         />
+      )}
+
+      {tabLider==='notificaciones'&&(
+        <div style={{display:'flex',flexDirection:'column',gap:12}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div>
+              <h3 style={{fontSize:16,margin:0}}>Notificaciones del equipo</h3>
+              <p style={{fontSize:12,color:'var(--text3)',margin:'4px 0 0'}}>Aquí Paola puede ver tareas asignadas, tareas personales y cierres reportados por el equipo.</p>
+            </div>
+            <button onClick={refrescarTareasCentral} style={S.btn('var(--bg3)','var(--text2)')}>↻ Actualizar</button>
+          </div>
+          <div style={S.card}>
+            <div style={{padding:12,display:'flex',flexDirection:'column',gap:8}}>
+              {notificacionesPaola.length===0&&<div style={{padding:35,textAlign:'center',color:'var(--text3)'}}>Aún no hay movimientos del equipo.</div>}
+              {notificacionesPaola.map(n=>(
+                <div key={n.id} style={{display:'flex',gap:12,alignItems:'center',padding:'11px 12px',border:'1px solid var(--border2)',borderRadius:10,background:'var(--bg3)'}}>
+                  <div style={{width:34,height:34,borderRadius:10,display:'grid',placeItems:'center',background:n.tipo==='finalizada'?'var(--green-soft)':'var(--accent-soft)',color:n.tipo==='finalizada'?'var(--green)':'var(--accent2)',fontWeight:800}}>
+                    {n.tipo==='finalizada'?'✓':'!'}
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:700}}>{n.titulo}</div>
+                    <div style={{fontSize:12,color:'var(--text2)',marginTop:2}}>{n.detalle}</div>
+                  </div>
+                  <div style={{textAlign:'right'}}>
+                    <div style={{fontSize:11,fontWeight:700,color:n.estado==='Finalizada'?'var(--green)':'var(--orange)'}}>{n.estado}</div>
+                    {n.fecha&&<div style={{fontSize:10,color:'var(--text3)',marginTop:3}}>{String(n.fecha)}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
 
       {tabLider==='tiempos'&&(
