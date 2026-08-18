@@ -4015,7 +4015,7 @@ const USUARIOS = [
   { id:'presupuesto',  nombre:'Presupuesto (Juan)',  pass:'pres2026',  color:'#a78bfa', rol:'presupuesto' },
   { id:'lider',        nombre:'Líder de Mercadeo',   pass:'lider2026', color:'#f59e0b', rol:'lider' },
   { id:'diseno',       nombre:'Diseño',              pass:'dis2026x',  color:'#ec4899', rol:'normal' },
-  { id:'julian',       nombre:'Julian',              pass:'jul2026',   color:'#14b8a6', rol:'colaborador' },
+  { id:'julian',       nombre:'Comunicaciones',      pass:'jul2026',   color:'#14b8a6', rol:'colaborador' },
 ]
 const AUTH_KEY = 'prolub_auth'
 const getStorageKey = uid => 'tracker_v3_'+uid
