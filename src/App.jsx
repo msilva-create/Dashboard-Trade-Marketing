@@ -4479,8 +4479,8 @@ function NotificacionesEquipoPaola() {
   )
 }
 
-function DashboardLider() {
-  const [tabLider, setTabLider] = useState('tiempos')
+function DashboardLider({ initialTab='equipo', hideTabs=false }) {
+  const [tabLider, setTabLider] = useState(initialTab)
   const [filtroPersona, setFiltroPersona] = useState('')
   const [filtroUnidad, setFiltroUnidad] = useState('')
   const [filtroMes, setFiltroMes] = useState('')
@@ -4649,9 +4649,8 @@ function DashboardLider() {
   }
 
   const TABS_L = [
-    {id:'tiempos',label:'Dashboard de tiempos'},
-    {id:'pendientesEquipo',label:'Pendientes del equipo'},
-    {id:'dashboard',label:'Dashboard comercial'},
+    {id:'equipo',label:'Dashboard del equipo'},
+    {id:'dashboard',label:'Dashboard financiero'},
     {id:'clientes',label:'Por Cliente'},
     {id:'presupuesto',label:'Presupuesto'}
   ]
@@ -4690,29 +4689,39 @@ function DashboardLider() {
   return (
     <div style={{display:'flex',flexDirection:'column',gap:20}}>
       <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
-        <div style={{display:'flex',gap:4,background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,padding:4}}>
-          {TABS_L.map(t=>(
-            <button key={t.id} onClick={()=>setTabLider(t.id)}
-              style={{...S.btn(tabLider===t.id?'var(--accent)':'transparent',tabLider===t.id?'#fff':'var(--text2)'),padding:'6px 16px',fontSize:12,borderRadius:7}}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-        <select value={filtroUnidad} onChange={e=>setFiltroUnidad(e.target.value)} style={{width:190}}>
-          <option value="">Todas las unidades</option>
-          {unidades.map(u=><option key={u.id} value={u.id}>{u.nombre}</option>)}
-        </select>
-        <select value={filtroMes} onChange={e=>setFiltroMes(e.target.value)} style={{width:140}}>
-          <option value="">Todos los meses</option>
-          {MESES.map(m=><option key={m}>{m}</option>)}
-        </select>
-        {(tabLider==='tiempos'||tabLider==='pendientesEquipo')&&(
-          <select value={filtroPersona} onChange={e=>setFiltroPersona(e.target.value)} style={{width:170}}>
-            <option value="">Todo el equipo</option>
-            {RESPONSABLES.map(r=><option key={r}>{r}</option>)}
-          </select>
+        {!hideTabs&&(
+          <div style={{display:'flex',gap:4,background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,padding:4}}>
+            {TABS_L.map(t=>(
+              <button key={t.id} onClick={()=>setTabLider(t.id)}
+                style={{...S.btn(tabLider===t.id?'var(--accent)':'transparent',tabLider===t.id?'#fff':'var(--text2)'),padding:'6px 16px',fontSize:12,borderRadius:7}}>
+                {t.label}
+              </button>
+            ))}
+          </div>
         )}
-        {(filtroUnidad||filtroMes)&&<button onClick={()=>{setFiltroUnidad('');setFiltroMes('')}} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:12}}>✕</button>}
+        {(tabLider==='dashboard'||tabLider==='clientes'||tabLider==='presupuesto')&&(
+          <>
+            <select value={filtroUnidad} onChange={e=>setFiltroUnidad(e.target.value)} style={{width:190}}>
+              <option value="">Todas las unidades</option>
+              {unidades.map(u=><option key={u.id} value={u.id}>{u.nombre}</option>)}
+            </select>
+            <select value={filtroMes} onChange={e=>setFiltroMes(e.target.value)} style={{width:140}}>
+              <option value="">Todos los meses</option>
+              {MESES.map(m=><option key={m}>{m}</option>)}
+            </select>
+            {(filtroUnidad||filtroMes)&&<button onClick={()=>{setFiltroUnidad('');setFiltroMes('')}} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:12}}>✕</button>}
+          </>
+        )}
+        {(tabLider==='equipo'||tabLider==='tiempos'||tabLider==='pendientesEquipo')&&(
+          <>
+            <span style={{fontSize:11,color:'var(--text3)',fontWeight:600}}>Filtrar por persona:</span>
+            <select value={filtroPersona} onChange={e=>setFiltroPersona(e.target.value)} style={{width:190}}>
+              <option value="">Todo el equipo</option>
+              {RESPONSABLES.map(r=><option key={r} value={r}>{r}</option>)}
+            </select>
+            {filtroPersona&&<button onClick={()=>setFiltroPersona('')} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:12}}>✕</button>}
+          </>
+        )}
         
       </div>
 
@@ -4795,13 +4804,33 @@ function DashboardLider() {
         </div>
       )}
 
-      {tabLider==='tiempos'&&(
+      {(tabLider==='tiempos'||tabLider==='equipo')&&(
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          {tabLider==='equipo'&&(
+            <div>
+              <h2 style={{fontSize:18,margin:0}}>Tiempos y actividad del equipo</h2>
+              <p style={{fontSize:12,color:'var(--text3)',margin:'4px 0 0'}}>
+                Seguimiento de cierres, velocidad de respuesta y proyectos finalizados. Usa el filtro por persona para revisar a cada integrante.
+              </p>
+            </div>
+          )}
           <div style={{display:'grid',gridTemplateColumns:'repeat(4,minmax(0,1fr))',gap:12}}>
             <KpiCard icon={Check} label="Tareas con tiempo" value={tareasMedibles.filter(coincidePersona).length} accent="var(--green)"/>
             <KpiCard icon={BookOpen} label="Proyectos cerrados" value={proyectosFinalizados.filter(coincidePersona).length} accent="var(--accent2)"/>
-            <KpiCard icon={BarChart2} label="Horas en proyectos" value={formatoTiempoTarea({tiempoMinutos:minutosProyectos})} accent="var(--orange)"/>
-            <KpiCard icon={ListTodo} label="Prom. cierre proyecto" value={promedioDiasProyecto?promedioDiasProyecto.toFixed(1)+' días':'—'} accent="var(--yellow)"/>
+            <KpiCard
+              icon={BarChart2}
+              label="Horas en proyectos"
+              value={formatoTiempoTarea({tiempoMinutos:proyectosFinalizados.filter(coincidePersona).reduce((s,p)=>s+resumenProyecto(p).minutos,0)})}
+              accent="var(--orange)"
+            />
+            <KpiCard
+              icon={ListTodo}
+              label="Prom. cierre proyecto"
+              value={proyectosFinalizados.filter(coincidePersona).length
+                ? (proyectosFinalizados.filter(coincidePersona).reduce((s,p)=>s+resumenProyecto(p).dias,0)/proyectosFinalizados.filter(coincidePersona).length).toFixed(1)+' días'
+                :'—'}
+              accent="var(--yellow)"
+            />
           </div>
 
           <div style={S.card}>
@@ -4849,8 +4878,16 @@ function DashboardLider() {
         </div>
       )}
 
-      {tabLider==='pendientesEquipo'&&(
+      {(tabLider==='pendientesEquipo'||tabLider==='equipo')&&(
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          {tabLider==='equipo'&&(
+            <div style={{marginTop:8}}>
+              <h3 style={{fontSize:15,margin:0}}>Pendientes actuales</h3>
+              <p style={{fontSize:11,color:'var(--text3)',margin:'4px 0 0'}}>
+                Tareas asignadas, proyectos y subtareas que aún no han sido finalizados.
+              </p>
+            </div>
+          )}
           <div style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:12}}>
             <KpiCard icon={ListTodo} label="Tareas asignadas pendientes" value={pendientesAsignadasFiltradas.length} accent="var(--orange)"/>
             <KpiCard icon={BookOpen} label="Proyectos pendientes" value={proyectosPendientesFiltrados.length} accent="var(--accent2)"/>
@@ -5158,7 +5195,7 @@ function CampanaNotificaciones({usuario,data,onIr}) {
 // ═══════════════════════════════════════════════════════
 export default function App() {
   const [usuario, setUsuario] = useState(getSessionUser)
-  const [tab, setTab] = useState('dashboard')
+  const [tab, setTab] = useState(()=>getSessionUser()?.rol==='lider'?'dashboardEquipo':'dashboard')
   const [importResult, setImportResult] = useState(null)
   const [importando, setImportando] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
@@ -5240,7 +5277,7 @@ export default function App() {
   }
   const totalImp = importResult?Object.values(importResult.importados).reduce((s,n)=>s+n,0):0
 
-  if(!usuario) return <LoginScreen onLogin={u=>{setUsuario(u);setTab(u.rol==='colaborador'?'tareasasignadas':'dashboard')}}/>
+  if(!usuario) return <LoginScreen onLogin={u=>{setUsuario(u);setTab(u.rol==='colaborador'?'tareasasignadas':u.rol==='lider'?'dashboardEquipo':'dashboard')}}/>
 
   if(sheetsLoading) return (
     <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#1e1040 0%,#2d1a6e 100%)',gap:20}}>
@@ -5266,7 +5303,8 @@ export default function App() {
   const esColaborador = usuario.rol==='colaborador'
 
   const TABS_LIDER = [
-    {id:'dashboard',label:'Dashboard de tiempos',icon:BarChart2},
+    {id:'dashboardEquipo',label:'Dashboard del equipo',icon:BarChart2},
+    {id:'dashboardFinanciero',label:'Dashboard financiero',icon:LayoutDashboard},
     {id:'asignarTareas',label:'Tareas asignadas',icon:ListTodo},
     {id:'tareasProyectos',label:'Proyectos y subtareas',icon:BookOpen},
     {id:'notificaciones',label:'Notificaciones',icon:Bell}
@@ -5347,7 +5385,8 @@ export default function App() {
         {/* CONTENIDO */}
         <main style={{flex:1,padding:'24px 28px',overflowY:'auto',minWidth:0}}>
         <div key={tab+usuario.id}>
-          {esLider && tab==='dashboard' && <DashboardLider/>}
+          {esLider && tab==='dashboardEquipo' && <DashboardLider initialTab="equipo" hideTabs/>}
+          {esLider && tab==='dashboardFinanciero' && <DashboardLider initialTab="dashboard" hideTabs/>}
           {esLider && tab==='asignarTareas' && <AsignarTareasEquipoPaola/>}
           {esLider && tab==='notificaciones' && <NotificacionesEquipoPaola/>}
           {esLider && tab==='tareasProyectos' && <TareasYProyectos data={data} setData={setDataUser} usuario={usuario}/>}
