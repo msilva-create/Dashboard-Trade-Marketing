@@ -37,6 +37,11 @@ const SHEETS_CONFIG = {
     spreadsheetId: '1nEdGAcy45hMckYxOC_SRfrYEqW6ifgRv9fFoJA75YlY',
     enabled: true,
   },
+  mercadeoGeneral: {
+    url: 'https://script.google.com/macros/s/AKfycbyPJ5B8iotZRFZLD_ByUxEO8Hpyj4tihylyr2qSeRC6uVfS2egNQNDulj78v6AUpml8/exec',
+    spreadsheetId: '1jerDKOKNIpI27A7tDVfylxk2PjQaaegV81L0VdqQcKc',
+    enabled: true,
+  },
 }
 
 const EMAILS_POR_CANAL = {
@@ -4583,6 +4588,7 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
       {id:'industria', nombre:'Industria', color:'#06b6d4'},
       {id:'distribucion', nombre:'Distribución', color:'#3dd68c'},
       {id:'zonas', nombre:'Zonas Directas', color:'#ff9f43'},
+      {id:'mercadeoGeneral', nombre:'Mercadeo General', color:'#a855f7'},
     ]
 
     try {
@@ -4628,37 +4634,95 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
     {id:'industria', nombre:'Industria'},
     {id:'distribucion', nombre:'Distribución'},
     {id:'zonas', nombre:'Zonas Directas'},
+    {id:'mercadeoGeneral', nombre:'Mercadeo General'},
   ]
 
   const allData = datosUnidadesSheets
 
   const filtered = filtroUnidad ? allData.filter(d=>d._id===filtroUnidad) : allData
+  const esVistaGeneral = !filtroUnidad
+  const canalesComerciales = allData.filter(d=>['industria','distribucion','zonas'].includes(d._id))
+  const mercadeoGeneralData = allData.find(d=>d._id==='mercadeoGeneral')
 
-  const totalInv = filtered.reduce((s,d)=>s+d.inversiones.filter(i=>!filtroMes||normMes(i.mes)===normMes(filtroMes)).reduce((ss,i)=>ss+(Number(i.inversion)||0),0),0)
-  const totalVenta = filtered.reduce((s,d)=>s+d.ventas.filter(v=>!filtroMes||normMes(v.mes)===normMes(filtroMes)).reduce((ss,v)=>ss+(Number(v.ventaNeta)||0),0),0)
-  const totalGalones = filtered.reduce((s,d)=>s+d.ventas.filter(v=>!filtroMes||normMes(v.mes)===normMes(filtroMes)).reduce((ss,v)=>ss+(Number(v.galones)||0),0),0)
+  // Mercadeo General es una fuente financiera transversal.
+  // Su VENTAS representa la venta consolidada de los 3 canales y NO se suma
+  // nuevamente encima de Industria + Distribución + Zonas Directas.
+  const ventaMercadeoGeneral = (mercadeoGeneralData?.ventas||[])
+    .filter(v=>!filtroMes||normMes(v.mes)===normMes(filtroMes))
+    .reduce((s,v)=>s+(Number(v.ventaNeta)||0),0)
+  const galonesMercadeoGeneral = (mercadeoGeneralData?.ventas||[])
+    .filter(v=>!filtroMes||normMes(v.mes)===normMes(filtroMes))
+    .reduce((s,v)=>s+(Number(v.galones)||0),0)
+
+  const ventaTresCanales = canalesComerciales.reduce((s,d)=>s+(d.ventas||[])
+    .filter(v=>!filtroMes||normMes(v.mes)===normMes(filtroMes))
+    .reduce((ss,v)=>ss+(Number(v.ventaNeta)||0),0),0)
+  const galonesTresCanales = canalesComerciales.reduce((s,d)=>s+(d.ventas||[])
+    .filter(v=>!filtroMes||normMes(v.mes)===normMes(filtroMes))
+    .reduce((ss,v)=>ss+(Number(v.galones)||0),0),0)
+
+  const totalInv = filtered.reduce((s,d)=>s+(d.inversiones||[])
+    .filter(i=>!filtroMes||normMes(i.mes)===normMes(filtroMes))
+    .reduce((ss,i)=>ss+(Number(i.inversion)||0),0),0)
+
+  const totalVenta = filtroUnidad==='mercadeoGeneral'
+    ? ventaMercadeoGeneral
+    : esVistaGeneral
+      ? (ventaMercadeoGeneral>0 ? ventaMercadeoGeneral : ventaTresCanales)
+      : filtered.reduce((s,d)=>s+(d.ventas||[])
+          .filter(v=>!filtroMes||normMes(v.mes)===normMes(filtroMes))
+          .reduce((ss,v)=>ss+(Number(v.ventaNeta)||0),0),0)
+
+  const totalGalones = filtroUnidad==='mercadeoGeneral'
+    ? galonesMercadeoGeneral
+    : esVistaGeneral
+      ? (galonesMercadeoGeneral>0 ? galonesMercadeoGeneral : galonesTresCanales)
+      : filtered.reduce((s,d)=>s+(d.ventas||[])
+          .filter(v=>!filtroMes||normMes(v.mes)===normMes(filtroMes))
+          .reduce((ss,v)=>ss+(Number(v.galones)||0),0),0)
+
   const precioPromedioGalon = totalGalones>0 ? totalVenta/totalGalones : 0
-  const totalPres = filtered.reduce((s,d)=>s+d.presupuestos.filter(p=>!filtroMes||normMes(p.mes)===normMes(filtroMes)).reduce((ss,p)=>ss+(Number(p.monto)||0),0),0)
-  const totalGastos = filtered.reduce((s,d)=>s+(d.gastosPresupuesto||[]).filter(g=>!filtroMes||normMes(g.mes)===normMes(filtroMes)).reduce((ss,g)=>ss+(Number(g.valorFactura)||0),0),0)
+  const totalPres = filtered.reduce((s,d)=>s+(d.presupuestos||[])
+    .filter(p=>!filtroMes||normMes(p.mes)===normMes(filtroMes))
+    .reduce((ss,p)=>ss+(Number(p.monto)||0),0),0)
+  const totalGastos = filtered.reduce((s,d)=>s+(d.gastosPresupuesto||[])
+    .filter(g=>!filtroMes||normMes(g.mes)===normMes(filtroMes))
+    .reduce((ss,g)=>ss+(Number(g.valorFactura)||0),0),0)
+  const disponiblePresupuesto = totalPres-totalGastos
   const roiPct = totalVenta>0?(totalInv/totalVenta)*100:0
 
   const porUnidad = filtered.map(d=>{
-    const inv=d.inversiones.filter(i=>!filtroMes||normMes(i.mes)===normMes(filtroMes)).reduce((s,i)=>s+(Number(i.inversion)||0),0)
-    const venta=d.ventas.filter(v=>!filtroMes||normMes(v.mes)===normMes(filtroMes)).reduce((s,v)=>s+(Number(v.ventaNeta)||0),0)
-    const pres=d.presupuestos.filter(p=>!filtroMes||normMes(p.mes)===normMes(filtroMes)).reduce((s,p)=>s+(Number(p.monto)||0),0)
+    const inv=(d.inversiones||[]).filter(i=>!filtroMes||normMes(i.mes)===normMes(filtroMes)).reduce((s,i)=>s+(Number(i.inversion)||0),0)
+    const venta=(d.ventas||[]).filter(v=>!filtroMes||normMes(v.mes)===normMes(filtroMes)).reduce((s,v)=>s+(Number(v.ventaNeta)||0),0)
+    const pres=(d.presupuestos||[]).filter(p=>!filtroMes||normMes(p.mes)===normMes(filtroMes)).reduce((s,p)=>s+(Number(p.monto)||0),0)
     const gastos=(d.gastosPresupuesto||[]).filter(g=>!filtroMes||normMes(g.mes)===normMes(filtroMes)).reduce((s,g)=>s+(Number(g.valorFactura)||0),0)
-    return {unidad:d._unidad,color:d._color,id:d._id,inv,venta,pres,gastos,pctInv:venta>0?(inv/venta)*100:0,pctEjec:pres>0?(gastos/pres)*100:0,pendientes:d.pendientes.filter(p=>p.estado!=='Listo'&&p.estado!=='Cancelado').length}
+    return {
+      unidad:d._unidad,color:d._color,id:d._id,inv,venta,pres,gastos,
+      pctInv:venta>0?(inv/venta)*100:0,
+      pctEjec:pres>0?(gastos/pres)*100:0,
+      pendientes:d._id==='mercadeoGeneral' ? 0 : (d.pendientes||[]).filter(p=>p.estado!=='Listo'&&p.estado!=='Cancelado').length
+    }
   })
 
-  const porMesChart = MESES.map(m=>({
-    name:m.slice(0,3),
-    inv: filtered.reduce((s,d)=>s+d.inversiones.filter(i=>normMes(i.mes)===m).reduce((ss,i)=>ss+(Number(i.inversion)||0),0),0),
-    venta: filtered.reduce((s,d)=>s+d.ventas.filter(v=>normMes(v.mes)===m).reduce((ss,v)=>ss+(Number(v.ventaNeta)||0),0),0),
-    gastos: filtered.reduce((s,d)=>s+(d.gastosPresupuesto||[]).filter(g=>normMes(g.mes)===m).reduce((ss,g)=>ss+(Number(g.valorFactura)||0),0),0),
-  })).filter(m=>m.inv>0||m.venta>0||m.gastos>0)
+  const porMesChart = MESES.map(m=>{
+    const inv = filtered.reduce((s,d)=>s+(d.inversiones||[]).filter(i=>normMes(i.mes)===m).reduce((ss,i)=>ss+(Number(i.inversion)||0),0),0)
+    const ventaMG = (mercadeoGeneralData?.ventas||[]).filter(v=>normMes(v.mes)===m).reduce((ss,v)=>ss+(Number(v.ventaNeta)||0),0)
+    const ventaCanales = canalesComerciales.reduce((s,d)=>s+(d.ventas||[]).filter(v=>normMes(v.mes)===m).reduce((ss,v)=>ss+(Number(v.ventaNeta)||0),0),0)
+    const venta = filtroUnidad==='mercadeoGeneral'
+      ? ventaMG
+      : esVistaGeneral
+        ? (ventaMG>0 ? ventaMG : ventaCanales)
+        : filtered.reduce((s,d)=>s+(d.ventas||[]).filter(v=>normMes(v.mes)===m).reduce((ss,v)=>ss+(Number(v.ventaNeta)||0),0),0)
+    const gastos = filtered.reduce((s,d)=>s+(d.gastosPresupuesto||[]).filter(g=>normMes(g.mes)===m).reduce((ss,g)=>ss+(Number(g.valorFactura)||0),0),0)
+    const presupuesto = filtered.reduce((s,d)=>s+(d.presupuestos||[]).filter(p=>normMes(p.mes)===m).reduce((ss,p)=>ss+(Number(p.monto)||0),0),0)
+    return {name:m.slice(0,3),inv,venta,gastos,presupuesto}
+  }).filter(m=>m.inv>0||m.venta>0||m.gastos>0||m.presupuesto>0)
+
+  const inversionPorUnidad = porUnidad.filter(u=>u.inv>0)
+  const totalInvVista = inversionPorUnidad.reduce((s,u)=>s+u.inv,0)
 
   const clientesMap = {}
-  filtered.forEach(d=>{
+  filtered.filter(d=>d._id!=='mercadeoGeneral').forEach(d=>{
     d.inversiones.filter(i=>!filtroMes||normMes(i.mes)===normMes(filtroMes)).forEach(i=>{
       const k = i.distribuidor; if(!k) return
       if(!clientesMap[k]) clientesMap[k]={nombre:k,inv:0,venta:0,unidad:d._unidad,color:d._color}
@@ -4859,18 +4923,19 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
       {tabLider==='dashboard'&&(
         <div style={{display:'flex',flexDirection:'column',gap:14}}>
           <div>
-            <h2 style={{fontSize:18,margin:0}}>Dashboard financiero</h2>
+            <h2 style={{fontSize:20,margin:0}}>Dashboard financiero de Mercadeo</h2>
             <p style={{fontSize:12,color:'var(--text3)',margin:'4px 0 0'}}>
-              Inversión, ventas, galones, presupuesto, ejecución y precio promedio por galón.
+              Vista gerencial de inversión, venta consolidada, presupuesto y ejecución. Mercadeo General se integra sin duplicar la venta de los tres canales.
             </p>
           </div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',gap:12,overflow:'visible'}}>
-          <KpiCard icon={TrendingUp} label="Inversión total" value={cop(totalInv)} sub={filtroMes||'Acumulado'} accent="var(--accent2)"/>
-          <KpiCard icon={ShoppingCart} label="Venta neta" value={cop(totalVenta)} accent="var(--green)"/>
-          <KpiCard icon={BarChart2} label="% Inv/Venta" value={roiPct.toFixed(1)+'%'} accent={roiPct>15?'var(--red)':roiPct>10?'var(--yellow)':'var(--green)'}/>
-          <KpiCard icon={DollarSign} label="Presupuesto" value={cop(totalPres)} sub={totalPres>0?((totalGastos/totalPres)*100).toFixed(1)+'% ejec.':''}/>
-          <KpiCard icon={DollarSign} label="Gastado presup." value={cop(totalGastos)} accent={totalGastos>totalPres?'var(--red)':'var(--text)'}/>
-          <KpiCard icon={ShoppingCart} label="Galones vendidos" value={num(totalGalones)} accent="var(--accent2)"/>
+          <KpiCard icon={ShoppingCart} label={esVistaGeneral?'Venta consolidada':'Venta neta'} value={cop(totalVenta)} sub={esVistaGeneral?(ventaMercadeoGeneral>0?'Referencia cargada en Mercadeo General':'Suma automática de los 3 canales'):(filtroUnidad==='mercadeoGeneral'?'Venta consolidada de referencia':'Unidad seleccionada')} accent="var(--green)"/>
+          <KpiCard icon={TrendingUp} label="Inversión total Mercadeo" value={cop(totalInv)} sub={filtroMes||'Acumulado'} accent="var(--accent2)"/>
+          <KpiCard icon={BarChart2} label="% Mercadeo / Venta" value={roiPct.toFixed(1)+'%'} sub="Peso de la inversión sobre la venta" accent={roiPct>15?'var(--red)':roiPct>10?'var(--yellow)':'var(--green)'}/>
+          <KpiCard icon={DollarSign} label="Presupuesto" value={cop(totalPres)} sub={totalPres>0?((totalGastos/totalPres)*100).toFixed(1)+'% ejecutado':'Sin presupuesto'}/>
+          <KpiCard icon={DollarSign} label="Gastado" value={cop(totalGastos)} accent={totalGastos>totalPres&&totalPres>0?'var(--red)':'var(--text)'}/>
+          <KpiCard icon={DollarSign} label="Disponible" value={cop(disponiblePresupuesto)} sub={disponiblePresupuesto<0?'Presupuesto excedido':'Saldo por ejecutar'} accent={disponiblePresupuesto<0?'var(--red)':'var(--green)'}/>
+          <KpiCard icon={ShoppingCart} label="Galones consolidados" value={num(totalGalones)} accent="var(--accent2)"/>
           <KpiCard icon={DollarSign} label="Precio prom./galón" value={precioPromedioGalon?cop(precioPromedioGalon):'—'} accent="var(--green)"/>
           </div>
         </div>
@@ -4880,7 +4945,7 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
           <div style={{display:'grid',gridTemplateColumns:'1.4fr 1fr',gap:16}}>
             <div style={{...S.card,padding:20}}>
-              <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:14}}>Inversión vs Venta por mes</h4>
+              <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:14}}>Venta consolidada vs inversión y presupuesto por mes</h4>
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={porMesChart} barGap={3}>
                   <XAxis dataKey="name" tick={{fill:'var(--text3)',fontSize:11}} axisLine={false} tickLine={false}/>
@@ -4889,11 +4954,12 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
                   <Bar dataKey="venta" name="Venta neta" fill="var(--green)" radius={[4,4,0,0]} opacity={0.7}/>
                   <Bar dataKey="inv" name="Inversión" fill="var(--accent)" radius={[4,4,0,0]}/>
                   <Bar dataKey="gastos" name="Gastos presup." fill="var(--orange)" radius={[4,4,0,0]}/>
+                  <Bar dataKey="presupuesto" name="Presupuesto" fill="var(--bg4)" radius={[4,4,0,0]}/>
                 </BarChart>
               </ResponsiveContainer>
             </div>
             <div style={{...S.card,padding:20}}>
-              <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:14}}>Inversión por unidad</h4>
+              <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:14}}>¿Dónde estamos invirtiendo?</h4>
               <ResponsiveContainer width="100%" height={200}>
                 <PieChart>
                   <Pie data={porUnidad.filter(u=>u.inv>0)} cx="50%" cy="50%" innerRadius={45} outerRadius={75} dataKey="inv" nameKey="unidad" paddingAngle={3}>
@@ -4905,6 +4971,25 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
               </ResponsiveContainer>
             </div>
           </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:12}}>
+            {inversionPorUnidad.map(u=>(
+              <div key={u.id} onClick={()=>setFiltroUnidad(filtroUnidad===u.id?'':u.id)}
+                style={{...S.card,padding:16,cursor:'pointer',borderTop:'4px solid '+u.color,background:filtroUnidad===u.id?'rgba(108,99,255,0.06)':'var(--bg2)'}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}>
+                  <div style={{fontSize:12,fontWeight:700}}>{u.unidad}</div>
+                  <div style={{width:9,height:9,borderRadius:'50%',background:u.color}}/>
+                </div>
+                <div style={{fontSize:20,fontWeight:800,fontFamily:'var(--mono)',marginTop:8}}>{cop(u.inv)}</div>
+                <div style={{fontSize:11,color:'var(--text3)',marginTop:4}}>
+                  {totalInvVista>0?((u.inv/totalInvVista)*100).toFixed(1):0}% de la inversión total
+                </div>
+                <div style={{height:5,background:'var(--bg4)',borderRadius:4,marginTop:9,overflow:'hidden'}}>
+                  <div style={{height:'100%',width:(totalInvVista>0?Math.min((u.inv/totalInvVista)*100,100):0)+'%',background:u.color,borderRadius:4}}/>
+                </div>
+              </div>
+            ))}
+          </div>
+
           <div style={S.card}>
             <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}><h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Resumen por unidad de negocio</h4></div>
             <table style={{width:'100%',borderCollapse:'collapse'}}>
@@ -4914,8 +4999,8 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
                   <tr key={i} onClick={()=>setFiltroUnidad(filtroUnidad===u.id?'':u.id)} style={{cursor:'pointer',background:filtroUnidad===u.id?'rgba(108,99,255,0.06)':'transparent'}}>
                     <td style={{...S.td,fontWeight:600}}><div style={{display:'flex',alignItems:'center',gap:8}}><div style={{width:10,height:10,borderRadius:'50%',background:u.color}}/>{u.unidad}</div></td>
                     <td style={{...S.td,fontFamily:'var(--mono)'}}>{cop(u.inv)}</td>
-                    <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--green)'}}>{cop(u.venta)}</td>
-                    <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:600,color:u.pctInv>15?'var(--red)':u.pctInv>10?'var(--yellow)':'var(--green)'}}>{u.pctInv.toFixed(1)}%</td>
+                    <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--green)'}}>{u.id==='mercadeoGeneral'?(u.venta>0?cop(u.venta)+' *':'—'):cop(u.venta)}</td>
+                    <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:600,color:u.pctInv>15?'var(--red)':u.pctInv>10?'var(--yellow)':'var(--green)'}}>{u.venta>0?u.pctInv.toFixed(1)+'%':'—'}</td>
                     <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--text2)'}}>{cop(u.pres)}</td>
                     <td style={{...S.td,fontFamily:'var(--mono)'}}>{cop(u.gastos)}</td>
                     <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:600,color:u.pctEjec>100?'var(--red)':u.pctEjec>80?'var(--yellow)':'var(--green)'}}>{u.pres>0?u.pctEjec.toFixed(1)+'%':'—'}</td>
@@ -4934,6 +5019,11 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
                 </tr>
               </tbody>
             </table>
+            {porUnidad.some(u=>u.id==='mercadeoGeneral'&&u.venta>0)&&(
+              <div style={{padding:'9px 18px',fontSize:10,color:'var(--text3)',borderTop:'1px solid var(--border)'}}>
+                * La venta de Mercadeo General es una referencia consolidada de Industria + Distribución + Zonas Directas. En el total general se usa una sola vez para evitar duplicidades.
+              </div>
+            )}
           </div>
         </div>
       )}
