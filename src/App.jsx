@@ -4556,6 +4556,8 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
 
   const totalInv = filtered.reduce((s,d)=>s+d.inversiones.filter(i=>!filtroMes||normMes(i.mes)===normMes(filtroMes)).reduce((ss,i)=>ss+(Number(i.inversion)||0),0),0)
   const totalVenta = filtered.reduce((s,d)=>s+d.ventas.filter(v=>!filtroMes||normMes(v.mes)===normMes(filtroMes)).reduce((ss,v)=>ss+(Number(v.ventaNeta)||0),0),0)
+  const totalGalones = filtered.reduce((s,d)=>s+d.ventas.filter(v=>!filtroMes||normMes(v.mes)===normMes(filtroMes)).reduce((ss,v)=>ss+(Number(v.galones)||0),0),0)
+  const precioPromedioGalon = totalGalones>0 ? totalVenta/totalGalones : 0
   const totalPres = filtered.reduce((s,d)=>s+d.presupuestos.filter(p=>!filtroMes||normMes(p.mes)===normMes(filtroMes)).reduce((ss,p)=>ss+(Number(p.monto)||0),0),0)
   const totalGastos = filtered.reduce((s,d)=>s+(d.gastosPresupuesto||[]).filter(g=>!filtroMes||normMes(g.mes)===normMes(filtroMes)).reduce((ss,g)=>ss+(Number(g.valorFactura)||0),0),0)
   const roiPct = totalVenta>0?(totalInv/totalVenta)*100:0
@@ -4649,10 +4651,8 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
   }
 
   const TABS_L = [
-    {id:'equipo',label:'Dashboard del equipo'},
-    {id:'dashboard',label:'Dashboard financiero'},
-    {id:'clientes',label:'Por Cliente'},
-    {id:'presupuesto',label:'Presupuesto'}
+    {id:'equipo',label:'Dashboard de tiempos'},
+    {id:'dashboard',label:'Dashboard financiero'}
   ]
 
   const subtareasCentral = (tareasCentral.proyectos||[]).flatMap(p=>(p.subtareas||[]).map(s=>({...s,proyectoNombre:p.nombre,proyectoId:p.id})))
@@ -4725,20 +4725,29 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
         
       </div>
 
-      {cargandoDashboard&&datosUnidadesSheets.length===0&&(
+      {(tabLider==='dashboard'||tabLider==='clientes'||tabLider==='presupuesto')&&cargandoDashboard&&datosUnidadesSheets.length===0&&(
         <div style={{...S.card,padding:'12px 16px',fontSize:12,color:'var(--text2)'}}>
-          ⏳ Cargando información de Google Sheets...
+          ⏳ Cargando información financiera de Google Sheets...
         </div>
       )}
 
       {tabLider==='dashboard'&&(
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',gap:12,overflow:'visible'}}>
+        <div style={{display:'flex',flexDirection:'column',gap:14}}>
+          <div>
+            <h2 style={{fontSize:18,margin:0}}>Dashboard financiero</h2>
+            <p style={{fontSize:12,color:'var(--text3)',margin:'4px 0 0'}}>
+              Inversión, ventas, galones, presupuesto, ejecución y precio promedio por galón.
+            </p>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',gap:12,overflow:'visible'}}>
           <KpiCard icon={TrendingUp} label="Inversión total" value={cop(totalInv)} sub={filtroMes||'Acumulado'} accent="var(--accent2)"/>
           <KpiCard icon={ShoppingCart} label="Venta neta" value={cop(totalVenta)} accent="var(--green)"/>
           <KpiCard icon={BarChart2} label="% Inv/Venta" value={roiPct.toFixed(1)+'%'} accent={roiPct>15?'var(--red)':roiPct>10?'var(--yellow)':'var(--green)'}/>
           <KpiCard icon={DollarSign} label="Presupuesto" value={cop(totalPres)} sub={totalPres>0?((totalGastos/totalPres)*100).toFixed(1)+'% ejec.':''}/>
           <KpiCard icon={DollarSign} label="Gastado presup." value={cop(totalGastos)} accent={totalGastos>totalPres?'var(--red)':'var(--text)'}/>
-          <KpiCard icon={ListTodo} label="Actividades abiertas" value={actFiltradas.filter(a=>a.estado!=='Listo'&&a.estado!=='Cancelado').length} accent="var(--yellow)"/>
+          <KpiCard icon={ShoppingCart} label="Galones vendidos" value={num(totalGalones)} accent="var(--accent2)"/>
+          <KpiCard icon={DollarSign} label="Precio prom./galón" value={precioPromedioGalon?cop(precioPromedioGalon):'—'} accent="var(--green)"/>
+          </div>
         </div>
       )}
 
@@ -4808,9 +4817,9 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
           {tabLider==='equipo'&&(
             <div>
-              <h2 style={{fontSize:18,margin:0}}>Tiempos y actividad del equipo</h2>
+              <h2 style={{fontSize:18,margin:0}}>Dashboard de tiempos del equipo</h2>
               <p style={{fontSize:12,color:'var(--text3)',margin:'4px 0 0'}}>
-                Seguimiento de cierres, velocidad de respuesta y proyectos finalizados. Usa el filtro por persona para revisar a cada integrante.
+                Tiempos de respuesta, tareas cerradas, proyectos, subtareas y pendientes. Filtra por persona para revisar a cada integrante.
               </p>
             </div>
           )}
@@ -5195,7 +5204,7 @@ function CampanaNotificaciones({usuario,data,onIr}) {
 // ═══════════════════════════════════════════════════════
 export default function App() {
   const [usuario, setUsuario] = useState(getSessionUser)
-  const [tab, setTab] = useState(()=>getSessionUser()?.rol==='lider'?'dashboardEquipo':'dashboard')
+  const [tab, setTab] = useState(()=>getSessionUser()?.rol==='lider'?'dashboardFinanciero':'dashboard')
   const [importResult, setImportResult] = useState(null)
   const [importando, setImportando] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
@@ -5277,7 +5286,7 @@ export default function App() {
   }
   const totalImp = importResult?Object.values(importResult.importados).reduce((s,n)=>s+n,0):0
 
-  if(!usuario) return <LoginScreen onLogin={u=>{setUsuario(u);setTab(u.rol==='colaborador'?'tareasasignadas':u.rol==='lider'?'dashboardEquipo':'dashboard')}}/>
+  if(!usuario) return <LoginScreen onLogin={u=>{setUsuario(u);setTab(u.rol==='colaborador'?'tareasasignadas':u.rol==='lider'?'dashboardFinanciero':'dashboard')}}/>
 
   if(sheetsLoading) return (
     <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#1e1040 0%,#2d1a6e 100%)',gap:20}}>
@@ -5303,8 +5312,8 @@ export default function App() {
   const esColaborador = usuario.rol==='colaborador'
 
   const TABS_LIDER = [
-    {id:'dashboardEquipo',label:'Dashboard del equipo',icon:BarChart2},
     {id:'dashboardFinanciero',label:'Dashboard financiero',icon:LayoutDashboard},
+    {id:'dashboardEquipo',label:'Dashboard de tiempos',icon:BarChart2},
     {id:'asignarTareas',label:'Tareas asignadas',icon:ListTodo},
     {id:'tareasProyectos',label:'Proyectos y subtareas',icon:BookOpen},
     {id:'notificaciones',label:'Notificaciones',icon:Bell}
