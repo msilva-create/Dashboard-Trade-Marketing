@@ -2558,7 +2558,7 @@ function parsearExcel(file, data, setData, onDone) {
 // ASISTENTE IA
 // ═══════════════════════════════════════════════════════
 function Asistente({ data, setData, onClose }) {
-  const [msgs, setMsgs] = useState([{ role:'assistant', content:'¡Hola! Soy tu asistente. Puedo crear pendientes, registrar inversiones, consultar datos y más. ¿En qué te ayudo?' }])
+  const [msgs, setMsgs] = useState([{ role:'assistant', content:'¡Hola! Soy Proli 🤖, tu asistente de Marketing. Puedo ayudarte a revisar datos, inversión, ventas, pendientes y proyectos. ¿Qué quieres revisar hoy?' }])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef(null)
@@ -2602,7 +2602,7 @@ function Asistente({ data, setData, onClose }) {
     const newMsgs=[...msgs,{role:'user',content:userMsg}]
     setMsgs(newMsgs); setLoading(true)
     try {
-      const sys=`Eres un asistente de Trade Marketing para Prolub. Datos actuales: ${resumen()}
+      const sys=`Eres Proli, el asistente de Prolub Marketing Intelligence. Ayudas al equipo de Marketing a entender datos, inversión, ventas, tareas, proyectos y oportunidades. Datos actuales: ${resumen()}
 
 Cuando el usuario pida crear algo, responde normalmente Y agrega al final:
 ACCION:{"tipo":"crear_pendiente","distribuidor":"...","tarea":"...","prioridad":"Alta|Media|Baja","fechaLimite":"YYYY-MM-DD","categoria":"","responsable":"","notas":""}
@@ -2629,26 +2629,31 @@ Responde en español, conciso y útil.`
     setLoading(false)
   }
 
-  const ejemplos=['¿Cuánto invertimos en total?','Crea un pendiente para LUBRICAFE de revisar meta Q2 prioridad alta','¿Qué distribuidor tiene más inversión?','Registra presupuesto 15 millones Junio 2026']
+  const ejemplos=['Dame un resumen de mis datos','¿Dónde estamos invirtiendo más?','¿Qué pendientes tengo abiertos?','Dame un insight de Marketing']
 
   return (
     <div style={{position:'fixed',bottom:90,right:24,width:380,height:520,background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:16,display:'flex',flexDirection:'column',zIndex:300,boxShadow:'0 16px 48px rgba(0,0,0,0.5)'}}>
       <div style={{padding:'14px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',background:'var(--bg3)',borderRadius:'16px 16px 0 0'}}>
-        <div style={{display:'flex',alignItems:'center',gap:9}}>
-          <div style={{width:28,height:28,borderRadius:8,background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center'}}><Bot size={15} color="#fff"/></div>
-          <div><div style={{fontWeight:600,fontSize:13}}>Asistente Prolub</div><div style={{fontSize:10,color:'var(--green)'}}>● En línea</div></div>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <div style={{width:34,height:34,borderRadius:10,overflow:'hidden',background:'#fff',boxShadow:'0 2px 8px rgba(108,63,196,.25)'}}>
+            <img src="/pwa-512x512.png" alt="Proli" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+          </div>
+          <div>
+            <div style={{fontWeight:800,fontSize:13}}>Proli 🤖</div>
+            <div style={{fontSize:10,color:'var(--text3)'}}>Tu asistente de Marketing · <span style={{color:'var(--green)'}}>● En línea</span></div>
+          </div>
         </div>
         <button onClick={onClose} style={{background:'none',border:'none',color:'var(--text3)',cursor:'pointer',display:'flex'}}><X size={16}/></button>
       </div>
       <div style={{flex:1,overflowY:'auto',padding:'14px 16px',display:'flex',flexDirection:'column',gap:10}}>
         {msgs.map((m,i)=>(
           <div key={i} style={{display:'flex',gap:8,flexDirection:m.role==='user'?'row-reverse':'row',alignItems:'flex-end'}}>
-            {m.role==='assistant'&&<div style={{width:26,height:26,borderRadius:7,background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Bot size={13} color="#fff"/></div>}
+            {m.role==='assistant'&&<div style={{width:28,height:28,borderRadius:8,overflow:'hidden',background:'#fff',flexShrink:0}}><img src="/pwa-512x512.png" alt="Proli" style={{width:'100%',height:'100%',objectFit:'cover'}}/></div>}
             <div style={{maxWidth:'80%',padding:'9px 13px',borderRadius:m.role==='user'?'12px 12px 2px 12px':'12px 12px 12px 2px',background:m.role==='user'?'var(--accent)':'var(--bg3)',color:m.role==='user'?'#fff':'var(--text)',fontSize:13,lineHeight:1.5,whiteSpace:'pre-wrap'}}>{m.content}</div>
           </div>
         ))}
         {loading&&<div style={{display:'flex',gap:8,alignItems:'flex-end'}}>
-          <div style={{width:26,height:26,borderRadius:7,background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center'}}><Bot size={13} color="#fff"/></div>
+          <div style={{width:28,height:28,borderRadius:8,overflow:'hidden',background:'#fff'}}><img src="/pwa-512x512.png" alt="Proli" style={{width:'100%',height:'100%',objectFit:'cover'}}/></div>
           <div style={{padding:'9px 14px',borderRadius:'12px 12px 12px 2px',background:'var(--bg3)',fontSize:13,color:'var(--text3)'}}>Pensando...</div>
         </div>}
         <div ref={bottomRef}/>
@@ -2661,7 +2666,7 @@ Responde en español, conciso y útil.`
         </div>
       )}
       <div style={{padding:'10px 12px',borderTop:'1px solid var(--border)',display:'flex',gap:8}}>
-        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&enviar()} placeholder="Escribe o pregunta algo..." style={{flex:1,fontSize:13,padding:'8px 12px'}} disabled={loading}/>
+        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&enviar()} placeholder="Pregúntale a Proli..." style={{flex:1,fontSize:13,padding:'8px 12px'}} disabled={loading}/>
         <button onClick={enviar} disabled={loading||!input.trim()} style={{background:'var(--accent)',color:'#fff',border:'none',borderRadius:8,padding:'8px 12px',cursor:'pointer',display:'flex',alignItems:'center',opacity:loading||!input.trim()?0.5:1}}><Send size={14}/></button>
       </div>
     </div>
@@ -4207,11 +4212,12 @@ function LoginScreen({ onLogin }) {
     <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#1e1040 0%,#2d1a6e 50%,#1e1040 100%)',padding:20}}>
       <div style={{width:'100%',maxWidth:420}}>
         <div style={{textAlign:'center',marginBottom:32}}>
-          <div style={{width:52,height:52,borderRadius:14,background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px'}}>
-            <BarChart2 size={26} color="#fff"/>
+          <div style={{width:74,height:74,borderRadius:20,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 14px',boxShadow:'0 10px 30px rgba(168,85,247,.28)',background:'#fff'}}>
+            <img src="/pwa-512x512.png" alt="PROLI" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
           </div>
-          <h1 style={{fontSize:22,fontWeight:700,letterSpacing:'-0.02em',marginBottom:6}}>Prolub Trade Marketing</h1>
-          <p style={{fontSize:13,color:'var(--text3)'}}>Selecciona tu unidad y accede</p>
+          <h1 style={{fontSize:28,fontWeight:900,letterSpacing:'-0.04em',marginBottom:2,color:'#fff'}}>PROLI</h1>
+          <div style={{fontSize:12,fontWeight:700,color:'#c4b5fd',letterSpacing:'.02em',marginBottom:5}}>Prolub Marketing Intelligence</div>
+          <p style={{fontSize:13,color:'rgba(255,255,255,.62)',margin:0}}>Toda la información. Decisiones que impulsan.</p>
         </div>
         <div style={{background:'rgba(255,255,255,0.97)',border:'1px solid rgba(255,255,255,0.2)',borderRadius:20,padding:32,display:'flex',flexDirection:'column',gap:16,boxShadow:'0 24px 64px rgba(0,0,0,0.4)'}}>
           <div>
@@ -5744,11 +5750,12 @@ export default function App() {
 
   if(sheetsLoading) return (
     <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#1e1040 0%,#2d1a6e 100%)',gap:20}}>
-      <div style={{width:56,height:56,borderRadius:14,background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 8px 32px rgba(91,82,240,0.3)'}}>
-        <BarChart2 size={28} color="#fff"/>
+      <div style={{width:64,height:64,borderRadius:18,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 8px 32px rgba(91,82,240,0.3)',background:'#fff'}}>
+        <img src="/pwa-512x512.png" alt="PROLI" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
       </div>
       <div style={{textAlign:'center'}}>
-        <div style={{fontWeight:800,fontSize:20,color:'#fff',marginBottom:6,letterSpacing:'-0.01em'}}>Prolub Trade Marketing</div>
+        <div style={{fontWeight:900,fontSize:22,color:'#fff',marginBottom:2,letterSpacing:'-0.02em'}}>PROLI</div>
+        <div style={{fontSize:11,fontWeight:700,color:'#c4b5fd',marginBottom:6}}>Prolub Marketing Intelligence</div>
         <div style={{fontSize:13,color:'rgba(255,255,255,0.6)'}}>Sincronizando datos de <strong style={{color:'#c084fc'}}>{usuario.nombre}</strong>...</div>
       </div>
       <div style={{width:220,height:5,background:'var(--bg3)',borderRadius:4,overflow:'hidden'}}>
@@ -5832,10 +5839,13 @@ export default function App() {
           <BarChart2 size={15} color="rgba(255,255,255,0.8)"/>
         </button>
         <div style={{display:'flex',alignItems:'center',gap:9}}>
-          <div style={{width:30,height:30,borderRadius:8,background:'linear-gradient(135deg,#6c3fc4,#a855f7)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 2px 8px rgba(108,63,196,0.4)'}}><BarChart2 size={15} color="#fff"/></div>
-          <span style={{fontWeight:800,fontSize:15,color:'#fff',letterSpacing:'-0.01em'}}>Prolub</span>
-          <span style={{color:'rgba(255,255,255,0.4)',fontSize:12}}>/</span>
-          <span style={{color:'rgba(255,255,255,0.6)',fontSize:12}}>Trade Marketing</span>
+          <div style={{width:32,height:32,borderRadius:9,overflow:'hidden',background:'#fff',boxShadow:'0 2px 8px rgba(108,63,196,0.4)',flexShrink:0}}>
+            <img src="/pwa-512x512.png" alt="PROLI" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+          </div>
+          <div style={{display:'flex',flexDirection:'column',lineHeight:1.05}}>
+            <span style={{fontWeight:900,fontSize:15,color:'#fff',letterSpacing:'-0.02em'}}>PROLI</span>
+            <span style={{color:'rgba(255,255,255,0.58)',fontSize:9.5,fontWeight:600}}>Prolub Marketing Intelligence</span>
+          </div>
         </div>
         <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
           {sheetsSync==='syncing'&&(
@@ -5985,9 +5995,16 @@ export default function App() {
 
       {!esLider&&!esPresupuesto&&!esMercadeoGeneral&&(
         <>
-          <button onClick={()=>setChatOpen(o=>!o)} style={{position:'fixed',bottom:24,right:24,width:52,height:52,borderRadius:'50%',background:chatOpen?'var(--bg3)':'var(--accent)',color:'#fff',border:chatOpen?'1px solid var(--border2)':'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 20px rgba(108,99,255,0.4)',zIndex:250,transition:'all 0.2s'}}>
-            {chatOpen?<X size={20}/>:<MessageCircle size={22}/>}
+          <button onClick={()=>setChatOpen(o=>!o)} title={chatOpen?'Cerrar Proli':'Hablar con Proli'}
+            style={{position:'fixed',bottom:24,right:24,width:64,height:64,borderRadius:20,background:chatOpen?'var(--bg3)':'#fff',color:'#fff',border:chatOpen?'1px solid var(--border2)':'2px solid rgba(168,85,247,.22)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 8px 28px rgba(108,63,196,.35)',zIndex:250,transition:'all 0.2s',padding:chatOpen?0:3,overflow:'hidden'}}>
+            {chatOpen?<X size={20} color="var(--text2)"/>:<img src="/pwa-512x512.png" alt="Proli" style={{width:'100%',height:'100%',objectFit:'cover',borderRadius:16}}/>}
           </button>
+          {!chatOpen&&(
+            <div onClick={()=>setChatOpen(true)} style={{position:'fixed',bottom:97,right:24,zIndex:240,background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:12,padding:'8px 11px',boxShadow:'0 8px 24px rgba(30,16,64,.16)',cursor:'pointer',maxWidth:190}}>
+              <div style={{fontSize:11,fontWeight:800,color:'var(--accent2)'}}>¡Hola, soy Proli! 🤖</div>
+              <div style={{fontSize:10,color:'var(--text3)',marginTop:2}}>Tu asistente de Marketing.</div>
+            </div>
+          )}
           {chatOpen&&<Asistente data={data} setData={setDataUser} onClose={()=>setChatOpen(false)}/>}
         </>
       )}
