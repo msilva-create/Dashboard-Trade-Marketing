@@ -125,8 +125,8 @@ const CAMPOS_MAP = {
     tiempoUnidad:'tiempoUnidad',
     tiempoMinutos:'tiempoMinutos'
   },
-  proyectos:    { id:'id', nombre:'nombre', descripcion:'descripcion', responsable:'responsable', areas:'areas', fechaEntrega:'fechaEntrega', estado:'estado', creadoPor:'creadoPor', subtareas:'subtareas', fechaCreacion:'fechaCreacion', fechaFinalizacion:'fechaFinalizacion', tiempoTotalMinutos:'tiempoTotalMinutos', totalSubtareas:'totalSubtareas', correoFinalEnviado:'correoFinalEnviado' },
-  subtareasProyectos: { id:'id', proyecto:'proyecto', nombre:'nombre', descripcion:'descripcion', responsable:'responsable', fechaEntrega:'fechaEntrega', estado:'estado', areas:'areas', creadoPor:'creadoPor', fechaCreacion:'fechaCreacion', fechaFinalizacion:'fechaFinalizacion', tiempoValor:'tiempoValor', tiempoUnidad:'tiempoUnidad', tiempoMinutos:'tiempoMinutos' },
+  proyectos:    { id:'id', nombre:'nombre', descripcion:'descripcion', responsable:'responsable', areas:'areas', fechaEntrega:'fechaEntrega', estado:'estado', prioridad:'prioridad', creadoPor:'creadoPor', subtareas:'subtareas', fechaCreacion:'fechaCreacion', fechaFinalizacion:'fechaFinalizacion', tiempoTotalMinutos:'tiempoTotalMinutos', totalSubtareas:'totalSubtareas', correoFinalEnviado:'correoFinalEnviado' },
+  subtareasProyectos: { id:'id', proyecto:'proyecto', nombre:'nombre', descripcion:'descripcion', responsable:'responsable', fechaEntrega:'fechaEntrega', estado:'estado', prioridad:'prioridad', areas:'areas', creadoPor:'creadoPor', fechaCreacion:'fechaCreacion', fechaFinalizacion:'fechaFinalizacion', tiempoValor:'tiempoValor', tiempoUnidad:'tiempoUnidad', tiempoMinutos:'tiempoMinutos' },
 }
 
 // ── NORMALIZAR MES ── "MAYO" / "mayo" → "Mayo"
@@ -2772,6 +2772,8 @@ function TareasAsignadas({ data, setData, usuario }) {
         <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',marginBottom:6}}>
           <span style={{fontWeight:700,fontSize:14}}>{t.nombre}</span>
           <span style={{fontSize:10,padding:'2px 8px',borderRadius:6,background:'var(--accent-soft)',color:'var(--accent2)'}}>Asignada por Paola</span>
+          <BadgePrioridad prioridad={t.prioridad}/>
+          <BadgeVencimiento item={t}/>
         </div>
         {t.descripcion&&<p style={{fontSize:12,color:'var(--text2)',margin:'0 0 7px'}}>{t.descripcion}</p>}
         <div style={{display:'flex',gap:12,flexWrap:'wrap',fontSize:11,color:'var(--text3)'}}>
@@ -3036,11 +3038,18 @@ function FormProyecto({ form, setForm, onSave, titulo, onClose, guardando=false,
           </Field>
           <Field label="Fecha de entrega"><input type="date" value={form.fechaEntrega} onChange={e=>setForm({...form,fechaEntrega:e.target.value})}/></Field>
         </div>
-        <Field label="Estado">
-          <select value={form.estado} onChange={e=>setForm({...form,estado:e.target.value})}>
-            {Object.keys(ESTADO_PROY).map(e=><option key={e}>{e}</option>)}
-          </select>
-        </Field>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+          <Field label="Estado">
+            <select value={form.estado} onChange={e=>setForm({...form,estado:e.target.value})}>
+              {Object.keys(ESTADO_PROY).map(e=><option key={e}>{e}</option>)}
+            </select>
+          </Field>
+          <Field label="Prioridad">
+            <select value={form.prioridad||'Media'} onChange={e=>setForm({...form,prioridad:e.target.value})}>
+              {PRIORIDADES_TRABAJO.map(p=><option key={p}>{p}</option>)}
+            </select>
+          </Field>
+        </div>
         <Field label="Áreas que intervienen">
           <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:4}}>
             {AREAS.map(a=>(
@@ -3137,6 +3146,53 @@ function parseFechaFlexible(valor) {
   return isNaN(d)?null:d
 }
 
+
+const PRIORIDADES_TRABAJO = ['Urgente','Alta','Media','Baja']
+
+function prioridadVisual(prioridad='Media') {
+  const p = prioridad || 'Media'
+  const mapa = {
+    Urgente:{color:'#dc2626',bg:'#fee2e2',icon:'⚡'},
+    Alta:{color:'#ea580c',bg:'#ffedd5',icon:'↑'},
+    Media:{color:'#7c3aed',bg:'#ede9fe',icon:'•'},
+    Baja:{color:'#0284c7',bg:'#e0f2fe',icon:'↓'},
+  }
+  return mapa[p] || mapa.Media
+}
+
+function estadoVencimiento(item) {
+  if(item?.estado==='Finalizada' || item?.estado==='Cancelada') return {tipo:'finalizada',label:'Finalizada',color:'#16a34a',bg:'#dcfce7'}
+  const valor = item?.fechaLimite || item?.fechaEntrega
+  const fecha = parseFechaFlexible(valor)
+  if(!fecha) return {tipo:'sinfecha',label:'Sin fecha',color:'#64748b',bg:'#f1f5f9'}
+  const hoy = new Date(); hoy.setHours(0,0,0,0); fecha.setHours(0,0,0,0)
+  const dias = Math.ceil((fecha-hoy)/86400000)
+  if(dias < 0) return {tipo:'vencida',label:`Vencida hace ${Math.abs(dias)} día${Math.abs(dias)===1?'':'s'}`,color:'#dc2626',bg:'#fee2e2'}
+  if(dias === 0) return {tipo:'hoy',label:'Vence hoy',color:'#dc2626',bg:'#fee2e2'}
+  if(dias <= 2) return {tipo:'proxima',label:`Vence en ${dias} día${dias===1?'':'s'}`,color:'#d97706',bg:'#fef3c7'}
+  return {tipo:'atiempo',label:`${dias} días restantes`,color:'#16a34a',bg:'#dcfce7'}
+}
+
+function cumplimientoProyecto(proyecto) {
+  const fin = parseFechaFlexible(proyecto?.fechaFinalizacion)
+  const limite = parseFechaFlexible(proyecto?.fechaEntrega)
+  if(!fin || !limite) return {label:'Sin dato',color:'#64748b',dias:0}
+  fin.setHours(0,0,0,0); limite.setHours(0,0,0,0)
+  const dif = Math.round((limite-fin)/86400000)
+  if(dif>=0) return {label:dif===0?'Cerrado en fecha':`Cerrado ${dif} día${dif===1?'':'s'} antes`,color:'#16a34a',dias:dif}
+  return {label:`Cerrado ${Math.abs(dif)} día${Math.abs(dif)===1?'':'s'} tarde`,color:'#dc2626',dias:dif}
+}
+
+function BadgePrioridad({prioridad}) {
+  const p=prioridadVisual(prioridad)
+  return <span style={{fontSize:10,fontWeight:800,padding:'3px 8px',borderRadius:999,background:p.bg,color:p.color,whiteSpace:'nowrap'}}>{p.icon} {prioridad||'Media'}</span>
+}
+
+function BadgeVencimiento({item}) {
+  const v=estadoVencimiento(item)
+  return <span style={{fontSize:10,fontWeight:700,padding:'3px 8px',borderRadius:999,background:v.bg,color:v.color,whiteSpace:'nowrap'}}>{v.label}</span>
+}
+
 function resumenProyecto(proyecto) {
   const subs = proyecto?.subtareas || []
   const finalizadas = subs.filter(s=>s.estado==='Finalizada')
@@ -3146,7 +3202,9 @@ function resumenProyecto(proyecto) {
   const cierre = parseFechaFlexible(proyecto?.fechaFinalizacion) || (fechasCierre.length ? new Date(Math.max(...fechasCierre.map(d=>d.getTime()))) : null)
   let dias = 0
   if(inicio && cierre) dias = Math.max(0,Math.ceil((cierre-inicio)/(24*60*60*1000)))
-  return {total:subs.length,finalizadas:finalizadas.length,minutos,dias,cierre}
+  const personas = [...new Set([proyecto?.responsable,...subs.map(s=>s.responsable)].filter(Boolean))]
+  const cumplimiento = cumplimientoProyecto({...proyecto,fechaFinalizacion:cierre||proyecto?.fechaFinalizacion})
+  return {total:subs.length,finalizadas:finalizadas.length,minutos,dias,cierre,personas,cumplimiento}
 }
 
 function ModalTiempoTarea({ tarea, onClose, onConfirm, guardando=false }) {
@@ -3238,6 +3296,11 @@ function ModalEditarTarea({ tarea, onClose, onSave, guardando=false, permiteResp
         <Field label="Estado">
           <select value={form.estado||'Pendiente'} onChange={e=>setForm({...form,estado:e.target.value})}>
             {['Pendiente','En proceso','Finalizada','Cancelada'].map(s=><option key={s}>{s}</option>)}
+          </select>
+        </Field>
+        <Field label="Prioridad">
+          <select value={form.prioridad||'Media'} onChange={e=>setForm({...form,prioridad:e.target.value})}>
+            {PRIORIDADES_TRABAJO.map(p=><option key={p}>{p}</option>)}
           </select>
         </Field>
 
@@ -3453,8 +3516,8 @@ function TareasYProyectos({ data, setData, usuario }) {
   const [eliminandoSubId, setEliminandoSubId] = useState(null)
   const [proyPadre, setProyPadre] = useState(null)
   const [filtroEstado, setFiltroEstado] = useState('')
-  const [formP, setFormP] = useState({ nombre:'', descripcion:'', responsable:'', areas:[], fechaEntrega:'', estado:'Pendiente' })
-  const [formS, setFormS] = useState({ nombre:'', descripcion:'', responsable:'', areas:[], fechaEntrega:'', estado:'Pendiente' })
+  const [formP, setFormP] = useState({ nombre:'', descripcion:'', responsable:'', areas:[], fechaEntrega:'', estado:'Pendiente', prioridad:'Media' })
+  const [formS, setFormS] = useState({ nombre:'', descripcion:'', responsable:'', areas:[], fechaEntrega:'', estado:'Pendiente', prioridad:'Media' })
 
   const sheetUid = SHEETS_CONFIG[usuario.id]?.enabled ? usuario.id : 'distribucion'
 
@@ -4027,7 +4090,11 @@ function TareasYProyectos({ data, setData, usuario }) {
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
                   <span style={{fontWeight:700,fontSize:14,color:'var(--text)',flex:1,marginRight:8}}>{p.nombre}</span>
                   <button onClick={e=>{e.stopPropagation();setEditProyecto(p)}} style={{...S.btn('var(--accent-soft)','var(--accent2)'),padding:'3px 6px',marginRight:5}}><Edit2 size={11}/></button>
-                  <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:5,background:est.bg,color:est.color,flexShrink:0,whiteSpace:'nowrap'}}>{p.estado}</span>
+                  <div style={{display:'flex',gap:5,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end'}}>
+                    <BadgePrioridad prioridad={p.prioridad}/>
+                    <BadgeVencimiento item={p}/>
+                    <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:5,background:est.bg,color:est.color,flexShrink:0,whiteSpace:'nowrap'}}>{p.estado}</span>
+                  </div>
                 </div>
                 {p.descripcion&&<p style={{margin:'0 0 8px',fontSize:12,color:'var(--text2)',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{p.descripcion}</p>}
                 <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:10}}>
@@ -4050,6 +4117,19 @@ function TareasYProyectos({ data, setData, usuario }) {
                   </div>
                 )}
                 {subs.length===0&&<span style={{fontSize:11,color:'var(--text3)'}}>Sin subtareas</span>}
+                {p.estado==='Finalizada'&&(()=>{
+                  const rp=resumenProyecto(p)
+                  return <div style={{marginTop:12,padding:10,borderRadius:9,background:'var(--green-soft)',border:'1px solid rgba(22,163,74,.18)'}}>
+                    <div style={{fontSize:10,fontWeight:800,color:'var(--green)',marginBottom:5}}>RESUMEN DE CIERRE</div>
+                    <div style={{display:'flex',gap:10,flexWrap:'wrap',fontSize:10,color:'var(--text2)'}}>
+                      <span>📆 {rp.dias} días</span>
+                      <span>⏱️ {formatoTiempoTarea({tiempoMinutos:rp.minutos})}</span>
+                      <span>✅ {rp.finalizadas}/{rp.total} subtareas</span>
+                      <span>👥 {rp.personas.length} persona{rp.personas.length===1?'':'s'}</span>
+                    </div>
+                    <div style={{fontSize:10,fontWeight:700,color:rp.cumplimiento.color,marginTop:5}}>{rp.cumplimiento.label}</div>
+                  </div>
+                })()}
               </div>
               <div style={{padding:'8px 18px',borderTop:'1px solid var(--border)',fontSize:11,color:'var(--text3)',display:'flex',justifyContent:'space-between'}}>
                 <span>Por {p.creadoPor}</span><span>{p.fechaCreacion}</span>
@@ -4489,7 +4569,7 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
   const [tareasCentral, setTareasCentral] = useState({asignadas:[],personales:[],proyectos:[]})
   const [datosUnidadesSheets, setDatosUnidadesSheets] = useState([])
   const [cargandoDashboard, setCargandoDashboard] = useState(true)
-  const [formPend, setFormPend] = useState({nombre:'',descripcion:'',responsable:'',areas:[],fechaLimite:'',estado:'Pendiente'})
+  const [formPend, setFormPend] = useState({nombre:'',descripcion:'',responsable:'',areas:[],fechaLimite:'',estado:'Pendiente',prioridad:'Media'})
 
   const refrescarTareasCentral = async () => {
     const d = await cargarDesdeSheets('distribucion')
@@ -4635,7 +4715,7 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
 
       await refrescarTareasCentral()
       setModalPendiente(false)
-      setFormPend({nombre:'',descripcion:'',responsable:'',areas:[],fechaLimite:'',estado:'Pendiente'})
+      setFormPend({nombre:'',descripcion:'',responsable:'',areas:[],fechaLimite:'',estado:'Pendiente',prioridad:'Media'})
     } catch(e) {
       console.error(e)
       alert('Error guardando la tarea: '+e.message)
@@ -4676,6 +4756,51 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
   const pendientesAsignadasFiltradas = pendientesAsignadas.filter(coincidePersona)
   const proyectosPendientesFiltrados = proyectosPendientes.filter(coincidePersona)
   const subtareasPendientesFiltradas = subtareasPendientes.filter(coincidePersona)
+
+
+  const hoyEquipo = new Date(); hoyEquipo.setHours(0,0,0,0)
+  const todosPendientesEquipo = [...pendientesAsignadas,...proyectosPendientes,...subtareasPendientes]
+  const vencidasEquipo = todosPendientesEquipo.filter(x=>estadoVencimiento(x).tipo==='vencida'||estadoVencimiento(x).tipo==='hoy')
+  const vencenSemanaEquipo = todosPendientesEquipo.filter(x=>{
+    const f=parseFechaFlexible(x.fechaLimite||x.fechaEntrega); if(!f) return false
+    f.setHours(0,0,0,0); const d=Math.ceil((f-hoyEquipo)/86400000)
+    return d>=0&&d<=7
+  })
+  const cargaEquipo = RESPONSABLES.map(nombre=>{
+    const abiertas=todosPendientesEquipo.filter(x=>normalizarNombreResponsable(x.responsable)===normalizarNombreResponsable(nombre)).length
+    return {nombre,abiertas,nivel:abiertas>=7?'Alta':abiertas>=4?'Media':'Normal'}
+  })
+  const personasAltaCarga = cargaEquipo.filter(x=>x.nivel==='Alta').length
+
+  const metricasEquipo = RESPONSABLES.map(nombre=>{
+    const cerradas=tareasMedibles.filter(t=>normalizarNombreResponsable(t.responsable)===normalizarNombreResponsable(nombre))
+    const pendientes=todosPendientesEquipo.filter(t=>normalizarNombreResponsable(t.responsable)===normalizarNombreResponsable(nombre))
+    const promedio=cerradas.length?cerradas.reduce((s,t)=>s+Number(t.tiempoMinutos||0),0)/cerradas.length:0
+    const aTiempo=cerradas.filter(t=>{
+      const fin=parseFechaFlexible(t.fechaFinalizacion), lim=parseFechaFlexible(t.fechaLimite||t.fechaEntrega)
+      return fin&&lim&&fin<=lim
+    }).length
+    const conFecha=cerradas.filter(t=>parseFechaFlexible(t.fechaFinalizacion)&&parseFechaFlexible(t.fechaLimite||t.fechaEntrega)).length
+    const cumplimiento=conFecha?Math.round(aTiempo/conFecha*100):0
+    return {nombre,cerradas:cerradas.length,pendientes:pendientes.length,promedio,cumplimiento}
+  })
+
+  const exportarDashboardTiempos = () => {
+    const wb=XLSX.utils.book_new()
+    const resumen=metricasEquipo.map(m=>({
+      Persona:m.nombre,'Cierres con tiempo':m.cerradas,'Pendientes actuales':m.pendientes,
+      'Tiempo promedio (min)':Math.round(m.promedio),'Cumplimiento a tiempo %':m.cumplimiento
+    }))
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(resumen),'Equipo')
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(todosPendientesEquipo.map(t=>({
+      Tipo:t.proyectoNombre?'Subtarea':(t.subtareas?'Proyecto':'Tarea'),
+      Nombre:t.nombre,Responsable:t.responsable,Prioridad:t.prioridad||'Media',
+      Fecha:t.fechaLimite||t.fechaEntrega||'',Estado:t.estado,
+      Vencimiento:estadoVencimiento(t).label
+    }))),'Pendientes')
+    XLSX.writeFile(wb,`Reporte_equipo_${new Date().toISOString().slice(0,10)}.xlsx`)
+  }
+  const exportarDashboardPDF = () => window.print()
 
   const resumenTiempos = RESPONSABLES.map(nombre=>{
     const lista = tareasMedibles.filter(t=>normalizarNombreResponsable(t.responsable)===normalizarNombreResponsable(nombre))
@@ -4815,14 +4940,31 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
 
       {(tabLider==='tiempos'||tabLider==='equipo')&&(
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          {tabLider==='equipo'&&(
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,flexWrap:'wrap'}}>
             <div>
-              <h2 style={{fontSize:18,margin:0}}>Dashboard de tiempos del equipo</h2>
-              <p style={{fontSize:12,color:'var(--text3)',margin:'4px 0 0'}}>
-                Tiempos de respuesta, tareas cerradas, proyectos, subtareas y pendientes. Filtra por persona para revisar a cada integrante.
-              </p>
+              <h2 style={{fontSize:20,margin:0}}>Dashboard de tiempos del equipo</h2>
+              <p style={{fontSize:12,color:'var(--text3)',margin:'4px 0 0'}}>Cumplimiento, carga, velocidad y alertas operativas.</p>
             </div>
-          )}
+            <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+              <button onClick={exportarDashboardTiempos} style={S.btn('var(--green-soft)','var(--green)')}><Download size={13}/> Excel</button>
+              <button onClick={exportarDashboardPDF} style={S.btn('var(--accent-soft)','var(--accent2)')}><Download size={13}/> PDF</button>
+            </div>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',gap:12}}>
+            <div style={{...S.card,padding:16,borderLeft:'4px solid #dc2626'}}>
+              <div style={{fontSize:11,color:'var(--text3)',fontWeight:700}}>VENCIDAS / VENCEN HOY</div>
+              <div style={{fontSize:28,fontWeight:800,color:'#dc2626',marginTop:5}}>{vencidasEquipo.filter(coincidePersona).length}</div>
+            </div>
+            <div style={{...S.card,padding:16,borderLeft:'4px solid #d97706'}}>
+              <div style={{fontSize:11,color:'var(--text3)',fontWeight:700}}>VENCEN ESTA SEMANA</div>
+              <div style={{fontSize:28,fontWeight:800,color:'#d97706',marginTop:5}}>{vencenSemanaEquipo.filter(coincidePersona).length}</div>
+            </div>
+            <div style={{...S.card,padding:16,borderLeft:'4px solid #7c3aed'}}>
+              <div style={{fontSize:11,color:'var(--text3)',fontWeight:700}}>PERSONAS CON ALTA CARGA</div>
+              <div style={{fontSize:28,fontWeight:800,color:'#7c3aed',marginTop:5}}>{filtroPersona?(cargaEquipo.find(x=>x.nombre===filtroPersona)?.nivel==='Alta'?1:0):personasAltaCarga}</div>
+            </div>
+          </div>
+
           <div style={{display:'grid',gridTemplateColumns:'repeat(4,minmax(0,1fr))',gap:12}}>
             <KpiCard icon={Check} label="Tareas con tiempo" value={tareasMedibles.filter(coincidePersona).length} accent="var(--green)"/>
             <KpiCard icon={BookOpen} label="Proyectos cerrados" value={proyectosFinalizados.filter(coincidePersona).length} accent="var(--accent2)"/>
@@ -4881,6 +5023,34 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
                     <td style={S.td}>{r.finalizadas}/{r.total}</td>
                   </tr>
                 )})}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+
+      {tabLider==='equipo'&&(
+        <div style={{...S.card,overflow:'hidden'}}>
+          <div style={{padding:'14px 18px',borderBottom:'1px solid var(--border)'}}>
+            <h3 style={{fontSize:14,margin:0}}>Carga y cumplimiento del equipo</h3>
+            <p style={{fontSize:11,color:'var(--text3)',margin:'3px 0 0'}}>No es un ranking competitivo: ayuda a detectar carga, SLA y capacidad.</p>
+          </div>
+          <div style={{overflowX:'auto'}}>
+            <table style={{width:'100%',borderCollapse:'collapse',minWidth:650}}>
+              <thead><tr>{['Persona','Pendientes','Carga','Cierres medidos','Tiempo promedio','Cumplimiento'].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {metricasEquipo.filter(m=>!filtroPersona||m.nombre===filtroPersona).map(m=>{
+                  const carga=cargaEquipo.find(c=>c.nombre===m.nombre)
+                  return <tr key={m.nombre}>
+                    <td style={{...S.td,fontWeight:700}}>{m.nombre}</td>
+                    <td style={S.td}>{m.pendientes}</td>
+                    <td style={S.td}><span style={{fontWeight:700,color:carga?.nivel==='Alta'?'#dc2626':carga?.nivel==='Media'?'#d97706':'#16a34a'}}>{carga?.nivel}</span></td>
+                    <td style={S.td}>{m.cerradas}</td>
+                    <td style={S.td}>{formatoTiempoTarea({tiempoMinutos:m.promedio})}</td>
+                    <td style={S.td}><span style={{fontWeight:800,color:m.cumplimiento>=90?'#16a34a':m.cumplimiento>=70?'#d97706':'#dc2626'}}>{m.cumplimiento}%</span></td>
+                  </tr>
+                })}
               </tbody>
             </table>
           </div>
@@ -5027,6 +5197,11 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
             </Field>
             <Field label="Fecha límite"><input type="date" value={formPend.fechaLimite} onChange={e=>setFormPend({...formPend,fechaLimite:e.target.value})}/></Field>
             <Field label="Estado"><select value={formPend.estado} onChange={e=>setFormPend({...formPend,estado:e.target.value})}>{['Pendiente','En proceso'].map(s=><option key={s}>{s}</option>)}</select></Field>
+            <Field label="Prioridad">
+              <select value={formPend.prioridad||'Media'} onChange={e=>setFormPend({...formPend,prioridad:e.target.value})}>
+                {PRIORIDADES_TRABAJO.map(p=><option key={p}>{p}</option>)}
+              </select>
+            </Field>
             <Field label="Áreas que intervienen" span>
               <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
                 {AREAS.map(a=>(
@@ -5345,8 +5520,28 @@ export default function App() {
 
   return (
     <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',background:'var(--bg)'}}>
+      <style>{`
+        @media (max-width: 760px) {
+          .app-main { padding: 16px 12px 82px !important; }
+          .app-topbar { padding: 0 10px !important; }
+          .app-topbar > div:nth-of-type(1) span:last-child { display:none; }
+          .app-sidebar {
+            position:fixed !important; left:0 !important; right:0 !important; bottom:0 !important; top:auto !important;
+            width:100% !important; height:64px !important; z-index:50 !important; flex-direction:row !important;
+            padding:6px !important; justify-content:space-around !important; box-shadow:0 -4px 18px rgba(30,16,64,.18) !important;
+          }
+          .app-sidebar button { flex:1 !important; min-width:0 !important; margin:0 2px !important; padding:8px 4px !important; justify-content:center !important; border-left:none !important; }
+          .app-sidebar button span { display:none !important; }
+          button, select, input { min-height:40px; }
+        }
+        @media print {
+          .app-sidebar,.app-topbar { display:none !important; }
+          .app-main { padding:0 !important; overflow:visible !important; }
+          body { background:white !important; }
+        }
+      `}</style>
       {/* TOPBAR */}
-      <header style={{background:'var(--sidebar-bg)',padding:'0 20px',display:'flex',alignItems:'center',height:56,gap:14,position:'sticky',top:0,zIndex:20,boxShadow:'0 2px 16px rgba(30,16,64,0.2)'}}>
+      <header className="app-topbar" style={{background:'var(--sidebar-bg)',padding:'0 20px',display:'flex',alignItems:'center',height:56,gap:14,position:'sticky',top:0,zIndex:20,boxShadow:'0 2px 16px rgba(30,16,64,0.2)'}}>
         <button onClick={()=>setSidebarOpen(o=>!o)} style={{width:34,height:34,borderRadius:9,background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.15)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0}}>
           <BarChart2 size={15} color="rgba(255,255,255,0.8)"/>
         </button>
@@ -5381,7 +5576,7 @@ export default function App() {
 
       <div style={{display:'flex',flex:1,overflow:'hidden'}}>
         {/* SIDEBAR OSCURO */}
-        <aside style={{width:sidebarOpen?220:60,flexShrink:0,background:'var(--sidebar-bg)',display:'flex',flexDirection:'column',padding:'16px 0',gap:2,transition:'width 0.22s cubic-bezier(.4,0,.2,1)',overflow:'hidden',position:'sticky',top:52,height:'calc(100vh - 52px)',boxShadow:'4px 0 24px rgba(30,16,64,0.18)'}}>
+        <aside className="app-sidebar" style={{width:sidebarOpen?220:60,flexShrink:0,background:'var(--sidebar-bg)',display:'flex',flexDirection:'column',padding:'16px 0',gap:2,transition:'width 0.22s cubic-bezier(.4,0,.2,1)',overflow:'hidden',position:'sticky',top:52,height:'calc(100vh - 52px)',boxShadow:'4px 0 24px rgba(30,16,64,0.18)'}}>
           {tabs.map(t=>{ const Icon=t.icon; const active=tab===t.id; return (
             <button key={t.id} onClick={()=>setTab(t.id)} title={t.label} style={{display:'flex',alignItems:'center',gap:11,padding:sidebarOpen?'10px 18px':'10px 0',justifyContent:sidebarOpen?'flex-start':'center',margin:'0 8px',borderRadius:10,fontSize:13,fontWeight:active?600:400,background:active?'rgba(255,255,255,0.13)':'transparent',color:active?'#fff':'rgba(255,255,255,0.55)',border:'none',cursor:'pointer',fontFamily:'var(--font)',whiteSpace:'nowrap',position:'relative',transition:'all 0.15s',borderLeft:active?'3px solid #a855f7':'3px solid transparent'}}>
               <Icon size={16} style={{flexShrink:0,color:active?'#c084fc':'rgba(255,255,255,0.5)'}}/>
@@ -5392,7 +5587,7 @@ export default function App() {
         </aside>
 
         {/* CONTENIDO */}
-        <main style={{flex:1,padding:'24px 28px',overflowY:'auto',minWidth:0}}>
+        <main className="app-main" style={{flex:1,padding:'24px 28px',overflowY:'auto',minWidth:0}}>
         <div key={tab+usuario.id}>
           {esLider && tab==='dashboardEquipo' && <DashboardLider initialTab="equipo" hideTabs/>}
           {esLider && tab==='dashboardFinanciero' && <DashboardLider initialTab="dashboard" hideTabs/>}
