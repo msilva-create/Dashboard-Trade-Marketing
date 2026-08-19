@@ -4177,6 +4177,7 @@ const USUARIOS = [
   { id:'lider',        nombre:'Líder de Mercadeo',   pass:'lider2026', color:'#f59e0b', rol:'lider' },
   { id:'diseno',       nombre:'Diseño',              pass:'dis2026x',  color:'#ec4899', rol:'normal' },
   { id:'julian',       nombre:'Comunicaciones',      pass:'jul2026',   color:'#14b8a6', rol:'colaborador' },
+  { id:'mercadeoGeneral', nombre:'Mercadeo General',   pass:'merc2026',  color:'#a855f7', rol:'mercadeo' },
 ]
 const AUTH_KEY = 'prolub_auth'
 const getStorageKey = uid => 'tracker_v3_'+uid
@@ -5575,6 +5576,7 @@ export default function App() {
   const esLider = usuario.rol==='lider'
   const esPresupuesto = usuario.rol==='presupuesto'
   const esColaborador = usuario.rol==='colaborador'
+  const esMercadeoGeneral = usuario.rol==='mercadeo'
 
   const TABS_LIDER = [
     {id:'dashboardFinanciero',label:'Dashboard financiero',icon:LayoutDashboard},
@@ -5588,11 +5590,17 @@ export default function App() {
     {id:'tareasasignadas',label:'Tareas Asignadas',icon:ListTodo},
     {id:'tareasProyectos',label:'Proyectos y Subtareas',icon:BookOpen},
   ]
+  const TABS_MERCADEO_GENERAL = [
+    {id:'dashboard',label:'Dashboard financiero',icon:LayoutDashboard},
+    {id:'inversiones',label:'Inversiones',icon:TrendingUp},
+    {id:'ventas',label:'Venta consolidada',icon:ShoppingCart},
+    {id:'presupuesto',label:'Presupuesto y gastos',icon:DollarSign},
+  ]
   const responsableActualMenu = nombrePersonaPorUsuario(usuario)
   const tareasAsignadasUsuario = (data.tareasAsignadas||[]).filter(
     t => normalizarNombreResponsable(t.responsable) === normalizarNombreResponsable(responsableActualMenu)
   )
-  const tareasAsignadasCount = !esLider&&!esPresupuesto&&!esColaborador
+  const tareasAsignadasCount = !esLider&&!esPresupuesto&&!esColaborador&&!esMercadeoGeneral
     ? tareasAsignadasUsuario.filter(p=>p.estado!=='Finalizada'&&p.estado!=='Cancelada'&&p.estado!=='Listo').length
     : 0
   const TABS_NORMAL = [
@@ -5606,7 +5614,7 @@ export default function App() {
     {id:'pendientes', label:'Pendientes',  icon:ListTodo},
     {id:'apoyocierre', label:'Apoyo Cierre', icon:DollarSign},
   ]
-  const tabs = esLider?TABS_LIDER:esPresupuesto?TABS_PRES:esColaborador?TABS_COLAB:TABS_NORMAL
+  const tabs = esLider?TABS_LIDER:esPresupuesto?TABS_PRES:esColaborador?TABS_COLAB:esMercadeoGeneral?TABS_MERCADEO_GENERAL:TABS_NORMAL
 
   return (
     <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',background:'var(--bg)'}}>
@@ -5691,7 +5699,15 @@ export default function App() {
               {tab==='tareasProyectos' && <TareasYProyectos data={data} setData={setDataUser} usuario={usuario}/>}
             </>
           )}
-          {!esLider&&!esPresupuesto&&!esColaborador&&(
+          {esMercadeoGeneral && (
+            <>
+              {tab==='dashboard'    && <Dashboard    data={data}/>}
+              {tab==='inversiones' && <Inversiones  data={data} setData={setDataUser}/>}
+              {tab==='ventas'      && <Ventas       data={data} setData={setDataUser}/>}
+              {tab==='presupuesto' && <Presupuesto  data={data} setData={setDataUser}/>}
+            </>
+          )}
+          {!esLider&&!esPresupuesto&&!esColaborador&&!esMercadeoGeneral&&(
             <>
               {(()=>{
                 const tareasLider = (data.tareasAsignadas||[]).filter(
@@ -5779,7 +5795,7 @@ export default function App() {
         </div>
       )}
 
-      {!esLider&&!esPresupuesto&&(
+      {!esLider&&!esPresupuesto&&!esMercadeoGeneral&&(
         <>
           <button onClick={()=>setChatOpen(o=>!o)} style={{position:'fixed',bottom:24,right:24,width:52,height:52,borderRadius:'50%',background:chatOpen?'var(--bg3)':'var(--accent)',color:'#fff',border:chatOpen?'1px solid var(--border2)':'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 20px rgba(108,99,255,0.4)',zIndex:250,transition:'all 0.2s'}}>
             {chatOpen?<X size={20}/>:<MessageCircle size={22}/>}
