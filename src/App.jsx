@@ -2558,7 +2558,7 @@ function parsearExcel(file, data, setData, onDone) {
 // ASISTENTE IA
 // ═══════════════════════════════════════════════════════
 function Asistente({ data, setData, onClose }) {
-  const [msgs, setMsgs] = useState([{ role:'assistant', content:'¡Hola! Soy Proli 🤖, tu asistente de Marketing. Puedo ayudarte a revisar datos, inversión, ventas, pendientes y proyectos. ¿Qué quieres revisar hoy?' }])
+  const [msgs, setMsgs] = useState([{ role:'assistant', content:'¡Hola! Soy Proli 🤖, tu asistente de PROLI Marketing 360. Puedo ayudarte a revisar datos, inversión, ventas, pendientes y proyectos. ¿Qué quieres revisar hoy?' }])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef(null)
@@ -2596,47 +2596,111 @@ function Asistente({ data, setData, onClose }) {
     return null
   }
 
-  const enviar = async () => {
-    if(!input.trim()||loading) return
-    const userMsg=input.trim(); setInput('')
-    const newMsgs=[...msgs,{role:'user',content:userMsg}]
-    setMsgs(newMsgs); setLoading(true)
-    try {
-      const sys=`Eres Proli, el asistente de Prolub Marketing Intelligence. Ayudas al equipo de Marketing a entender datos, inversión, ventas, tareas, proyectos y oportunidades. Datos actuales: ${resumen()}
+  const respuestaLocal = (pregunta) => {
+    const q = String(pregunta||'').toLowerCase()
 
-Cuando el usuario pida crear algo, responde normalmente Y agrega al final:
-ACCION:{"tipo":"crear_pendiente","distribuidor":"...","tarea":"...","prioridad":"Alta|Media|Baja","fechaLimite":"YYYY-MM-DD","categoria":"","responsable":"","notas":""}
-o
-ACCION:{"tipo":"crear_inversion","distribuidor":"...","mes":"...","anio":2026,"tipoPlan":"...","concepto":"...","inversion":0}
-o
-ACCION:{"tipo":"crear_presupuesto","mes":"...","anio":2026,"monto":0}
+    const inversiones = data.inversiones || []
+    const ventas = data.ventas || []
+    const pendientes = data.pendientes || []
+    const tareas = data.tareasAsignadas || []
+    const proyectos = data.proyectos || []
+    const presupuestos = data.presupuestos || []
+    const gastos = data.gastosPresupuesto || []
 
-Responde en español, conciso y útil.`
+    const totalInv = inversiones.reduce((s,i)=>s+(Number(i.inversion)||0),0)
+    const totalVenta = ventas.reduce((s,v)=>s+(Number(v.ventaNeta)||0),0)
+    const totalPres = presupuestos.reduce((s,p)=>s+(Number(p.monto)||0),0)
+    const totalGasto = gastos.reduce((s,g)=>s+(Number(g.valorFactura)||0),0)
+    const disponible = totalPres-totalGasto
+    const pctInvVenta = totalVenta>0 ? (totalInv/totalVenta)*100 : 0
 
-      const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:800,system:sys,messages:newMsgs.map(m=>({role:m.role,content:m.content}))})})
-      const result=await res.json()
-      let resp=result.content?.[0]?.text||'No pude procesar la respuesta.'
-      const match=resp.match(/ACCION:(\{[\s\S]*?\})/)
-      if(match){
-        const accionResult=ejecutar(match[1],data)
-        resp=resp.replace(/ACCION:\{[\s\S]*?\}/,'').trim()
-        if(accionResult) resp=resp+'\n\n'+accionResult
-      }
-      setMsgs([...newMsgs,{role:'assistant',content:resp}])
-    } catch(e){
-      setMsgs([...newMsgs,{role:'assistant',content:'❌ Error conectando con el asistente.'}])
+    const pendientesAbiertos = pendientes.filter(p=>!['Listo','Finalizada','Cancelado','Cancelada'].includes(p.estado)).length
+    const tareasAbiertas = tareas.filter(p=>!['Listo','Finalizada','Cancelado','Cancelada'].includes(p.estado)).length
+    const proyectosAbiertos = proyectos.filter(p=>!['Listo','Finalizada','Cancelado','Cancelada'].includes(p.estado)).length
+
+    const agrupar = (arr, campo, valorCampo='inversion') => {
+      const m={}
+      arr.forEach(x=>{
+        const k=String(x[campo]||'Sin clasificar').trim()||'Sin clasificar'
+        m[k]=(m[k]||0)+(Number(x[valorCampo])||0)
+      })
+      return Object.entries(m).map(([nombre,valor])=>({nombre,valor})).sort((a,b)=>b.valor-a.valor)
     }
-    setLoading(false)
+
+    const porCliente = agrupar(inversiones,'distribuidor')
+    const porConcepto = agrupar(inversiones,'concepto')
+    const porPlan = agrupar(inversiones,'tipoPlan')
+
+    if(q.includes('pendiente') || q.includes('tarea')) {
+      return `Tienes ${pendientesAbiertos+tareasAbiertas} pendientes abiertos: ${tareasAbiertas} tareas asignadas y ${pendientesAbiertos} pendientes comerciales. Además hay ${proyectosAbiertos} proyectos abiertos.`
+    }
+
+    if(q.includes('proyecto')) {
+      return proyectosAbiertos>0
+        ? `Actualmente hay ${proyectosAbiertos} proyectos abiertos y ${proyectos.length-proyectosAbiertos} cerrados/finalizados.`
+        : `No veo proyectos abiertos en los datos cargados actualmente.`
+    }
+
+    if(q.includes('dónde') || q.includes('donde') || q.includes('invirtiendo') || q.includes('inversión') || q.includes('inversion')) {
+      const topC = porCliente[0]
+      const topConcepto = porConcepto[0]
+      const topPlan = porPlan[0]
+      return `La inversión acumulada es ${cop(totalInv)}.${topC?` El cliente con mayor inversión es ${topC.nombre} con ${cop(topC.valor)}.`:''}${topConcepto?` El concepto principal es ${topConcepto.nombre} con ${cop(topConcepto.valor)}.`:''}${topPlan?` El tipo de plan más fuerte es ${topPlan.nombre}.`:''}`
+    }
+
+    if(q.includes('venta')) {
+      return `La venta neta cargada es ${cop(totalVenta)} y la inversión representa ${pctInvVenta.toFixed(1)}% de esa venta.`
+    }
+
+    if(q.includes('presupuesto') || q.includes('gast')) {
+      return `Presupuesto registrado: ${cop(totalPres)}. Gastado: ${cop(totalGasto)}. Disponible: ${cop(disponible)}.${totalPres>0?` Ejecución: ${((totalGasto/totalPres)*100).toFixed(1)}%.`:''}`
+    }
+
+    if(q.includes('insight') || q.includes('opin') || q.includes('recom')) {
+      const topConcepto = porConcepto[0]
+      const topCliente = porCliente[0]
+      const concentracion = topConcepto && totalInv>0 ? (topConcepto.valor/totalInv)*100 : 0
+      const ejecPres = totalPres>0 ? (totalGasto/totalPres)*100 : 0
+      let insight = `Insight de Proli 🤖: la inversión representa ${pctInvVenta.toFixed(1)}% de la venta registrada.`
+      if(topConcepto) insight += ` ${topConcepto.nombre} concentra ${concentracion.toFixed(1)}% de la inversión.`
+      if(topCliente) insight += ` El cliente con mayor inversión es ${topCliente.nombre} con ${cop(topCliente.valor)}.`
+      if(totalPres>0) insight += ` El presupuesto lleva ${ejecPres.toFixed(1)}% de ejecución.`
+      if(ejecPres>=90) insight += ` Revisa la disponibilidad restante porque la ejecución está alta.`
+      if(tareasAbiertas+pendientesAbiertos+proyectosAbiertos>0) insight += ` Hay ${tareasAbiertas+pendientesAbiertos+proyectosAbiertos} frentes abiertos entre tareas, pendientes y proyectos.`
+      return insight
+    }
+
+    return `Resumen de Proli 🤖\n• Inversión: ${cop(totalInv)}\n• Venta neta: ${cop(totalVenta)}\n• % inversión/venta: ${pctInvVenta.toFixed(1)}%\n• Presupuesto: ${cop(totalPres)}\n• Gastado: ${cop(totalGasto)}\n• Disponible: ${cop(disponible)}\n• Tareas pendientes: ${tareasAbiertas}\n• Proyectos abiertos: ${proyectosAbiertos}`
   }
 
-  const ejemplos=['Dame un resumen de mis datos','¿Dónde estamos invirtiendo más?','¿Qué pendientes tengo abiertos?','Dame un insight de Marketing']
+  const enviar = async () => {
+    if(!input.trim()||loading) return
+    const userMsg=input.trim()
+    setInput('')
+    const newMsgs=[...msgs,{role:'user',content:userMsg}]
+    setMsgs(newMsgs)
+    setLoading(true)
+
+    try {
+      await new Promise(r=>setTimeout(r,350))
+      const resp = respuestaLocal(userMsg)
+      setMsgs([...newMsgs,{role:'assistant',content:resp}])
+    } catch(e) {
+      console.error('Error Proli:',e)
+      setMsgs([...newMsgs,{role:'assistant',content:'No pude procesar ese resumen. Intenta con “Dame un resumen de mis datos”.'}])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const ejemplos=['Dame un resumen de mis datos','¿Dónde estamos invirtiendo más?','¿Cómo va el presupuesto?','Dame un insight de Marketing']
 
   return (
     <div style={{position:'fixed',bottom:90,right:24,width:380,height:520,background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:16,display:'flex',flexDirection:'column',zIndex:300,boxShadow:'0 16px 48px rgba(0,0,0,0.5)'}}>
       <div style={{padding:'14px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',background:'var(--bg3)',borderRadius:'16px 16px 0 0'}}>
         <div style={{display:'flex',alignItems:'center',gap:10}}>
           <div style={{width:34,height:34,borderRadius:10,overflow:'hidden',background:'#fff',boxShadow:'0 2px 8px rgba(108,63,196,.25)'}}>
-            <img src="/pwa-512x512.png" alt="Proli" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+            <img src="/pwa-512x512.png" onError={e=>{e.currentTarget.onerror=null;e.currentTarget.src="/proli-mascota.png"}} alt="Proli" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
           </div>
           <div>
             <div style={{fontWeight:800,fontSize:13}}>Proli 🤖</div>
@@ -2648,12 +2712,12 @@ Responde en español, conciso y útil.`
       <div style={{flex:1,overflowY:'auto',padding:'14px 16px',display:'flex',flexDirection:'column',gap:10}}>
         {msgs.map((m,i)=>(
           <div key={i} style={{display:'flex',gap:8,flexDirection:m.role==='user'?'row-reverse':'row',alignItems:'flex-end'}}>
-            {m.role==='assistant'&&<div style={{width:28,height:28,borderRadius:8,overflow:'hidden',background:'#fff',flexShrink:0}}><img src="/pwa-512x512.png" alt="Proli" style={{width:'100%',height:'100%',objectFit:'cover'}}/></div>}
+            {m.role==='assistant'&&<div style={{width:28,height:28,borderRadius:8,overflow:'hidden',background:'#fff',flexShrink:0}}><img src="/pwa-512x512.png" onError={e=>{e.currentTarget.onerror=null;e.currentTarget.src="/proli-mascota.png"}} alt="Proli" style={{width:'100%',height:'100%',objectFit:'cover'}}/></div>}
             <div style={{maxWidth:'80%',padding:'9px 13px',borderRadius:m.role==='user'?'12px 12px 2px 12px':'12px 12px 12px 2px',background:m.role==='user'?'var(--accent)':'var(--bg3)',color:m.role==='user'?'#fff':'var(--text)',fontSize:13,lineHeight:1.5,whiteSpace:'pre-wrap'}}>{m.content}</div>
           </div>
         ))}
         {loading&&<div style={{display:'flex',gap:8,alignItems:'flex-end'}}>
-          <div style={{width:28,height:28,borderRadius:8,overflow:'hidden',background:'#fff'}}><img src="/pwa-512x512.png" alt="Proli" style={{width:'100%',height:'100%',objectFit:'cover'}}/></div>
+          <div style={{width:28,height:28,borderRadius:8,overflow:'hidden',background:'#fff'}}><img src="/pwa-512x512.png" onError={e=>{e.currentTarget.onerror=null;e.currentTarget.src="/proli-mascota.png"}} alt="Proli" style={{width:'100%',height:'100%',objectFit:'cover'}}/></div>
           <div style={{padding:'9px 14px',borderRadius:'12px 12px 12px 2px',background:'var(--bg3)',fontSize:13,color:'var(--text3)'}}>Pensando...</div>
         </div>}
         <div ref={bottomRef}/>
@@ -4213,9 +4277,9 @@ function LoginScreen({ onLogin }) {
       <div style={{width:'100%',maxWidth:420}}>
         <div style={{textAlign:'center',marginBottom:32}}>
           <div style={{width:74,height:74,borderRadius:20,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 14px',boxShadow:'0 10px 30px rgba(168,85,247,.28)',background:'#fff'}}>
-            <img src="/pwa-512x512.png" alt="PROLI" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+            <img src="/pwa-512x512.png" onError={e=>{e.currentTarget.onerror=null;e.currentTarget.src="/proli-mascota.png"}} alt="PROLI" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
           </div>
-          <h1 style={{fontSize:28,fontWeight:900,letterSpacing:'-0.04em',marginBottom:2,color:'#fff'}}>PROLI</h1>
+          <h1 style={{fontSize:28,fontWeight:900,letterSpacing:'-0.04em',marginBottom:2,color:'#fff'}}>PROLI Marketing 360</h1>
           <div style={{fontSize:12,fontWeight:700,color:'#c4b5fd',letterSpacing:'.02em',marginBottom:5}}>Prolub Marketing Intelligence</div>
           <p style={{fontSize:13,color:'rgba(255,255,255,.62)',margin:0}}>Toda la información. Decisiones que impulsan.</p>
         </div>
@@ -5671,6 +5735,10 @@ export default function App() {
   const [sheetsLoading, setSheetsLoading] = useState(false)
   const [sheetsSync, setSheetsSync] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState(null)
+  const [appInstalada, setAppInstalada] = useState(
+    () => window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true
+  )
 
   const loadUser = (uid) => {
     if(!uid) { _currentUserKey = STORAGE_KEY; return load() }
@@ -5678,6 +5746,57 @@ export default function App() {
     try { const d=localStorage.getItem(_currentUserKey); return d?JSON.parse(d):load() } catch { return load() }
   }
   const [data, setData] = useState(()=>loadUser(usuario?.id))
+
+  useEffect(()=>{
+    const esStandalone = window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true
+    if(esStandalone) setAppInstalada(true)
+
+    const onBeforeInstallPrompt = e => {
+      e.preventDefault()
+      setDeferredInstallPrompt(e)
+    }
+
+    const onAppInstalled = () => {
+      setAppInstalada(true)
+      setDeferredInstallPrompt(null)
+    }
+
+    window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt)
+    window.addEventListener('appinstalled', onAppInstalled)
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt)
+      window.removeEventListener('appinstalled', onAppInstalled)
+    }
+  },[])
+
+  const instalarPROLI = async () => {
+    if(appInstalada) {
+      alert('PROLI Marketing 360 ya está instalada en este dispositivo.')
+      return
+    }
+
+    if(!deferredInstallPrompt) {
+      alert(
+        'Chrome todavía no está habilitando la instalación como app. ' +
+        'Esto nos confirma que debemos revisar el manifest, el service worker o los íconos publicados. ' +
+        'No se dañó la plataforma.'
+      )
+      return
+    }
+
+    try {
+      await deferredInstallPrompt.prompt()
+      const choice = await deferredInstallPrompt.userChoice
+      if(choice?.outcome === 'accepted') {
+        setAppInstalada(true)
+      }
+      setDeferredInstallPrompt(null)
+    } catch(e) {
+      console.error('Error instalando PROLI:', e)
+      alert('No se pudo abrir el instalador de PROLI Marketing 360 en este navegador.')
+    }
+  }
 
   useEffect(()=>{
     if(!usuario) return
@@ -5751,10 +5870,10 @@ export default function App() {
   if(sheetsLoading) return (
     <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#1e1040 0%,#2d1a6e 100%)',gap:20}}>
       <div style={{width:64,height:64,borderRadius:18,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 8px 32px rgba(91,82,240,0.3)',background:'#fff'}}>
-        <img src="/pwa-512x512.png" alt="PROLI" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+        <img src="/pwa-512x512.png" onError={e=>{e.currentTarget.onerror=null;e.currentTarget.src="/proli-mascota.png"}} alt="PROLI" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
       </div>
       <div style={{textAlign:'center'}}>
-        <div style={{fontWeight:900,fontSize:22,color:'#fff',marginBottom:2,letterSpacing:'-0.02em'}}>PROLI</div>
+        <div style={{fontWeight:900,fontSize:22,color:'#fff',marginBottom:2,letterSpacing:'-0.02em'}}>PROLI Marketing 360</div>
         <div style={{fontSize:11,fontWeight:700,color:'#c4b5fd',marginBottom:6}}>Prolub Marketing Intelligence</div>
         <div style={{fontSize:13,color:'rgba(255,255,255,0.6)'}}>Sincronizando datos de <strong style={{color:'#c084fc'}}>{usuario.nombre}</strong>...</div>
       </div>
@@ -5818,6 +5937,7 @@ export default function App() {
           .app-main { padding: 16px 12px 82px !important; }
           .app-topbar { padding: 0 10px !important; }
           .app-topbar > div:nth-of-type(1) span:last-child { display:none; }
+          .app-topbar button span { max-width:88px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
           .app-sidebar {
             position:fixed !important; left:0 !important; right:0 !important; bottom:0 !important; top:auto !important;
             width:100% !important; height:64px !important; z-index:50 !important; flex-direction:row !important;
@@ -5840,10 +5960,10 @@ export default function App() {
         </button>
         <div style={{display:'flex',alignItems:'center',gap:9}}>
           <div style={{width:32,height:32,borderRadius:9,overflow:'hidden',background:'#fff',boxShadow:'0 2px 8px rgba(108,63,196,0.4)',flexShrink:0}}>
-            <img src="/pwa-512x512.png" alt="PROLI" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+            <img src="/pwa-512x512.png" onError={e=>{e.currentTarget.onerror=null;e.currentTarget.src="/proli-mascota.png"}} alt="PROLI" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
           </div>
           <div style={{display:'flex',flexDirection:'column',lineHeight:1.05}}>
-            <span style={{fontWeight:900,fontSize:15,color:'#fff',letterSpacing:'-0.02em'}}>PROLI</span>
+            <span style={{fontWeight:900,fontSize:15,color:'#fff',letterSpacing:'-0.02em'}}>PROLI Marketing 360</span>
             <span style={{color:'rgba(255,255,255,0.58)',fontSize:9.5,fontWeight:600}}>Prolub Marketing Intelligence</span>
           </div>
         </div>
@@ -5857,6 +5977,23 @@ export default function App() {
           {sheetsSync==='error'&&(
             <button onClick={()=>{setSheetsSync('syncing');cargarDesdeSheets(usuario.id).then(sd=>{if(sd){setData(sd);localStorage.setItem(getStorageKey(usuario.id),JSON.stringify(sd));setSheetsSync('ok')}else setSheetsSync('error')})}} style={{display:'flex',alignItems:'center',gap:6,background:'rgba(224,60,60,0.1)',border:'1px solid rgba(224,60,60,0.3)',borderRadius:20,padding:'4px 12px',cursor:'pointer',fontFamily:'var(--font)'}}>
               <span style={{fontSize:11,color:'var(--red)',fontWeight:600}}>✗ Sin conexión — Reintentar</span>
+            </button>
+          )}
+          {!appInstalada&&(
+            <button
+              onClick={instalarPROLI}
+              title={deferredInstallPrompt?'Instalar PROLI Marketing 360 como aplicación':'Verificar instalación de PROLI'}
+              style={{
+                display:'flex',alignItems:'center',gap:7,
+                background:deferredInstallPrompt?'linear-gradient(135deg,#7c3aed,#a855f7)':'rgba(255,255,255,0.10)',
+                color:'#fff',
+                border:deferredInstallPrompt?'1px solid rgba(255,255,255,.18)':'1px solid rgba(255,255,255,.16)',
+                borderRadius:20,padding:'6px 12px',cursor:'pointer',
+                fontFamily:'var(--font)',fontSize:11,fontWeight:700,
+                boxShadow:deferredInstallPrompt?'0 4px 14px rgba(168,85,247,.28)':'none'
+              }}>
+              <Download size={13}/>
+              <span>{deferredInstallPrompt?'Instalar PROLI Marketing 360':'Instalar'}</span>
             </button>
           )}
           <CampanaNotificaciones usuario={usuario} data={data} onIr={setTab}/>
@@ -5997,7 +6134,7 @@ export default function App() {
         <>
           <button onClick={()=>setChatOpen(o=>!o)} title={chatOpen?'Cerrar Proli':'Hablar con Proli'}
             style={{position:'fixed',bottom:24,right:24,width:64,height:64,borderRadius:20,background:chatOpen?'var(--bg3)':'#fff',color:'#fff',border:chatOpen?'1px solid var(--border2)':'2px solid rgba(168,85,247,.22)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 8px 28px rgba(108,63,196,.35)',zIndex:250,transition:'all 0.2s',padding:chatOpen?0:3,overflow:'hidden'}}>
-            {chatOpen?<X size={20} color="var(--text2)"/>:<img src="/pwa-512x512.png" alt="Proli" style={{width:'100%',height:'100%',objectFit:'cover',borderRadius:16}}/>}
+            {chatOpen?<X size={20} color="var(--text2)"/>:<img src="/pwa-512x512.png" onError={e=>{e.currentTarget.onerror=null;e.currentTarget.src="/proli-mascota.png"}} alt="Proli" style={{width:'100%',height:'100%',objectFit:'cover',borderRadius:16}}/>}
           </button>
           {!chatOpen&&(
             <div onClick={()=>setChatOpen(true)} style={{position:'fixed',bottom:97,right:24,zIndex:240,background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:12,padding:'8px 11px',boxShadow:'0 8px 24px rgba(30,16,64,.16)',cursor:'pointer',maxWidth:190}}>
