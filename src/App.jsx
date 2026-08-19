@@ -8,32 +8,32 @@ let _currentUserKey = STORAGE_KEY
 
 const SHEETS_CONFIG = {
   distribucion: {
-    url: 'https://script.google.com/macros/s/AKfycbxzqhKZr7ue545BDwpgqQrNsognsVOtxxZNPd6P4Jm_wtdj1_Sqkd9FdswrdtfM2d8S/exec',
+    url: 'https://script.google.com/macros/s/AKfycbyPJ5B8iotZRFZLD_ByUxEO8Hpyj4tihylyr2qSeRC6uVfS2egNQNDulj78v6AUpml8/exec',
     spreadsheetId: '15X2WrJGDw__xFvPpe3Gcm5iR9KSKgJP20Q_kyJ0Zn0U',
     enabled: true,
   },
   industria: {
-    url: 'https://script.google.com/macros/s/AKfycbxzqhKZr7ue545BDwpgqQrNsognsVOtxxZNPd6P4Jm_wtdj1_Sqkd9FdswrdtfM2d8S/exec',
+    url: 'https://script.google.com/macros/s/AKfycbyPJ5B8iotZRFZLD_ByUxEO8Hpyj4tihylyr2qSeRC6uVfS2egNQNDulj78v6AUpml8/exec',
     spreadsheetId: '1YOqpzgEyLWdqAvXLIQBW9YrQ1KpnvUnEjZvHkY5Ce4A',
     enabled: true,
   },
   zonas: {
-    url: 'https://script.google.com/macros/s/AKfycbxzqhKZr7ue545BDwpgqQrNsognsVOtxxZNPd6P4Jm_wtdj1_Sqkd9FdswrdtfM2d8S/exec',
+    url: 'https://script.google.com/macros/s/AKfycbyPJ5B8iotZRFZLD_ByUxEO8Hpyj4tihylyr2qSeRC6uVfS2egNQNDulj78v6AUpml8/exec',
     spreadsheetId: '1OHpuBQ5Aj-NV9n-wQBlkUoT8mgC3DgZhWyAVSAfFL7Y',
     enabled: true,
   },
   juan: {
-    url: 'https://script.google.com/macros/s/AKfycbxzqhKZr7ue545BDwpgqQrNsognsVOtxxZNPd6P4Jm_wtdj1_Sqkd9FdswrdtfM2d8S/exec',
+    url: 'https://script.google.com/macros/s/AKfycbyPJ5B8iotZRFZLD_ByUxEO8Hpyj4tihylyr2qSeRC6uVfS2egNQNDulj78v6AUpml8/exec',
     spreadsheetId: '1s6fkyyCihzOki9Fan9EKIIvxwlra-QizwI7fy210GUI',
     enabled: true,
   },
   camilo: {
-    url: 'https://script.google.com/macros/s/AKfycbxzqhKZr7ue545BDwpgqQrNsognsVOtxxZNPd6P4Jm_wtdj1_Sqkd9FdswrdtfM2d8S/exec',
+    url: 'https://script.google.com/macros/s/AKfycbyPJ5B8iotZRFZLD_ByUxEO8Hpyj4tihylyr2qSeRC6uVfS2egNQNDulj78v6AUpml8/exec',
     spreadsheetId: '1jVKNc8krqeClgfzaXr-i7YIHwuYRmjkoU35NEjz4oDk',
     enabled: true,
   },
   julian: {
-    url: 'https://script.google.com/macros/s/AKfycbxzqhKZr7ue545BDwpgqQrNsognsVOtxxZNPd6P4Jm_wtdj1_Sqkd9FdswrdtfM2d8S/exec',
+    url: 'https://script.google.com/macros/s/AKfycbyPJ5B8iotZRFZLD_ByUxEO8Hpyj4tihylyr2qSeRC6uVfS2egNQNDulj78v6AUpml8/exec',
     spreadsheetId: '1nEdGAcy45hMckYxOC_SRfrYEqW6ifgRv9fFoJA75YlY',
     enabled: true,
   },
@@ -125,8 +125,8 @@ const CAMPOS_MAP = {
     tiempoUnidad:'tiempoUnidad',
     tiempoMinutos:'tiempoMinutos'
   },
-  proyectos:    { id:'id', nombre:'nombre', descripcion:'descripcion', responsable:'responsable', areas:'areas', fechaEntrega:'fechaEntrega', estado:'estado', creadoPor:'creadoPor', subtareas:'subtareas', fechaCreacion:'fechaCreacion', correoFinalEnviado:'correoFinalEnviado' },
-  subtareasProyectos: { id:'id', proyecto:'proyecto', nombre:'nombre', descripcion:'descripcion', responsable:'responsable', fechaEntrega:'fechaEntrega', estado:'estado', areas:'areas', creadoPor:'creadoPor', fechaCreacion:'fechaCreacion' },
+  proyectos:    { id:'id', nombre:'nombre', descripcion:'descripcion', responsable:'responsable', areas:'areas', fechaEntrega:'fechaEntrega', estado:'estado', creadoPor:'creadoPor', subtareas:'subtareas', fechaCreacion:'fechaCreacion', fechaFinalizacion:'fechaFinalizacion', tiempoTotalMinutos:'tiempoTotalMinutos', totalSubtareas:'totalSubtareas', correoFinalEnviado:'correoFinalEnviado' },
+  subtareasProyectos: { id:'id', proyecto:'proyecto', nombre:'nombre', descripcion:'descripcion', responsable:'responsable', fechaEntrega:'fechaEntrega', estado:'estado', areas:'areas', creadoPor:'creadoPor', fechaCreacion:'fechaCreacion', fechaFinalizacion:'fechaFinalizacion', tiempoValor:'tiempoValor', tiempoUnidad:'tiempoUnidad', tiempoMinutos:'tiempoMinutos' },
 }
 
 // ── NORMALIZAR MES ── "MAYO" / "mayo" → "Mayo"
@@ -188,7 +188,7 @@ function fromSheetRow(tipo, row) {
     if(appKey === 'mes' && typeof val === 'string' && val.trim()) {
       val = normMes(val)
     }
-    if(['anio','inversion','galonesPlan','galones','ventaNeta','monto','metaGalones','metaVenta','valor','tiempoValor','tiempoMinutos'].includes(appKey)) {
+    if(['anio','inversion','galonesPlan','galones','ventaNeta','monto','metaGalones','metaVenta','valor','tiempoValor','tiempoMinutos','tiempoTotalMinutos','totalSubtareas'].includes(appKey)) {
       val = Number(val) || 0
     }
     if(appKey === 'tiposPlan' && typeof val === 'string') {
@@ -249,6 +249,7 @@ async function cargarDesdeSheets(uid) {
       tareasAsignadas:  (d.tareas_asignadas || d.TAREAS_ASIGNADAS || d.tareasAsignadas || []).map(r=>fromSheetRow('tareasAsignadas',r)),
       misTareas:         (d.mis_tareas || d.MIS_TAREAS || d.misTareas || []).map(r=>fromSheetRow('misTareas',r)),
       proyectos:         (d.proyectos || d.PROYECTOS || []).map(r=>fromSheetRow('proyectos',r)),
+      subtareasProyectos:(d.subtareas_proyectos || d.SUBTAREAS_PROYECTOS || d.subtareasProyectos || []).map(r=>fromSheetRow('subtareasProyectos',r)),
     }
   } catch(e) {
     console.error('Error cargando Sheets:', e)
@@ -373,6 +374,7 @@ function load() {
     tareasAsignadas: [],
     misTareas: [],
     proyectos: [],
+    subtareasProyectos: [],
     pendientes: [
       { id:1, distribuidor:'CVS- SERVITECAS S.A.S', tarea:'Revisar cumplimiento meta Q1', categoria:'Seguimiento', fechaLimite:'2026-03-31', prioridad:'Alta', estado:'Pendiente', responsable:'', notas:'' },
       { id:2, distribuidor:'MAQUINAGRO S.A.S', tarea:'Cerrar negociación plan Q2', categoria:'Negociación', fechaLimite:'2026-04-15', prioridad:'Alta', estado:'En curso', responsable:'', notas:'' },
@@ -2133,7 +2135,7 @@ function ApoyoCierre({ data, setData, usuario }) {
   const [formAsig, setFormAsig] = useState({ comercial:'', distribuidor:'', mes:'', anio:2026, monto:'' })
   const [formRed, setFormRed] = useState({ cliente:'', producto:'', valor:'', notas:'', copiarJefe:false })
 
-  const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxzqhKZr7ue545BDwpgqQrNsognsVOtxxZNPd6P4Jm_wtdj1_Sqkd9FdswrdtfM2d8S/exec'
+  const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbyPJ5B8iotZRFZLD_ByUxEO8Hpyj4tihylyr2qSeRC6uVfS2egNQNDulj78v6AUpml8/exec'
 
   const _canalActual = usuario?.id || 'distribucion'
   const EMAILS = EMAILS_POR_CANAL[_canalActual] || EMAILS_POR_CANAL.distribucion
@@ -3123,6 +3125,30 @@ function formatoTiempoTarea(t) {
   return Number.isInteger(dias) ? `${dias} día${dias===1?'':'s'}` : `${dias.toFixed(1)} días`
 }
 
+function parseFechaFlexible(valor) {
+  if(!valor) return null
+  if(valor instanceof Date && !isNaN(valor)) return valor
+  const s = String(valor).trim()
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
+  if(m) return new Date(Number(m[1]),Number(m[2])-1,Number(m[3]))
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+  if(m) return new Date(Number(m[3]),Number(m[2])-1,Number(m[1]))
+  const d = new Date(s)
+  return isNaN(d)?null:d
+}
+
+function resumenProyecto(proyecto) {
+  const subs = proyecto?.subtareas || []
+  const finalizadas = subs.filter(s=>s.estado==='Finalizada')
+  const minutos = finalizadas.reduce((sum,s)=>sum+Number(s.tiempoMinutos||0),0)
+  const inicio = parseFechaFlexible(proyecto?.fechaCreacion)
+  const fechasCierre = finalizadas.map(s=>parseFechaFlexible(s.fechaFinalizacion)).filter(Boolean)
+  const cierre = parseFechaFlexible(proyecto?.fechaFinalizacion) || (fechasCierre.length ? new Date(Math.max(...fechasCierre.map(d=>d.getTime()))) : null)
+  let dias = 0
+  if(inicio && cierre) dias = Math.max(0,Math.ceil((cierre-inicio)/(24*60*60*1000)))
+  return {total:subs.length,finalizadas:finalizadas.length,minutos,dias,cierre}
+}
+
 function ModalTiempoTarea({ tarea, onClose, onConfirm, guardando=false }) {
   const [tipo, setTipo] = useState('lista')
   const [opcion, setOpcion] = useState('60')
@@ -3417,6 +3443,8 @@ function TareasYProyectos({ data, setData, usuario }) {
   const [modalSubtarea, setModalSubtarea] = useState(false)
   const [guardandoProyecto, setGuardandoProyecto] = useState(false)
   const [guardandoSubtarea, setGuardandoSubtarea] = useState(false)
+  const [cerrandoSubtarea, setCerrandoSubtarea] = useState(null)
+  const [guardandoCierreSubtarea, setGuardandoCierreSubtarea] = useState(false)
   const [editProyecto, setEditProyecto] = useState(null)
   const [editSubtarea, setEditSubtarea] = useState(null)
   const [guardandoEdicionProyecto, setGuardandoEdicionProyecto] = useState(false)
@@ -3515,6 +3543,10 @@ function TareasYProyectos({ data, setData, usuario }) {
       areas: (subtarea.areas || []).join(', '),
       creadoPor: subtarea.creadoPor,
       fechaCreacion: subtarea.fechaCreacion,
+      fechaFinalizacion:'',
+      tiempoValor:'',
+      tiempoUnidad:'',
+      tiempoMinutos:0,
     }
 
     const nd = {
@@ -3628,7 +3660,9 @@ function TareasYProyectos({ data, setData, usuario }) {
       descripcion:actualizada.descripcion||'',responsable:actualizada.responsable||'',
       fechaEntrega:actualizada.fechaEntrega||'',estado:actualizada.estado||'Pendiente',
       areas:Array.isArray(actualizada.areas)?actualizada.areas.join(', '):(actualizada.areas||''),
-      creadoPor:actualizada.creadoPor||'',fechaCreacion:actualizada.fechaCreacion||''
+      creadoPor:actualizada.creadoPor||'',fechaCreacion:actualizada.fechaCreacion||'',
+      fechaFinalizacion:actualizada.fechaFinalizacion||'',tiempoValor:actualizada.tiempoValor||'',
+      tiempoUnidad:actualizada.tiempoUnidad||'',tiempoMinutos:Number(actualizada.tiempoMinutos||0)
     }
 
     try {
@@ -3661,59 +3695,71 @@ function TareasYProyectos({ data, setData, usuario }) {
     }
   }
 
-  const cambiarEstadoProy = (pid, estado) => {
-    const proyectosActualizados = proyectos.map(p=> p.id===pid ? {...p,estado} : p)
-    const nd = {...data, proyectos: proyectosActualizados}
-    const proyectoActualizado = proyectosActualizados.find(p=>p.id===pid)
-    setData(nd)
-    const destinoUid = obtenerUidResponsable(proyectoActualizado?.responsable)
-    eliminarFilaSheets(destinoUid,'proyectos',pid)
-      .then(()=>proyectoActualizado&&insertarFilaSheets(destinoUid,'proyectos',proyectoActualizado))
-      .catch(e=>console.error('Error actualizando proyecto:',e))
-    if(proyectoActivo?.id===pid) setProyectoActivo({...proyectoActivo,estado})
+  const cambiarEstadoProy = async (pid, estado) => {
+    const original = proyectos.find(p=>p.id===pid)
+    if(!original) return
+    const res = resumenProyecto(original)
+    const actualizado = {
+      ...original,
+      estado,
+      ...(estado==='Finalizada' ? {
+        fechaFinalizacion: original.fechaFinalizacion || new Date().toLocaleString('es-CO'),
+        tiempoTotalMinutos: res.minutos,
+        totalSubtareas: res.total,
+      } : {})
+    }
+    const proyectosActualizados = proyectos.map(p=>p.id===pid?actualizado:p)
+    setData({...data,proyectos:proyectosActualizados})
+    if(proyectoActivo?.id===pid) setProyectoActivo(actualizado)
+
+    const uidCentral='distribucion'
+    const uidResponsable=obtenerUidResponsable(actualizado.responsable)
+    try {
+      await eliminarFilaSheets(uidCentral,'proyectos',pid)
+      await insertarFilaSheets(uidCentral,'proyectos',actualizado)
+      if(uidResponsable!==uidCentral){
+        await eliminarFilaSheets(uidResponsable,'proyectos',pid)
+        await insertarFilaSheets(uidResponsable,'proyectos',actualizado)
+      }
+    } catch(e){ console.error('Error actualizando proyecto:',e) }
   }
 
-  const cambiarEstadoSub = async (pid, sid, estado) => {
+  const aplicarEstadoSub = async (pid, sid, estado, tiempo=null) => {
     const proyectoOriginal = proyectos.find(p => p.id === pid)
     const subtareaOriginal = proyectoOriginal?.subtareas?.find(s => String(s.id) === String(sid))
-
     if(!proyectoOriginal || !subtareaOriginal) return
 
-    const tareaSeAcabaDeFinalizar =
-      estado === 'Finalizada' && subtareaOriginal.estado !== 'Finalizada'
+    const tareaSeAcabaDeFinalizar = estado === 'Finalizada' && subtareaOriginal.estado !== 'Finalizada'
+    const fechaFinalizacion = tareaSeAcabaDeFinalizar ? new Date().toLocaleString('es-CO') : subtareaOriginal.fechaFinalizacion
 
     let proyectoActualizado = {
       ...proyectoOriginal,
       subtareas:(proyectoOriginal.subtareas || []).map(s =>
-        String(s.id) === String(sid) ? {...s, estado} : s
+        String(s.id) === String(sid)
+          ? {...s, estado, ...(tareaSeAcabaDeFinalizar?{fechaFinalizacion,...(tiempo||{})}:{})}
+          : s
       ),
     }
 
     const subtareasProyecto = proyectoActualizado.subtareas || []
-    const proyectoLlegoAl100 =
-      subtareasProyecto.length > 0 &&
-      subtareasProyecto.every(s => s.estado === 'Finalizada')
-
-    const debeNotificarProyecto =
-      proyectoLlegoAl100 &&
-      String(proyectoOriginal.correoFinalEnviado || 'NO').toUpperCase() !== 'SI'
+    const proyectoLlegoAl100 = subtareasProyecto.length > 0 && subtareasProyecto.every(s => s.estado === 'Finalizada')
+    const debeNotificarProyecto = proyectoLlegoAl100 && String(proyectoOriginal.correoFinalEnviado || 'NO').toUpperCase() !== 'SI'
 
     if(proyectoLlegoAl100) {
+      const resumen = resumenProyecto({...proyectoActualizado,fechaFinalizacion:new Date().toLocaleString('es-CO')})
       proyectoActualizado = {
         ...proyectoActualizado,
         estado:'Finalizada',
+        fechaFinalizacion:proyectoOriginal.fechaFinalizacion || new Date().toLocaleString('es-CO'),
+        tiempoTotalMinutos:resumen.minutos,
+        totalSubtareas:resumen.total,
         correoFinalEnviado: debeNotificarProyecto ? 'SI' : (proyectoOriginal.correoFinalEnviado || 'SI'),
       }
     }
 
-    const proyectosActualizados = proyectos.map(p =>
-      p.id === pid ? proyectoActualizado : p
-    )
-
+    const proyectosActualizados = proyectos.map(p => p.id === pid ? proyectoActualizado : p)
     const nd = {...data, proyectos: proyectosActualizados}
-    const subtareaActualizada = proyectoActualizado.subtareas.find(
-      s => String(s.id) === String(sid)
-    )
+    const subtareaActualizada = proyectoActualizado.subtareas.find(s => String(s.id) === String(sid))
 
     setData(nd)
     if(proyectoActivo?.id === pid) setProyectoActivo(proyectoActualizado)
@@ -3722,7 +3768,6 @@ function TareasYProyectos({ data, setData, usuario }) {
     const uidResponsable = obtenerUidResponsable(subtareaActualizada?.responsable)
 
     try {
-      // Guardar primero; después notificar.
       await eliminarFilaSheets(uidCentral, 'proyectos', pid)
       await insertarFilaSheets(uidCentral, 'proyectos', proyectoActualizado)
 
@@ -3735,9 +3780,13 @@ function TareasYProyectos({ data, setData, usuario }) {
           responsable: subtareaActualizada.responsable || '',
           fechaEntrega: subtareaActualizada.fechaEntrega || '',
           estado: subtareaActualizada.estado || 'Pendiente',
-          areas: (subtareaActualizada.areas || []).join(', '),
+          areas: Array.isArray(subtareaActualizada.areas) ? subtareaActualizada.areas.join(', ') : (subtareaActualizada.areas||''),
           creadoPor: subtareaActualizada.creadoPor || '',
           fechaCreacion: subtareaActualizada.fechaCreacion || '',
+          fechaFinalizacion: subtareaActualizada.fechaFinalizacion || '',
+          tiempoValor: subtareaActualizada.tiempoValor || '',
+          tiempoUnidad: subtareaActualizada.tiempoUnidad || '',
+          tiempoMinutos: Number(subtareaActualizada.tiempoMinutos || 0),
         }
 
         await eliminarFilaSheets(uidCentral, 'subtareasProyectos', sid)
@@ -3749,34 +3798,47 @@ function TareasYProyectos({ data, setData, usuario }) {
         }
       }
 
-      // 1. Correo cuando una tarea pasa por primera vez a Finalizada.
       if(tareaSeAcabaDeFinalizar) {
         await enviarCorreoFinalizacion({
           tipo:'tarea_finalizada',
           proyecto:proyectoActualizado,
           subtarea:subtareaActualizada,
-          destinatarios:[
-            obtenerCorreoResponsable(subtareaActualizada?.responsable),
-          ],
+          destinatarios:[obtenerCorreoResponsable(subtareaActualizada?.responsable)],
         })
       }
 
-      // 2. Correo general cuando el proyecto llega al 100 %.
       if(debeNotificarProyecto) {
         const correosInvolucrados = [
           obtenerCorreoResponsable(proyectoActualizado.responsable),
           ...subtareasProyecto.map(s => obtenerCorreoResponsable(s.responsable)),
         ]
-
-        await enviarCorreoFinalizacion({
-          tipo:'proyecto_finalizado',
-          proyecto:proyectoActualizado,
-          destinatarios:correosInvolucrados,
-        })
+        await enviarCorreoFinalizacion({tipo:'proyecto_finalizado',proyecto:proyectoActualizado,destinatarios:correosInvolucrados})
       }
     } catch(e) {
       console.error('Error actualizando o notificando la subtarea:', e)
       alert('El estado cambió en pantalla, pero hubo un error al guardar o enviar la notificación.')
+    }
+  }
+
+  const cambiarEstadoSub = async (pid, sid, estado) => {
+    const proyecto = proyectos.find(p=>p.id===pid)
+    const subtarea = proyecto?.subtareas?.find(s=>String(s.id)===String(sid))
+    if(!subtarea) return
+    if(estado==='Finalizada' && subtarea.estado!=='Finalizada') {
+      setCerrandoSubtarea({pid,sid,subtarea})
+      return
+    }
+    await aplicarEstadoSub(pid,sid,estado)
+  }
+
+  const confirmarFinalizacionSubtarea = async tiempo => {
+    if(!cerrandoSubtarea || guardandoCierreSubtarea) return
+    setGuardandoCierreSubtarea(true)
+    try {
+      await aplicarEstadoSub(cerrandoSubtarea.pid,cerrandoSubtarea.sid,'Finalizada',tiempo)
+      setCerrandoSubtarea(null)
+    } finally {
+      setGuardandoCierreSubtarea(false)
     }
   }
 
@@ -3832,6 +3894,13 @@ function TareasYProyectos({ data, setData, usuario }) {
             {(proy.areas||[]).map(a=><span key={a} style={{fontSize:11,background:'var(--accent-soft)',color:'var(--accent2)',padding:'2px 8px',borderRadius:5}}>{a}</span>)}
           </div>
           {proy.descripcion&&<p style={{fontSize:13,color:'var(--text2)',margin:0}}>{proy.descripcion}</p>}
+          {proy.estado==='Finalizada'&&(()=>{const r=resumenProyecto(proy);return (
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:8}}>
+              <div style={{background:'var(--green-soft)',padding:'10px 12px',borderRadius:8,fontSize:12}}><strong>{r.dias}</strong><br/><span style={{color:'var(--text3)'}}>días para cerrar</span></div>
+              <div style={{background:'var(--accent-soft)',padding:'10px 12px',borderRadius:8,fontSize:12}}><strong>{formatoTiempoTarea({tiempoMinutos:r.minutos})}</strong><br/><span style={{color:'var(--text3)'}}>tiempo trabajado</span></div>
+              <div style={{background:'var(--bg3)',padding:'10px 12px',borderRadius:8,fontSize:12}}><strong>{r.total}</strong><br/><span style={{color:'var(--text3)'}}>subtareas realizadas</span></div>
+            </div>
+          )})()}
           {total>0&&(
             <div>
               <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--text3)',marginBottom:4}}>
@@ -3858,6 +3927,7 @@ function TareasYProyectos({ data, setData, usuario }) {
                   <span style={{fontWeight:600,fontSize:14}}>{s.nombre}</span>
                   {s.responsable&&<span style={{fontSize:11,background:'var(--bg3)',padding:'2px 8px',borderRadius:5,color:'var(--text2)'}}>👤 {s.responsable}</span>}
                   {s.fechaEntrega&&<span style={{fontSize:11,color:'var(--text3)'}}>📅 {s.fechaEntrega}</span>}
+                  {Number(s.tiempoMinutos)>0&&<span style={{fontSize:11,color:'var(--green)'}}>⏱️ {formatoTiempoTarea(s)}</span>}
                 </div>
                 {s.descripcion&&<p style={{margin:'0 0 6px',fontSize:12,color:'var(--text2)'}}>{s.descripcion}</p>}
                 <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
@@ -3876,6 +3946,12 @@ function TareasYProyectos({ data, setData, usuario }) {
             </div>
           )
         })}
+        {cerrandoSubtarea&&<ModalTiempoTarea
+          tarea={cerrandoSubtarea.subtarea}
+          onClose={()=>setCerrandoSubtarea(null)}
+          onConfirm={confirmarFinalizacionSubtarea}
+          guardando={guardandoCierreSubtarea}
+        />}
         {editProyecto&&<FormProyecto
           form={editProyecto}
           setForm={setEditProyecto}
@@ -4351,96 +4427,73 @@ function AsignarTareasEquipoPaola() {
 }
 
 function NotificacionesEquipoPaola() {
-  const [datos,setDatos] = useState({asignadas:[],personales:[]})
+  const [datos,setDatos] = useState({asignadas:[],personales:[],proyectos:[]})
   const [cargando,setCargando] = useState(true)
 
   const refrescar = async () => {
     setCargando(true)
     const d = await cargarDesdeSheets('distribucion')
-    if(d) setDatos({asignadas:d.tareasAsignadas||[],personales:d.misTareas||[]})
+    if(d) setDatos({asignadas:d.tareasAsignadas||[],personales:d.misTareas||[],proyectos:d.proyectos||[]})
     setCargando(false)
   }
 
   useEffect(()=>{ refrescar() },[])
 
+  const subtareas = (datos.proyectos||[]).flatMap(p=>(p.subtareas||[]).map(s=>({...s,proyectoNombre:p.nombre})))
   const movimientos = [
-    ...datos.asignadas.map(t=>({
-      id:'a-'+t.id,
-      titulo:t.estado==='Finalizada'?'Tarea finalizada':'Tarea asignada por Paola',
-      detalle:`${t.responsable||'Sin responsable'} · ${t.nombre||'Tarea'}`,
-      fecha:t.fechaFinalizacion||t.fechaCreacion||'',
-      estado:t.estado||'Pendiente',
-      finalizada:t.estado==='Finalizada'
-    })),
-    ...datos.personales.map(t=>({
-      id:'p-'+t.id,
-      titulo:t.estado==='Finalizada'?'Tarea personal finalizada':'Tarea personal creada',
-      detalle:`${t.responsable||'Equipo'} · ${t.nombre||'Tarea'}`,
-      fecha:t.fechaFinalizacion||t.fechaCreacion||'',
-      estado:t.estado||'Pendiente',
-      finalizada:t.estado==='Finalizada'
-    })),
-  ]
+    ...datos.asignadas.flatMap(t=>[
+      {id:'a-crea-'+t.id,titulo:`Paola asignó una tarea a ${t.responsable||'el equipo'}`,detalle:t.nombre||'Tarea',fecha:t.fechaCreacion||'',estado:'Asignada',finalizada:false},
+      ...(t.estado==='Finalizada'?[{id:'a-fin-'+t.id,titulo:`${t.responsable||'El equipo'} finalizó una tarea`,detalle:t.nombre||'Tarea',fecha:t.fechaFinalizacion||'',estado:'Finalizada',finalizada:true}]:[])
+    ]),
+    ...datos.personales.flatMap(t=>[
+      {id:'p-crea-'+t.id,titulo:`${t.responsable||'El equipo'} creó una tarea personal`,detalle:t.nombre||'Tarea personal',fecha:t.fechaCreacion||'',estado:'Creada',finalizada:false},
+      ...(t.estado==='Finalizada'?[{id:'p-fin-'+t.id,titulo:`${t.responsable||'El equipo'} finalizó una tarea personal`,detalle:t.nombre||'Tarea personal',fecha:t.fechaFinalizacion||'',estado:'Finalizada',finalizada:true}]:[])
+    ]),
+    ...(datos.proyectos||[]).flatMap(p=>[
+      {id:'pr-crea-'+p.id,titulo:`Proyecto asignado a ${p.responsable||'el equipo'}`,detalle:p.nombre||'Proyecto',fecha:p.fechaCreacion||'',estado:'Asignado',finalizada:false},
+      ...(p.estado==='Finalizada'?[{id:'pr-fin-'+p.id,titulo:`${p.responsable||'El equipo'} cerró un proyecto`,detalle:p.nombre||'Proyecto',fecha:p.fechaFinalizacion||'',estado:'Finalizado',finalizada:true}]:[])
+    ]),
+    ...subtareas.flatMap(s=>[
+      {id:'st-crea-'+s.id,titulo:`Subtarea asignada a ${s.responsable||'el equipo'}`,detalle:`${s.proyectoNombre||'Proyecto'} · ${s.nombre||'Subtarea'}`,fecha:s.fechaCreacion||'',estado:'Asignada',finalizada:false},
+      ...(s.estado==='Finalizada'?[{id:'st-fin-'+s.id,titulo:`${s.responsable||'El equipo'} finalizó una subtarea`,detalle:`${s.proyectoNombre||'Proyecto'} · ${s.nombre||'Subtarea'}`,fecha:s.fechaFinalizacion||'',estado:'Finalizada',finalizada:true}]:[])
+    ]),
+  ].sort((a,b)=>String(b.fecha||'').localeCompare(String(a.fecha||'')))
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:16}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <div>
-          <h2 style={{fontSize:18,margin:0}}>Notificaciones</h2>
-          <p style={{fontSize:12,color:'var(--text3)',margin:'4px 0 0'}}>Movimientos registrados en las tareas del equipo.</p>
-        </div>
-        <button disabled={cargando} onClick={refrescar} style={S.btn('var(--bg3)','var(--text2)')}>
-          {cargando?'⏳ Cargando...':'↻ Actualizar'}
-        </button>
+        <div><h2 style={{fontSize:18,margin:0}}>Notificaciones del equipo</h2><p style={{fontSize:12,color:'var(--text3)',margin:'4px 0 0'}}>Asignaciones, proyectos, subtareas y cierres del equipo.</p></div>
+        <button disabled={cargando} onClick={refrescar} style={S.btn('var(--bg3)','var(--text2)')}>{cargando?'⏳ Cargando...':'↻ Actualizar'}</button>
       </div>
-
-      <div style={S.card}>
-        <div style={{padding:12,display:'flex',flexDirection:'column',gap:8}}>
-          {!cargando&&movimientos.length===0&&(
-            <div style={{padding:35,textAlign:'center',color:'var(--text3)'}}>Aún no hay movimientos registrados.</div>
-          )}
-          {movimientos.map(n=>(
-            <div key={n.id} style={{
-              display:'flex',gap:12,alignItems:'center',padding:'11px 12px',
-              border:'1px solid var(--border2)',borderRadius:10,background:'var(--bg3)'
-            }}>
-              <div style={{
-                width:34,height:34,borderRadius:10,display:'grid',placeItems:'center',
-                background:n.finalizada?'var(--green-soft)':'var(--accent-soft)',
-                color:n.finalizada?'var(--green)':'var(--accent2)',fontWeight:800
-              }}>
-                {n.finalizada?'✓':'!'}
-              </div>
-              <div style={{flex:1}}>
-                <div style={{fontSize:13,fontWeight:700}}>{n.titulo}</div>
-                <div style={{fontSize:12,color:'var(--text2)',marginTop:2}}>{n.detalle}</div>
-              </div>
-              <div style={{textAlign:'right'}}>
-                <div style={{fontSize:11,fontWeight:700,color:n.finalizada?'var(--green)':'var(--orange)'}}>{n.estado}</div>
-                {n.fecha&&<div style={{fontSize:10,color:'var(--text3)',marginTop:3}}>{String(n.fecha)}</div>}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      <div style={S.card}><div style={{padding:12,display:'flex',flexDirection:'column',gap:8}}>
+        {!cargando&&movimientos.length===0&&<div style={{padding:35,textAlign:'center',color:'var(--text3)'}}>Aún no hay movimientos registrados.</div>}
+        {movimientos.map(n=>(
+          <div key={n.id} style={{display:'flex',gap:12,alignItems:'center',padding:'11px 12px',border:'1px solid var(--border2)',borderRadius:10,background:'var(--bg3)'}}>
+            <div style={{width:34,height:34,borderRadius:10,display:'grid',placeItems:'center',background:n.finalizada?'var(--green-soft)':'var(--accent-soft)',color:n.finalizada?'var(--green)':'var(--accent2)',fontWeight:800}}>{n.finalizada?'✓':'!'}</div>
+            <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700}}>{n.titulo}</div><div style={{fontSize:12,color:'var(--text2)',marginTop:2}}>{n.detalle}</div></div>
+            <div style={{textAlign:'right'}}><div style={{fontSize:11,fontWeight:700,color:n.finalizada?'var(--green)':'var(--orange)'}}>{n.estado}</div>{n.fecha&&<div style={{fontSize:10,color:'var(--text3)',marginTop:3}}>{String(n.fecha)}</div>}</div>
+          </div>
+        ))}
+      </div></div>
     </div>
   )
 }
 
 function DashboardLider() {
-  const [tabLider, setTabLider] = useState('dashboard')
+  const [tabLider, setTabLider] = useState('tiempos')
+  const [filtroPersona, setFiltroPersona] = useState('')
   const [filtroUnidad, setFiltroUnidad] = useState('')
   const [filtroMes, setFiltroMes] = useState('')
   const [modalPendiente, setModalPendiente] = useState(false)
   const [guardandoPendiente, setGuardandoPendiente] = useState(false)
-  const [tareasCentral, setTareasCentral] = useState({asignadas:[],personales:[]})
+  const [tareasCentral, setTareasCentral] = useState({asignadas:[],personales:[],proyectos:[]})
   const [datosUnidadesSheets, setDatosUnidadesSheets] = useState([])
   const [cargandoDashboard, setCargandoDashboard] = useState(true)
   const [formPend, setFormPend] = useState({nombre:'',descripcion:'',responsable:'',areas:[],fechaLimite:'',estado:'Pendiente'})
 
   const refrescarTareasCentral = async () => {
     const d = await cargarDesdeSheets('distribucion')
-    if(d) setTareasCentral({asignadas:d.tareasAsignadas||[],personales:d.misTareas||[]})
+    if(d) setTareasCentral({asignadas:d.tareasAsignadas||[],personales:d.misTareas||[],proyectos:d.proyectos||[]})
   }
 
   const cargarDashboardDesdeSheets = async () => {
@@ -4546,7 +4599,7 @@ function DashboardLider() {
     zonas:        'msilva@prolub.com.co',
     diseno:       'aalvarado@gulfcolombia.com',
   }
-  const SHEETS_URL_LIDER = 'https://script.google.com/macros/s/AKfycbxzqhKZr7ue545BDwpgqQrNsognsVOtxxZNPd6P4Jm_wtdj1_Sqkd9FdswrdtfM2d8S/exec'
+  const SHEETS_URL_LIDER = 'https://script.google.com/macros/s/AKfycbyPJ5B8iotZRFZLD_ByUxEO8Hpyj4tihylyr2qSeRC6uVfS2egNQNDulj78v6AUpml8/exec'
 
   const crearPendiente = async () => {
     if(guardandoPendiente) return
@@ -4596,38 +4649,42 @@ function DashboardLider() {
   }
 
   const TABS_L = [
-    {id:'dashboard',label:'Dashboard'},
-    {id:'tiempos',label:'Tiempos del equipo'},
+    {id:'tiempos',label:'Dashboard de tiempos'},
+    {id:'pendientesEquipo',label:'Pendientes del equipo'},
+    {id:'dashboard',label:'Dashboard comercial'},
     {id:'clientes',label:'Por Cliente'},
     {id:'presupuesto',label:'Presupuesto'}
   ]
 
-  const tareasMedibles = [...tareasCentral.asignadas,...tareasCentral.personales]
-    .filter(t=>t.estado==='Finalizada'&&Number(t.tiempoMinutos||0)>0)
+  const subtareasCentral = (tareasCentral.proyectos||[]).flatMap(p=>(p.subtareas||[]).map(s=>({...s,proyectoNombre:p.nombre,proyectoId:p.id})))
+  const tareasMedibles = [
+    ...tareasCentral.asignadas.map(t=>({...t,_tipo:'Tarea asignada'})),
+    ...tareasCentral.personales.map(t=>({...t,_tipo:'Tarea personal'})),
+    ...subtareasCentral.map(t=>({...t,_tipo:'Subtarea'})),
+  ].filter(t=>t.estado==='Finalizada'&&Number(t.tiempoMinutos||0)>0)
 
-  const notificacionesPaola = [
-    ...tareasCentral.asignadas.map(t=>({
-      id:'a-'+t.id,
-      tipo:t.estado==='Finalizada'?'finalizada':'asignada',
-      titulo:t.estado==='Finalizada'?'Tarea finalizada':'Tarea asignada',
-      detalle:`${t.responsable||'Sin responsable'} · ${t.nombre||'Tarea'}`,
-      fecha:t.fechaFinalizacion||t.fechaCreacion||'',
-      estado:t.estado||'Pendiente'
-    })),
-    ...tareasCentral.personales.map(t=>({
-      id:'p-'+t.id,
-      tipo:t.estado==='Finalizada'?'finalizada':'personal',
-      titulo:t.estado==='Finalizada'?'Tarea personal finalizada':'Nueva tarea personal',
-      detalle:`${t.responsable||'Equipo'} · ${t.nombre||'Tarea'}`,
-      fecha:t.fechaFinalizacion||t.fechaCreacion||'',
-      estado:t.estado||'Pendiente'
-    }))
-  ].sort((a,b)=>String(b.fecha||'').localeCompare(String(a.fecha||'')))
+  const proyectosFinalizados = (tareasCentral.proyectos||[]).filter(p=>p.estado==='Finalizada')
+  const minutosProyectos = proyectosFinalizados.reduce((s,p)=>s+resumenProyecto(p).minutos,0)
+  const promedioDiasProyecto = proyectosFinalizados.length
+    ? proyectosFinalizados.reduce((s,p)=>s+resumenProyecto(p).dias,0)/proyectosFinalizados.length
+    : 0
+
+  const pendientesAsignadas = tareasCentral.asignadas.filter(t=>t.estado!=='Finalizada'&&t.estado!=='Cancelada')
+  const proyectosPendientes = (tareasCentral.proyectos||[]).filter(p=>p.estado!=='Finalizada'&&p.estado!=='Cancelada')
+  const subtareasPendientes = subtareasCentral.filter(s=>s.estado!=='Finalizada'&&s.estado!=='Cancelada')
+
+  const coincidePersona = item => !filtroPersona || normalizarNombreResponsable(item.responsable)===normalizarNombreResponsable(filtroPersona)
+  const pendientesAsignadasFiltradas = pendientesAsignadas.filter(coincidePersona)
+  const proyectosPendientesFiltrados = proyectosPendientes.filter(coincidePersona)
+  const subtareasPendientesFiltradas = subtareasPendientes.filter(coincidePersona)
 
   const resumenTiempos = RESPONSABLES.map(nombre=>{
     const lista = tareasMedibles.filter(t=>normalizarNombreResponsable(t.responsable)===normalizarNombreResponsable(nombre))
     const promedio = lista.length?lista.reduce((s,t)=>s+Number(t.tiempoMinutos||0),0)/lista.length:0
-    return {nombre,cerradas:lista.length,promedio}
+    const asignadas = lista.filter(t=>t._tipo==='Tarea asignada').length
+    const personales = lista.filter(t=>t._tipo==='Tarea personal').length
+    const subtareas = lista.filter(t=>t._tipo==='Subtarea').length
+    return {nombre,cerradas:lista.length,promedio,asignadas,personales,subtareas}
   }).filter(r=>r.cerradas>0)
 
   return (
@@ -4649,6 +4706,12 @@ function DashboardLider() {
           <option value="">Todos los meses</option>
           {MESES.map(m=><option key={m}>{m}</option>)}
         </select>
+        {(tabLider==='tiempos'||tabLider==='pendientesEquipo')&&(
+          <select value={filtroPersona} onChange={e=>setFiltroPersona(e.target.value)} style={{width:170}}>
+            <option value="">Todo el equipo</option>
+            {RESPONSABLES.map(r=><option key={r}>{r}</option>)}
+          </select>
+        )}
         {(filtroUnidad||filtroMes)&&<button onClick={()=>{setFiltroUnidad('');setFiltroMes('')}} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:12}}>✕</button>}
         
       </div>
@@ -4659,14 +4722,16 @@ function DashboardLider() {
         </div>
       )}
 
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',gap:12,overflow:'visible'}}>
-        <KpiCard icon={TrendingUp} label="Inversión total" value={cop(totalInv)} sub={filtroMes||'Acumulado'} accent="var(--accent2)"/>
-        <KpiCard icon={ShoppingCart} label="Venta neta" value={cop(totalVenta)} accent="var(--green)"/>
-        <KpiCard icon={BarChart2} label="% Inv/Venta" value={roiPct.toFixed(1)+'%'} accent={roiPct>15?'var(--red)':roiPct>10?'var(--yellow)':'var(--green)'}/>
-        <KpiCard icon={DollarSign} label="Presupuesto" value={cop(totalPres)} sub={totalPres>0?((totalGastos/totalPres)*100).toFixed(1)+'% ejec.':''}/>
-        <KpiCard icon={DollarSign} label="Gastado presup." value={cop(totalGastos)} accent={totalGastos>totalPres?'var(--red)':'var(--text)'}/>
-        <KpiCard icon={ListTodo} label="Actividades abiertas" value={actFiltradas.filter(a=>a.estado!=='Listo'&&a.estado!=='Cancelado').length} accent="var(--yellow)"/>
-      </div>
+      {tabLider==='dashboard'&&(
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',gap:12,overflow:'visible'}}>
+          <KpiCard icon={TrendingUp} label="Inversión total" value={cop(totalInv)} sub={filtroMes||'Acumulado'} accent="var(--accent2)"/>
+          <KpiCard icon={ShoppingCart} label="Venta neta" value={cop(totalVenta)} accent="var(--green)"/>
+          <KpiCard icon={BarChart2} label="% Inv/Venta" value={roiPct.toFixed(1)+'%'} accent={roiPct>15?'var(--red)':roiPct>10?'var(--yellow)':'var(--green)'}/>
+          <KpiCard icon={DollarSign} label="Presupuesto" value={cop(totalPres)} sub={totalPres>0?((totalGastos/totalPres)*100).toFixed(1)+'% ejec.':''}/>
+          <KpiCard icon={DollarSign} label="Gastado presup." value={cop(totalGastos)} accent={totalGastos>totalPres?'var(--red)':'var(--text)'}/>
+          <KpiCard icon={ListTodo} label="Actividades abiertas" value={actFiltradas.filter(a=>a.estado!=='Listo'&&a.estado!=='Cancelado').length} accent="var(--yellow)"/>
+        </div>
+      )}
 
       {tabLider==='dashboard'&&(
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
@@ -4732,25 +4797,76 @@ function DashboardLider() {
 
       {tabLider==='tiempos'&&(
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}>
-            <KpiCard icon={Check} label="Tareas medidas" value={tareasMedibles.length} accent="var(--green)"/>
-            <KpiCard icon={ListTodo} label="Asignadas finalizadas" value={tareasCentral.asignadas.filter(t=>t.estado==='Finalizada').length} accent="var(--orange)"/>
-            <KpiCard icon={ListTodo} label="Personales finalizadas" value={tareasCentral.personales.filter(t=>t.estado==='Finalizada').length} accent="var(--accent2)"/>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(4,minmax(0,1fr))',gap:12}}>
+            <KpiCard icon={Check} label="Tareas con tiempo" value={tareasMedibles.filter(coincidePersona).length} accent="var(--green)"/>
+            <KpiCard icon={BookOpen} label="Proyectos cerrados" value={proyectosFinalizados.filter(coincidePersona).length} accent="var(--accent2)"/>
+            <KpiCard icon={BarChart2} label="Horas en proyectos" value={formatoTiempoTarea({tiempoMinutos:minutosProyectos})} accent="var(--orange)"/>
+            <KpiCard icon={ListTodo} label="Prom. cierre proyecto" value={promedioDiasProyecto?promedioDiasProyecto.toFixed(1)+' días':'—'} accent="var(--yellow)"/>
           </div>
+
           <div style={S.card}>
+            <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}>
+              <h4 style={{fontSize:12,fontWeight:700,margin:0}}>Velocidad del equipo</h4>
+              <div style={{fontSize:11,color:'var(--text3)',marginTop:3}}>Incluye tareas asignadas, tareas personales y subtareas de proyectos.</div>
+            </div>
             <table style={{width:'100%',borderCollapse:'collapse'}}>
-              <thead><tr>{['Persona','Tareas cerradas','Tiempo promedio'].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Persona','Cierres','Asignadas','Personales','Subtareas','Tiempo promedio'].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
               <tbody>
-                {resumenTiempos.length===0&&<tr><td colSpan={3} style={{...S.td,textAlign:'center',padding:35,color:'var(--text3)'}}>Aún no hay tareas finalizadas con tiempo reportado.</td></tr>}
-                {resumenTiempos.map(r=>(
+                {resumenTiempos.filter(r=>!filtroPersona||normalizarNombreResponsable(r.nombre)===normalizarNombreResponsable(filtroPersona)).length===0&&
+                  <tr><td colSpan={6} style={{...S.td,textAlign:'center',padding:35,color:'var(--text3)'}}>Aún no hay cierres con tiempo reportado.</td></tr>}
+                {resumenTiempos.filter(r=>!filtroPersona||normalizarNombreResponsable(r.nombre)===normalizarNombreResponsable(filtroPersona)).map(r=>(
                   <tr key={r.nombre}>
                     <td style={{...S.td,fontWeight:700}}>{r.nombre}</td>
                     <td style={S.td}>{r.cerradas}</td>
+                    <td style={S.td}>{r.asignadas}</td>
+                    <td style={S.td}>{r.personales}</td>
+                    <td style={S.td}>{r.subtareas}</td>
                     <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--accent2)'}}>{formatoTiempoTarea({tiempoMinutos:r.promedio})}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+
+          <div style={S.card}>
+            <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}><h4 style={{fontSize:12,fontWeight:700,margin:0}}>Resumen de proyectos finalizados</h4></div>
+            <table style={{width:'100%',borderCollapse:'collapse'}}>
+              <thead><tr>{['Proyecto','Responsable','Días para cerrar','Horas trabajadas','Subtareas'].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {proyectosFinalizados.filter(coincidePersona).length===0&&<tr><td colSpan={5} style={{...S.td,textAlign:'center',padding:30,color:'var(--text3)'}}>No hay proyectos finalizados para este filtro.</td></tr>}
+                {proyectosFinalizados.filter(coincidePersona).map(p=>{const r=resumenProyecto(p);return (
+                  <tr key={p.id}>
+                    <td style={{...S.td,fontWeight:700}}>{p.nombre}</td>
+                    <td style={S.td}>{p.responsable||'—'}</td>
+                    <td style={S.td}>{r.dias} días</td>
+                    <td style={S.td}>{formatoTiempoTarea({tiempoMinutos:r.minutos})}</td>
+                    <td style={S.td}>{r.finalizadas}/{r.total}</td>
+                  </tr>
+                )})}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {tabLider==='pendientesEquipo'&&(
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:12}}>
+            <KpiCard icon={ListTodo} label="Tareas asignadas pendientes" value={pendientesAsignadasFiltradas.length} accent="var(--orange)"/>
+            <KpiCard icon={BookOpen} label="Proyectos pendientes" value={proyectosPendientesFiltrados.length} accent="var(--accent2)"/>
+            <KpiCard icon={Check} label="Subtareas pendientes" value={subtareasPendientesFiltradas.length} accent="var(--yellow)"/>
+          </div>
+          <div style={S.card}>
+            <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)',fontWeight:700,fontSize:12}}>Pendientes por persona</div>
+            <div style={{padding:12,display:'flex',flexDirection:'column',gap:8}}>
+              {[...pendientesAsignadasFiltradas.map(t=>({...t,_clase:'Tarea asignada',_fecha:t.fechaLimite})),...proyectosPendientesFiltrados.map(t=>({...t,_clase:'Proyecto',_fecha:t.fechaEntrega})),...subtareasPendientesFiltradas.map(t=>({...t,_clase:'Subtarea · '+t.proyectoNombre,_fecha:t.fechaEntrega}))].map((t,i)=>(
+                <div key={t._clase+'-'+t.id+'-'+i} style={{display:'flex',alignItems:'center',gap:12,padding:'11px 13px',background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:9}}>
+                  <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700}}>{t.nombre}</div><div style={{fontSize:11,color:'var(--text3)',marginTop:3}}>{t._clase} · 👤 {t.responsable||'Sin responsable'} {t._fecha?' · 📅 '+String(t._fecha).slice(0,10):''}</div></div>
+                  <Badge label={t.estado||'Pendiente'}/>
+                </div>
+              ))}
+              {pendientesAsignadasFiltradas.length+proyectosPendientesFiltrados.length+subtareasPendientesFiltradas.length===0&&<div style={{padding:35,textAlign:'center',color:'var(--text3)'}}>No hay pendientes para este filtro.</div>}
+            </div>
           </div>
         </div>
       )}
@@ -4968,6 +5084,75 @@ function PresupuestoConsolidado() {
   )
 }
 
+function CampanaNotificaciones({usuario,data,onIr}) {
+  const [abierta,setAbierta] = useState(false)
+  const [central,setCentral] = useState(null)
+
+  useEffect(()=>{
+    if(usuario?.rol==='lider') {
+      cargarDesdeSheets('distribucion').then(d=>{ if(d) setCentral(d) })
+    }
+  },[usuario?.id,abierta])
+
+  const fuente = usuario?.rol==='lider' ? (central||{tareasAsignadas:[],misTareas:[],proyectos:[]}) : (data||{})
+  const persona = nombrePersonaPorUsuario(usuario)
+  const esLider = usuario?.rol==='lider'
+  const propios = item => esLider || normalizarNombreResponsable(item?.responsable)===normalizarNombreResponsable(persona)
+  const proyectos = fuente.proyectos||[]
+  const subtareas = proyectos.flatMap(p=>(p.subtareas||[]).map(s=>({...s,proyectoNombre:p.nombre})))
+
+  const movimientos = [
+    ...(fuente.tareasAsignadas||[]).filter(propios).flatMap(t=>[
+      {id:'ta-crea-'+t.id,titulo:`Paola te asignó: ${t.nombre||'Tarea'}`,detalle:`Responsable: ${t.responsable||'—'}`,fecha:t.fechaCreacion||'',finalizada:false,destino:esLider?'asignarTareas':'tareasasignadas'},
+      ...(t.estado==='Finalizada'?[{id:'ta-fin-'+t.id,titulo:`${t.responsable||'El equipo'} finalizó una tarea`,detalle:t.nombre||'Tarea',fecha:t.fechaFinalizacion||'',finalizada:true,destino:esLider?'asignarTareas':'tareasasignadas'}]:[])
+    ]),
+    ...(fuente.misTareas||[]).filter(propios).flatMap(t=>[
+      {id:'mp-crea-'+t.id,titulo:`${t.responsable||'El equipo'} creó una tarea personal`,detalle:t.nombre||'Tarea personal',fecha:t.fechaCreacion||'',finalizada:false,destino:esLider?'dashboard':'tareasProyectos'},
+      ...(t.estado==='Finalizada'?[{id:'mp-fin-'+t.id,titulo:`${t.responsable||'El equipo'} finalizó una tarea personal`,detalle:t.nombre||'Tarea personal',fecha:t.fechaFinalizacion||'',finalizada:true,destino:esLider?'dashboard':'tareasProyectos'}]:[])
+    ]),
+    ...proyectos.filter(propios).flatMap(p=>[
+      {id:'pr-crea-'+p.id,titulo:`Proyecto asignado a ${p.responsable||'el equipo'}`,detalle:p.nombre||'Proyecto',fecha:p.fechaCreacion||'',finalizada:false,destino:'tareasProyectos'},
+      ...(p.estado==='Finalizada'?[{id:'pr-fin-'+p.id,titulo:`${p.responsable||'El equipo'} cerró un proyecto`,detalle:p.nombre||'Proyecto',fecha:p.fechaFinalizacion||'',finalizada:true,destino:'tareasProyectos'}]:[])
+    ]),
+    ...subtareas.filter(propios).flatMap(s=>[
+      {id:'st-crea-'+s.id,titulo:`Subtarea asignada a ${s.responsable||'el equipo'}`,detalle:`${s.proyectoNombre||'Proyecto'} · ${s.nombre||'Subtarea'}`,fecha:s.fechaCreacion||'',finalizada:false,destino:'tareasProyectos'},
+      ...(s.estado==='Finalizada'?[{id:'st-fin-'+s.id,titulo:`${s.responsable||'El equipo'} finalizó una subtarea`,detalle:`${s.proyectoNombre||'Proyecto'} · ${s.nombre||'Subtarea'}`,fecha:s.fechaFinalizacion||'',finalizada:true,destino:'tareasProyectos'}]:[])
+    ]),
+  ].sort((a,b)=>String(b.fecha||'').localeCompare(String(a.fecha||''))).slice(0,30)
+
+  const pendientes =
+    (fuente.tareasAsignadas||[]).filter(t=>propios(t)&&t.estado!=='Finalizada'&&t.estado!=='Cancelada').length +
+    (fuente.misTareas||[]).filter(t=>propios(t)&&t.estado!=='Finalizada'&&t.estado!=='Cancelada').length +
+    proyectos.filter(p=>propios(p)&&p.estado!=='Finalizada'&&p.estado!=='Cancelada').length +
+    subtareas.filter(s=>propios(s)&&s.estado!=='Finalizada'&&s.estado!=='Cancelada').length
+
+  return (
+    <div style={{position:'relative'}}>
+      <button onClick={()=>setAbierta(v=>!v)} title="Notificaciones" style={{width:36,height:36,borderRadius:10,background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.16)',display:'grid',placeItems:'center',cursor:'pointer',position:'relative'}}>
+        <Bell size={16} color="#fff"/>
+        {pendientes>0&&<span style={{position:'absolute',top:-5,right:-5,minWidth:18,height:18,padding:'0 4px',borderRadius:10,background:'#ef4444',color:'#fff',fontSize:9,fontWeight:800,display:'grid',placeItems:'center',border:'2px solid var(--sidebar-bg)'}}>{pendientes>99?'99+':pendientes}</span>}
+      </button>
+      {abierta&&(
+        <div style={{position:'absolute',right:0,top:44,width:360,maxHeight:430,overflowY:'auto',background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:12,boxShadow:'0 16px 45px rgba(0,0,0,.25)',zIndex:500,padding:10}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'5px 7px 10px'}}>
+            <div><div style={{fontWeight:800,fontSize:13}}>Notificaciones</div><div style={{fontSize:10,color:'var(--text3)'}}>Movimientos de tareas y proyectos</div></div>
+            <span style={{fontSize:10,color:'var(--text3)'}}>{movimientos.length}</span>
+          </div>
+          {movimientos.length===0&&<div style={{padding:24,textAlign:'center',fontSize:12,color:'var(--text3)'}}>Sin movimientos todavía.</div>}
+          {movimientos.map(m=>(
+            <button key={m.id} onClick={()=>{setAbierta(false);onIr?.(m.destino)}} style={{width:'100%',textAlign:'left',background:'transparent',border:'none',borderTop:'1px solid var(--border)',padding:'10px 8px',cursor:'pointer',fontFamily:'var(--font)'}}>
+              <div style={{display:'flex',gap:9}}>
+                <div style={{width:28,height:28,borderRadius:8,display:'grid',placeItems:'center',flexShrink:0,background:m.finalizada?'var(--green-soft)':'var(--accent-soft)',color:m.finalizada?'var(--green)':'var(--accent2)'}}>{m.finalizada?'✓':'!'}</div>
+                <div style={{minWidth:0}}><div style={{fontSize:11,fontWeight:700,color:'var(--text)'}}>{m.titulo}</div><div style={{fontSize:11,color:'var(--text2)',marginTop:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{m.detalle}</div>{m.fecha&&<div style={{fontSize:9,color:'var(--text3)',marginTop:3}}>{String(m.fecha)}</div>}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ═══════════════════════════════════════════════════════
 // APP PRINCIPAL
 // ═══════════════════════════════════════════════════════
@@ -4990,19 +5175,20 @@ export default function App() {
 
   useEffect(()=>{
     if(!usuario) return
-    setData(loadUser(usuario.id))
-    if(SHEETS_CONFIG[usuario.id]?.enabled) {
+    const uidCarga = usuario.rol==='lider' ? 'distribucion' : usuario.id
+    setData(loadUser(uidCarga))
+    if(SHEETS_CONFIG[uidCarga]?.enabled) {
       setSheetsLoading(true)
       setSheetsSync('syncing')
       const loadTimeout = setTimeout(() => setSheetsLoading(false), 5000)
-      cargarDesdeSheets(usuario.id).then(sheetData => {
+      cargarDesdeSheets(uidCarga).then(sheetData => {
         clearTimeout(loadTimeout)
         setSheetsLoading(false)
         if(sheetData) {
           // Salvaguarda: si Sheets devuelve presupuestos vacío pero localmente
           // ya teníamos datos, conservar los locales (evita pérdida por
           // desajuste de nombres de columna en el backend de Sheets)
-          const localActual = loadUser(usuario.id)
+          const localActual = loadUser(uidCarga)
           if((!sheetData.presupuestos || sheetData.presupuestos.length===0) && localActual.presupuestos?.length>0) {
             sheetData.presupuestos = localActual.presupuestos
           }
@@ -5013,7 +5199,7 @@ export default function App() {
             sheetData.tareasAsignadas = localActual.tareasAsignadas
           }
           setData(sheetData)
-          _currentUserKey = getStorageKey(usuario.id)
+          _currentUserKey = getStorageKey(uidCarga)
           localStorage.setItem(_currentUserKey, JSON.stringify(sheetData))
           setSheetsSync('ok')
         } else {
@@ -5080,15 +5266,15 @@ export default function App() {
   const esColaborador = usuario.rol==='colaborador'
 
   const TABS_LIDER = [
-    {id:'dashboard',label:'Dashboard Consolidado',icon:LayoutDashboard},
-    {id:'asignarTareas',label:'Asignar tareas al equipo',icon:ListTodo},
-    {id:'notificaciones',label:'Notificaciones',icon:Bell},
-    {id:'tareasProyectos',label:'Tareas y Proyectos',icon:BookOpen}
+    {id:'dashboard',label:'Dashboard de tiempos',icon:BarChart2},
+    {id:'asignarTareas',label:'Tareas asignadas',icon:ListTodo},
+    {id:'tareasProyectos',label:'Proyectos y subtareas',icon:BookOpen},
+    {id:'notificaciones',label:'Notificaciones',icon:Bell}
   ]
   const TABS_PRES = [{id:'dashboard',label:'Presupuesto Consolidado',icon:DollarSign}]
   const TABS_COLAB = [
-    {id:'tareasasignadas',label:'Mis Tareas',icon:ListTodo},
-    {id:'tareasProyectos',label:'Tareas y Proyectos',icon:BookOpen},
+    {id:'tareasasignadas',label:'Tareas Asignadas',icon:ListTodo},
+    {id:'tareasProyectos',label:'Proyectos y Subtareas',icon:BookOpen},
   ]
   const responsableActualMenu = nombrePersonaPorUsuario(usuario)
   const tareasAsignadasUsuario = (data.tareasAsignadas||[]).filter(
@@ -5098,6 +5284,8 @@ export default function App() {
     ? tareasAsignadasUsuario.filter(p=>p.estado!=='Finalizada'&&p.estado!=='Cancelada'&&p.estado!=='Listo').length
     : 0
   const TABS_NORMAL = [
+    {id:'tareasasignadas', label:'Tareas Asignadas', icon:ListTodo, badge:tareasAsignadasCount},
+    {id:'tareasProyectos', label:'Proyectos y Subtareas', icon:BookOpen},
     {id:'dashboard',  label:'Dashboard',   icon:LayoutDashboard},
     {id:'inversiones',label:'Inversiones', icon:TrendingUp},
     {id:'ventas',     label:'Ventas',      icon:ShoppingCart},
@@ -5105,8 +5293,6 @@ export default function App() {
     {id:'presupuesto',label:'Presupuesto', icon:DollarSign},
     {id:'pendientes', label:'Pendientes',  icon:ListTodo},
     {id:'apoyocierre', label:'Apoyo Cierre', icon:DollarSign},
-    {id:'tareasasignadas', label:'Tareas Asignadas', icon:ListTodo, badge:tareasAsignadasCount},
-    {id:'tareasProyectos', label:'Tareas y Proyectos', icon:BookOpen},
   ]
   const tabs = esLider?TABS_LIDER:esPresupuesto?TABS_PRES:esColaborador?TABS_COLAB:TABS_NORMAL
 
@@ -5135,6 +5321,7 @@ export default function App() {
               <span style={{fontSize:11,color:'var(--red)',fontWeight:600}}>✗ Sin conexión — Reintentar</span>
             </button>
           )}
+          <CampanaNotificaciones usuario={usuario} data={data} onIr={setTab}/>
           <div style={{display:'flex',alignItems:'center',gap:7,background:'rgba(255,255,255,0.12)',border:'1px solid rgba(255,255,255,0.18)',borderRadius:20,padding:'5px 14px'}}>
             <div style={{width:8,height:8,borderRadius:'50%',background:usuario.color,boxShadow:'0 0 6px '+usuario.color}}/>
             <span style={{fontSize:12,fontWeight:600,color:'#fff'}}>{usuario.nombre}</span>
