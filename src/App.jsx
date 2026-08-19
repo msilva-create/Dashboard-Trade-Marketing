@@ -4737,6 +4737,67 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
   })
   const topClientes = Object.values(clientesMap).sort((a,b)=>b.inv-a.inv).slice(0,15)
 
+  // ── Lectura gerencial adicional: inversión por cliente/unidad y Mercadeo General ──
+  const clientesDetalleMap = {}
+  allData.filter(d=>['industria','distribucion','zonas'].includes(d._id)).forEach(d=>{
+    ;(d.inversiones||[]).filter(i=>!filtroMes||normMes(i.mes)===normMes(filtroMes)).forEach(i=>{
+      const cliente = String(i.distribuidor||'').trim()
+      if(!cliente) return
+      const key = d._id+'__'+cliente
+      if(!clientesDetalleMap[key]) clientesDetalleMap[key] = {
+        cliente,
+        unidad:d._unidad,
+        unidadId:d._id,
+        color:d._color,
+        inversion:0,
+        planes:{},
+        conceptos:{},
+      }
+      const reg = clientesDetalleMap[key]
+      reg.inversion += Number(i.inversion)||0
+      const plan = String(i.tipoPlan||'Sin tipo').trim()
+      const concepto = String(i.concepto||'Sin concepto').trim()
+      reg.planes[plan] = (reg.planes[plan]||0) + (Number(i.inversion)||0)
+      reg.conceptos[concepto] = (reg.conceptos[concepto]||0) + (Number(i.inversion)||0)
+    })
+  })
+  const inversionClientesDetalle = Object.values(clientesDetalleMap)
+    .filter(r=>!filtroUnidad || r.unidadId===filtroUnidad)
+    .sort((a,b)=>b.inversion-a.inversion)
+
+  const inversionCanalesTotal = inversionClientesDetalle.reduce((s,r)=>s+r.inversion,0)
+
+  const resumenUnidadesClientes = ['industria','distribucion','zonas'].map(id=>{
+    const info = allData.find(d=>d._id===id)
+    const lista = inversionClientesDetalle.filter(r=>r.unidadId===id)
+    return {
+      id,
+      unidad:info?._unidad||id,
+      color:info?._color||'#999',
+      inversion:lista.reduce((s,r)=>s+r.inversion,0),
+      clientes:lista.length
+    }
+  }).filter(r=>r.inversion>0||r.clientes>0)
+
+  const inversionesMG = (mercadeoGeneralData?.inversiones||[])
+    .filter(i=>!filtroMes||normMes(i.mes)===normMes(filtroMes))
+
+  const agruparMG = campo => {
+    const mapa = {}
+    inversionesMG.forEach(i=>{
+      const key = String(i[campo]||'Sin clasificar').trim() || 'Sin clasificar'
+      mapa[key] = (mapa[key]||0) + (Number(i.inversion)||0)
+    })
+    return Object.entries(mapa)
+      .map(([nombre,valor])=>({nombre,valor}))
+      .filter(x=>x.valor>0)
+      .sort((a,b)=>b.valor-a.valor)
+  }
+
+  const mgPorConcepto = agruparMG('concepto')
+  const mgPorTipo = agruparMG('tipoPlan')
+  const totalInvMG = inversionesMG.reduce((s,i)=>s+(Number(i.inversion)||0),0)
+
   const todasActividades = filtered.flatMap(d=>d.pendientes.map(p=>({...p,_unidad:d._unidad,_color:d._color,_uid:d._id}))).sort((a,b)=>['Alta','Media','Baja'].indexOf(a.prioridad)-['Alta','Media','Baja'].indexOf(b.prioridad))
   const actFiltradas = todasActividades.filter(a=>!filtroUnidad||a._uid===filtroUnidad)
 
@@ -5026,6 +5087,133 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
               </div>
             )}
           </div>
+
+          {/* ── INVERSIÓN POR CLIENTE Y UNIDAD ── */}
+          <div style={{display:'grid',gridTemplateColumns:'1.15fr 0.85fr',gap:16}}>
+            <div style={S.card}>
+              <div style={{padding:'14px 18px',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',gap:12,alignItems:'center',flexWrap:'wrap'}}>
+                <div>
+                  <h4 style={{fontSize:12,fontWeight:800,margin:0}}>Inversión por cliente</h4>
+                  <div style={{fontSize:11,color:'var(--text3)',marginTop:3}}>Top clientes de Industria, Distribución y Zonas Directas · incluye los planes que concentran la inversión.</div>
+                </div>
+                <span style={{fontSize:11,color:'var(--text3)'}}>{inversionClientesDetalle.length} clientes</span>
+              </div>
+              <div style={{overflowX:'auto'}}>
+                <table style={{width:'100%',borderCollapse:'collapse',minWidth:760}}>
+                  <thead><tr>{['Cliente','Unidad','Inversión','Plan principal','Concepto principal','% canales'].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {inversionClientesDetalle.slice(0,15).map((r,i)=>{
+                      const planPrincipal = Object.entries(r.planes).sort((a,b)=>b[1]-a[1])[0]?.[0] || '—'
+                      const conceptoPrincipal = Object.entries(r.conceptos).sort((a,b)=>b[1]-a[1])[0]?.[0] || '—'
+                      const pct = inversionCanalesTotal>0?(r.inversion/inversionCanalesTotal)*100:0
+                      return <tr key={r.unidadId+'-'+r.cliente}>
+                        <td style={{...S.td,fontWeight:700}}>{r.cliente}</td>
+                        <td style={S.td}>
+                          <div style={{display:'flex',alignItems:'center',gap:6}}>
+                            <div style={{width:8,height:8,borderRadius:'50%',background:r.color}}/>
+                            <span>{r.unidad}</span>
+                          </div>
+                        </td>
+                        <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700}}>{cop(r.inversion)}</td>
+                        <td style={S.td}>{planPrincipal}</td>
+                        <td style={S.td}>{conceptoPrincipal}</td>
+                        <td style={S.td}>
+                          <div style={{display:'flex',alignItems:'center',gap:7}}>
+                            <div style={{width:70,height:5,background:'var(--bg4)',borderRadius:4,overflow:'hidden'}}>
+                              <div style={{height:'100%',width:Math.min(pct,100)+'%',background:r.color,borderRadius:4}}/>
+                            </div>
+                            <span style={{fontSize:11,fontWeight:700}}>{pct.toFixed(1)}%</span>
+                          </div>
+                        </td>
+                      </tr>
+                    })}
+                    {inversionClientesDetalle.length===0&&<tr><td colSpan={6} style={{...S.td,textAlign:'center',padding:30,color:'var(--text3)'}}>No hay inversión por cliente para este filtro.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div style={{...S.card,padding:18}}>
+              <h4 style={{fontSize:12,fontWeight:800,margin:'0 0 4px'}}>Inversión por unidad</h4>
+              <div style={{fontSize:11,color:'var(--text3)',marginBottom:14}}>Cuánto invierte cada canal y cuántos clientes concentra.</div>
+              <div style={{display:'flex',flexDirection:'column',gap:12}}>
+                {resumenUnidadesClientes.map(u=>{
+                  const pct = inversionCanalesTotal>0?(u.inversion/inversionCanalesTotal)*100:0
+                  return <div key={u.id}>
+                    <div style={{display:'flex',justifyContent:'space-between',gap:10,alignItems:'center'}}>
+                      <div>
+                        <div style={{fontSize:12,fontWeight:700}}>{u.unidad}</div>
+                        <div style={{fontSize:10,color:'var(--text3)'}}>{u.clientes} cliente{u.clientes===1?'':'s'}</div>
+                      </div>
+                      <div style={{textAlign:'right'}}>
+                        <div style={{fontSize:13,fontFamily:'var(--mono)',fontWeight:800}}>{cop(u.inversion)}</div>
+                        <div style={{fontSize:10,color:'var(--text3)'}}>{pct.toFixed(1)}%</div>
+                      </div>
+                    </div>
+                    <div style={{height:7,background:'var(--bg4)',borderRadius:5,marginTop:7,overflow:'hidden'}}>
+                      <div style={{height:'100%',width:Math.min(pct,100)+'%',background:u.color,borderRadius:5}}/>
+                    </div>
+                  </div>
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* ── MERCADEO GENERAL: EN QUÉ NOS ESTAMOS GASTANDO ── */}
+          <div style={{...S.card,padding:20,borderTop:'4px solid #a855f7'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:14,flexWrap:'wrap',marginBottom:16}}>
+              <div>
+                <h4 style={{fontSize:13,fontWeight:800,margin:0}}>Mercadeo General · principales inversiones</h4>
+                <div style={{fontSize:11,color:'var(--text3)',marginTop:4}}>Lectura transversal: POP, promotoría, eventos, digital y demás conceptos registrados en el archivo general.</div>
+              </div>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontSize:10,color:'var(--text3)',fontWeight:700}}>INVERSIÓN MERCADEO GENERAL</div>
+                <div style={{fontSize:21,fontFamily:'var(--mono)',fontWeight:800,color:'#a855f7',marginTop:3}}>{cop(totalInvMG)}</div>
+              </div>
+            </div>
+
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:18}}>
+              <div>
+                <div style={{fontSize:11,fontWeight:800,color:'var(--text2)',marginBottom:10,textTransform:'uppercase'}}>Por concepto</div>
+                <div style={{display:'flex',flexDirection:'column',gap:9}}>
+                  {mgPorConcepto.slice(0,8).map((x,i)=>{
+                    const pct=totalInvMG>0?(x.valor/totalInvMG)*100:0
+                    return <div key={x.nombre}>
+                      <div style={{display:'flex',justifyContent:'space-between',gap:8,fontSize:11}}>
+                        <span style={{fontWeight:600}}>{x.nombre}</span>
+                        <span style={{fontFamily:'var(--mono)',fontWeight:700}}>{cop(x.valor)} · {pct.toFixed(1)}%</span>
+                      </div>
+                      <div style={{height:6,background:'var(--bg4)',borderRadius:4,marginTop:5,overflow:'hidden'}}>
+                        <div style={{height:'100%',width:Math.min(pct,100)+'%',background:COLORES[i%COLORES.length],borderRadius:4}}/>
+                      </div>
+                    </div>
+                  })}
+                  {mgPorConcepto.length===0&&<div style={{padding:22,textAlign:'center',fontSize:12,color:'var(--text3)',background:'var(--bg3)',borderRadius:10}}>Aún no hay inversiones clasificadas en Mercadeo General.</div>}
+                </div>
+              </div>
+
+              <div>
+                <div style={{fontSize:11,fontWeight:800,color:'var(--text2)',marginBottom:10,textTransform:'uppercase'}}>Por tipo de inversión / plan</div>
+                <div style={{display:'flex',flexDirection:'column',gap:9}}>
+                  {mgPorTipo.slice(0,8).map((x,i)=>{
+                    const pct=totalInvMG>0?(x.valor/totalInvMG)*100:0
+                    return <div key={x.nombre} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,padding:'10px 12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:10}}>
+                      <div style={{display:'flex',alignItems:'center',gap:8,minWidth:0}}>
+                        <div style={{width:9,height:9,borderRadius:3,background:COLORES[(i+3)%COLORES.length],flexShrink:0}}/>
+                        <div style={{fontSize:11,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis'}}>{x.nombre}</div>
+                      </div>
+                      <div style={{textAlign:'right',flexShrink:0}}>
+                        <div style={{fontSize:11,fontFamily:'var(--mono)',fontWeight:800}}>{cop(x.valor)}</div>
+                        <div style={{fontSize:10,color:'var(--text3)'}}>{pct.toFixed(1)}%</div>
+                      </div>
+                    </div>
+                  })}
+                  {mgPorTipo.length===0&&<div style={{padding:22,textAlign:'center',fontSize:12,color:'var(--text3)',background:'var(--bg3)',borderRadius:10}}>Aún no hay tipos de inversión registrados.</div>}
+                </div>
+              </div>
+            </div>
+          </div>
+
         </div>
       )}
 
