@@ -5735,10 +5735,18 @@ export default function App() {
   const [sheetsLoading, setSheetsLoading] = useState(false)
   const [sheetsSync, setSheetsSync] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [mostrarGuiaIOS, setMostrarGuiaIOS] = useState(false)
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState(null)
   const [appInstalada, setAppInstalada] = useState(
     () => window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true
   )
+
+  const esIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+
+  const esStandalone = () =>
+    window.matchMedia?.('(display-mode: standalone)').matches ||
+    window.navigator.standalone === true
 
   const loadUser = (uid) => {
     if(!uid) { _currentUserKey = STORAGE_KEY; return load() }
@@ -5748,8 +5756,7 @@ export default function App() {
   const [data, setData] = useState(()=>loadUser(usuario?.id))
 
   useEffect(()=>{
-    const esStandalone = window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true
-    if(esStandalone) setAppInstalada(true)
+    if(esStandalone()) setAppInstalada(true)
 
     const onBeforeInstallPrompt = e => {
       e.preventDefault()
@@ -5759,6 +5766,7 @@ export default function App() {
     const onAppInstalled = () => {
       setAppInstalada(true)
       setDeferredInstallPrompt(null)
+      setMostrarGuiaIOS(false)
     }
 
     window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt)
@@ -5770,27 +5778,54 @@ export default function App() {
     }
   },[])
 
+  // Revisa nuevas versiones al abrir, al volver a PROLI y cada 30 minutos.
+  useEffect(()=>{
+    const revisarActualizacion = async () => {
+      try {
+        if(!('serviceWorker' in navigator)) return
+        const registro = await navigator.serviceWorker.getRegistration()
+        if(registro) await registro.update()
+      } catch(e) {
+        console.log('PROLI: revisión de actualización pendiente.', e)
+      }
+    }
+
+    const alVolver = () => {
+      if(document.visibilityState === 'visible') revisarActualizacion()
+    }
+
+    revisarActualizacion()
+    const intervalo = setInterval(revisarActualizacion, 30 * 60 * 1000)
+    document.addEventListener('visibilitychange', alVolver)
+    window.addEventListener('focus', revisarActualizacion)
+
+    return () => {
+      clearInterval(intervalo)
+      document.removeEventListener('visibilitychange', alVolver)
+      window.removeEventListener('focus', revisarActualizacion)
+    }
+  },[])
+
   const instalarPROLI = async () => {
-    if(appInstalada) {
-      alert('PROLI Marketing 360 ya está instalada en este dispositivo.')
+    if(appInstalada || esStandalone()) {
+      setAppInstalada(true)
+      return
+    }
+
+    if(esIOS) {
+      setMostrarGuiaIOS(true)
       return
     }
 
     if(!deferredInstallPrompt) {
-      alert(
-        'Chrome todavía no está habilitando la instalación como app. ' +
-        'Esto nos confirma que debemos revisar el manifest, el service worker o los íconos publicados. ' +
-        'No se dañó la plataforma.'
-      )
+      alert('Para instalar PROLI, abre esta página en Chrome o Edge y busca “Instalar aplicación” o “Agregar a pantalla de inicio” en el menú del navegador.')
       return
     }
 
     try {
       await deferredInstallPrompt.prompt()
       const choice = await deferredInstallPrompt.userChoice
-      if(choice?.outcome === 'accepted') {
-        setAppInstalada(true)
-      }
+      if(choice?.outcome === 'accepted') setAppInstalada(true)
       setDeferredInstallPrompt(null)
     } catch(e) {
       console.error('Error instalando PROLI:', e)
@@ -5982,18 +6017,17 @@ export default function App() {
           {!appInstalada&&(
             <button
               onClick={instalarPROLI}
-              title={deferredInstallPrompt?'Instalar PROLI Marketing 360 como aplicación':'Verificar instalación de PROLI'}
+              title={esIOS?'Cómo instalar PROLI en iPhone/iPad':'Instalar PROLI Marketing 360'}
               style={{
                 display:'flex',alignItems:'center',gap:7,
-                background:deferredInstallPrompt?'linear-gradient(135deg,#7c3aed,#a855f7)':'rgba(255,255,255,0.10)',
-                color:'#fff',
-                border:deferredInstallPrompt?'1px solid rgba(255,255,255,.18)':'1px solid rgba(255,255,255,.16)',
+                background:(deferredInstallPrompt||esIOS)?'linear-gradient(135deg,#7c3aed,#a855f7)':'rgba(255,255,255,0.10)',
+                color:'#fff',border:'1px solid rgba(255,255,255,.18)',
                 borderRadius:20,padding:'6px 12px',cursor:'pointer',
                 fontFamily:'var(--font)',fontSize:11,fontWeight:700,
-                boxShadow:deferredInstallPrompt?'0 4px 14px rgba(168,85,247,.28)':'none'
+                boxShadow:(deferredInstallPrompt||esIOS)?'0 4px 14px rgba(168,85,247,.28)':'none'
               }}>
               <Download size={13}/>
-              <span>{deferredInstallPrompt?'Instalar PROLI Marketing 360':'Instalar'}</span>
+              <span>{esIOS?'Instalar en iPhone':deferredInstallPrompt?'Instalar PROLI':'Instalar'}</span>
             </button>
           )}
           <CampanaNotificaciones usuario={usuario} data={data} onIr={setTab}/>
@@ -6116,6 +6150,29 @@ export default function App() {
             <button onClick={()=>{if(confirm('¿Borrar tus datos?')){localStorage.removeItem(getStorageKey(usuario.id));_currentUserKey=STORAGE_KEY;window.location.reload()}}} style={{fontSize:11,color:'var(--text3)',background:'none',border:'none',cursor:'pointer',padding:'4px 8px',fontFamily:'var(--font)'}}>Resetear</button>
           </div>
         </footer>
+      )}
+
+      {mostrarGuiaIOS&&(
+        <Modal title="Instalar PROLI en iPhone" onClose={()=>setMostrarGuiaIOS(false)}>
+          <div style={{display:'flex',flexDirection:'column',gap:16}}>
+            <div style={{display:'flex',alignItems:'center',gap:12,padding:'12px 14px',background:'var(--accent-soft)',borderRadius:12}}>
+              <img src="/pwa-512x512.png" onError={e=>{e.currentTarget.onerror=null;e.currentTarget.src="/proli-mascota.png"}} alt="PROLI" style={{width:48,height:48,borderRadius:12,objectFit:'cover',background:'#fff'}}/>
+              <div><div style={{fontWeight:800,fontSize:15}}>PROLI Marketing 360</div><div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>Instálala como app en tu pantalla de inicio.</div></div>
+            </div>
+            {[
+              ['1','Abre PROLI en Safari','Si estás en otro navegador, abre este mismo enlace en Safari.'],
+              ['2','Toca Compartir ↑','Usa el botón Compartir de Safari.'],
+              ['3','Agregar a pantalla de inicio','Busca y toca “Agregar a pantalla de inicio”.'],
+              ['4','Toca Agregar','PROLI aparecerá en tu iPhone como una aplicación.'],
+            ].map(([n,ti,de])=>(
+              <div key={n} style={{display:'flex',gap:12,alignItems:'flex-start',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
+                <div style={{width:28,height:28,borderRadius:9,background:'var(--accent)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,fontWeight:800,flexShrink:0}}>{n}</div>
+                <div><div style={{fontSize:13,fontWeight:700}}>{ti}</div><div style={{fontSize:11,color:'var(--text3)',marginTop:3,lineHeight:1.45}}>{de}</div></div>
+              </div>
+            ))}
+            <button onClick={()=>setMostrarGuiaIOS(false)} style={{...S.btn('var(--accent)','#fff'),justifyContent:'center',padding:'10px 14px'}}>Entendido</button>
+          </div>
+        </Modal>
       )}
 
       {importando&&<div style={{position:'fixed',bottom:80,right:28,background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:12,padding:'14px 20px',zIndex:200,fontSize:13,color:'var(--accent2)'}}>⏳ Importando datos...</div>}
