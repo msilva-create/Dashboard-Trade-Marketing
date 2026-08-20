@@ -8,21 +8,27 @@ export default defineConfig({
 
     VitePWA({
       registerType: 'autoUpdate',
+      injectRegister: 'auto',
 
       includeAssets: [
+        'proli-mascota.png',
         'pwa-192x192.png',
         'pwa-512x512.png',
-        'proli-mascota.png',
       ],
 
       manifest: {
-        name: 'PROLI - Prolub Marketing Intelligence',
+        id: '/',
+
+        name: 'PROLI Marketing 360',
         short_name: 'PROLI',
-        description: 'Plataforma de Marketing Intelligence de Prolub',
+
+        description: 'Prolub Marketing Intelligence',
+
         theme_color: '#21113f',
         background_color: '#f3f4f8',
+
         display: 'standalone',
-        orientation: 'portrait',
+
         start_url: '/',
         scope: '/',
 
@@ -50,6 +56,12 @@ export default defineConfig({
 
       workbox: {
         cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
+      },
+
+      devOptions: {
+        enabled: false,
       },
     }),
   ],
