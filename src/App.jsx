@@ -3609,7 +3609,15 @@ function ModalEditarTarea({ tarea, onClose, onSave, guardando=false, permiteResp
 // MIS TAREAS — tareas personales del usuario
 // ═══════════════════════════════════════════════════════
 function MisTareas({ data, setData, usuario }) {
-  const tareas = data.misTareas || []
+  const persona = nombrePersonaPorUsuario(usuario)
+  const uid = uidPersonaPorUsuario(usuario)
+
+  // Cada usuario ve únicamente sus tareas personales.
+  // Distribución también funciona como archivo central, por eso filtramos por responsable.
+  const tareas = (data.misTareas || []).filter(t=>
+    normalizarNombreResponsable(t.responsable || t.asignadoPor) === normalizarNombreResponsable(persona)
+  )
+
   const [modal,setModal] = useState(false)
   const [guardando,setGuardando] = useState(false)
   const [cerrando,setCerrando] = useState(null)
@@ -3617,10 +3625,8 @@ function MisTareas({ data, setData, usuario }) {
   const [editando,setEditando] = useState(null)
   const [guardandoEdicion,setGuardandoEdicion] = useState(false)
   const [eliminandoId,setEliminandoId] = useState(null)
+  const [filtroVista,setFiltroVista] = useState('abiertas')
   const [form,setForm] = useState({nombre:'',descripcion:'',areas:[],fechaLimite:'',estado:'Pendiente'})
-
-  const persona = nombrePersonaPorUsuario(usuario)
-  const uid = uidPersonaPorUsuario(usuario)
 
   const crear = async () => {
     if(guardando) return
@@ -3632,7 +3638,7 @@ function MisTareas({ data, setData, usuario }) {
       fechaFinalizacion:'',tiempoValor:'',tiempoUnidad:'',tiempoMinutos:0
     }
     try {
-      setData({...data,misTareas:[...tareas,nueva]})
+      setData({...data,misTareas:[...(data.misTareas||[]),nueva]})
       await insertarFilaSheets(uid,'misTareas',nueva)
       if(uid!=='distribucion') await insertarFilaSheets('distribucion','misTareas',nueva)
       setModal(false)
@@ -3644,7 +3650,7 @@ function MisTareas({ data, setData, usuario }) {
   }
 
   const persistir = async actualizada => {
-    const lista = tareas.map(t=>String(t.id)===String(actualizada.id)?actualizada:t)
+    const lista = (data.misTareas||[]).map(t=>String(t.id)===String(actualizada.id)?actualizada:t)
     setData({...data,misTareas:lista})
     await eliminarFilaSheets(uid,'misTareas',actualizada.id)
     await insertarFilaSheets(uid,'misTareas',actualizada)
@@ -3662,7 +3668,12 @@ function MisTareas({ data, setData, usuario }) {
   const confirmarFinalizacion = async tiempo => {
     if(!cerrando||guardandoCierre) return
     setGuardandoCierre(true)
-    const actualizada = {...cerrando,estado:'Finalizada',fechaFinalizacion:new Date().toLocaleString('es-CO'),...tiempo}
+    const actualizada = {
+      ...cerrando,
+      estado:'Finalizada',
+      fechaFinalizacion:new Date().toLocaleString('es-CO'),
+      ...tiempo
+    }
     try {
       await persistir(actualizada)
       await enviarCorreoFinalizacion({
@@ -3693,7 +3704,7 @@ function MisTareas({ data, setData, usuario }) {
     if(!confirm('¿Eliminar esta tarea personal?')) return
     setEliminandoId(id)
     try {
-      setData({...data,misTareas:tareas.filter(t=>String(t.id)!==String(id))})
+      setData({...data,misTareas:(data.misTareas||[]).filter(t=>String(t.id)!==String(id))})
       await eliminarFilaSheets(uid,'misTareas',id)
       if(uid!=='distribucion') await eliminarFilaSheets('distribucion','misTareas',id)
     } catch(e) {
@@ -3703,25 +3714,70 @@ function MisTareas({ data, setData, usuario }) {
     }
   }
 
-  return (
-    <div style={{display:'flex',flexDirection:'column',gap:14}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <div style={{fontSize:12,color:'var(--text2)'}}>Tareas personales: {tareas.length}</div>
-        <button onClick={()=>setModal(true)} style={S.btn('var(--accent)','#fff')}><PlusCircle size={15}/> Nueva tarea</button>
-      </div>
+  const ahora = new Date()
+  const abiertas = tareas.filter(t=>!['Finalizada','Cancelada','Listo'].includes(t.estado))
+  const finalizadas = tareas.filter(t=>t.estado==='Finalizada'||t.estado==='Listo')
+  const vencidas = abiertas.filter(t=>{
+    const f=parseFechaFlexible(t.fechaLimite)
+    return f && f < ahora
+  })
+  const minutosTotales = finalizadas.reduce((s,t)=>s+(Number(t.tiempoMinutos)||0),0)
+  const promedioMin = finalizadas.length>0 ? Math.round(minutosTotales/finalizadas.length) : 0
 
-      {tareas.map(t=>(
-        <div key={t.id} style={{...S.card,padding:'14px 17px',display:'flex',gap:12,alignItems:'flex-start'}}>
-          <div style={{flex:1}}>
-            <div style={{fontWeight:700,fontSize:14,marginBottom:5}}>{t.nombre}</div>
-            {t.descripcion&&<div style={{fontSize:12,color:'var(--text2)',marginBottom:6}}>{t.descripcion}</div>}
-            <div style={{display:'flex',gap:12,fontSize:11,color:'var(--text3)',flexWrap:'wrap'}}>
-              {t.fechaLimite&&<span>📅 {String(t.fechaLimite).slice(0,10)}</span>}
-              {t.areas&&<span>👥 {Array.isArray(t.areas)?t.areas.join(', '):t.areas}</span>}
-              {Number(t.tiempoMinutos)>0&&<span>⏱️ {formatoTiempoTarea(t)}</span>}
-            </div>
+  const diasCierre = finalizadas.map(t=>{
+    const ini=parseFechaFlexible(t.fechaCreacion)
+    const fin=parseFechaFlexible(t.fechaFinalizacion)
+    if(!ini||!fin) return null
+    return Math.max(0,Math.ceil((fin-ini)/(1000*60*60*24)))
+  }).filter(v=>v!==null)
+  const promedioDias = diasCierre.length ? (diasCierre.reduce((s,v)=>s+v,0)/diasCierre.length).toFixed(1) : '—'
+
+  const tareasVista = filtroVista==='todas'
+    ? tareas
+    : filtroVista==='finalizadas'
+      ? finalizadas
+      : abiertas
+
+  const TarjetaPersonal = ({t}) => {
+    const finalizada=t.estado==='Finalizada'||t.estado==='Listo'
+    return (
+      <div style={{
+        ...S.card,
+        padding:'14px 16px',
+        display:'grid',
+        gridTemplateColumns:'minmax(220px,1.4fr) minmax(130px,.7fr) minmax(130px,.7fr) auto',
+        gap:14,
+        alignItems:'center',
+        borderLeft:'3px solid '+(finalizada?'var(--green)':t.estado==='En proceso'?'var(--accent)':'var(--yellow)')
+      }}>
+        <div style={{minWidth:0}}>
+          <div style={{display:'flex',alignItems:'center',gap:7,flexWrap:'wrap'}}>
+            <span style={{fontWeight:700,fontSize:13,color:'var(--text)'}}>{t.nombre}</span>
+            <BadgeVencimiento item={t}/>
           </div>
-          <select value={t.estado||'Pendiente'} onChange={e=>cambiarEstado(t,e.target.value)} style={{fontSize:11}}>
+          {t.descripcion&&<div style={{fontSize:11,color:'var(--text2)',marginTop:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{t.descripcion}</div>}
+          <div style={{display:'flex',gap:10,flexWrap:'wrap',fontSize:10,color:'var(--text3)',marginTop:6}}>
+            {t.fechaLimite&&<span>📅 {String(t.fechaLimite).slice(0,10)}</span>}
+            {t.areas&&<span>👥 {Array.isArray(t.areas)?t.areas.join(', '):t.areas}</span>}
+          </div>
+        </div>
+
+        <div>
+          <div style={{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:3}}>Tiempo registrado</div>
+          <div style={{fontSize:12,fontWeight:700,color:Number(t.tiempoMinutos)>0?'var(--accent2)':'var(--text3)'}}>
+            {Number(t.tiempoMinutos)>0?formatoTiempoTarea(t):'Sin registrar'}
+          </div>
+        </div>
+
+        <div>
+          <div style={{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:3}}>Cierre</div>
+          <div style={{fontSize:11,fontWeight:600,color:finalizada?'var(--green)':'var(--text2)'}}>
+            {t.fechaFinalizacion?String(t.fechaFinalizacion).slice(0,16):'Pendiente'}
+          </div>
+        </div>
+
+        <div style={{display:'flex',gap:6,alignItems:'center'}}>
+          <select value={t.estado||'Pendiente'} onChange={e=>cambiarEstado(t,e.target.value)} style={{fontSize:11,minWidth:120}}>
             {['Pendiente','En proceso','Finalizada','Cancelada'].map(s=><option key={s}>{s}</option>)}
           </select>
           <button onClick={()=>setEditando(t)} style={{...S.btn('var(--accent-soft)','var(--accent2)'),padding:'5px 7px'}}><Edit2 size={12}/></button>
@@ -3729,7 +3785,74 @@ function MisTareas({ data, setData, usuario }) {
             {eliminandoId===t.id?'…':<Trash2 size={12}/>}
           </button>
         </div>
-      ))}
+      </div>
+    )
+  }
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:16}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12,flexWrap:'wrap'}}>
+        <div>
+          <h3 style={{fontSize:17,margin:0,color:'var(--text)'}}>Mi productividad</h3>
+          <div style={{fontSize:11,color:'var(--text3)',marginTop:4}}>
+            Resumen personal de {persona} · solo tus tareas
+          </div>
+        </div>
+        <button onClick={()=>setModal(true)} style={S.btn('var(--accent)','#fff')}><PlusCircle size={15}/> Nueva tarea</button>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(145px,1fr))',gap:10}}>
+        <div style={{...S.card,padding:'13px 15px'}}>
+          <div style={{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em'}}>Total tareas</div>
+          <div style={{fontSize:23,fontWeight:800,color:'var(--accent2)',marginTop:4}}>{tareas.length}</div>
+        </div>
+        <div style={{...S.card,padding:'13px 15px'}}>
+          <div style={{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em'}}>Abiertas</div>
+          <div style={{fontSize:23,fontWeight:800,color:'var(--yellow)',marginTop:4}}>{abiertas.length}</div>
+        </div>
+        <div style={{...S.card,padding:'13px 15px'}}>
+          <div style={{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em'}}>Finalizadas</div>
+          <div style={{fontSize:23,fontWeight:800,color:'var(--green)',marginTop:4}}>{finalizadas.length}</div>
+        </div>
+        <div style={{...S.card,padding:'13px 15px'}}>
+          <div style={{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em'}}>Vencidas</div>
+          <div style={{fontSize:23,fontWeight:800,color:vencidas.length?'var(--red)':'var(--green)',marginTop:4}}>{vencidas.length}</div>
+        </div>
+        <div style={{...S.card,padding:'13px 15px'}}>
+          <div style={{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em'}}>Tiempo trabajado</div>
+          <div style={{fontSize:18,fontWeight:800,color:'var(--accent2)',marginTop:7}}>{formatoTiempoTarea({tiempoMinutos:minutosTotales})}</div>
+        </div>
+        <div style={{...S.card,padding:'13px 15px'}}>
+          <div style={{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em'}}>Promedio / tarea</div>
+          <div style={{fontSize:18,fontWeight:800,color:'var(--text)',marginTop:7}}>{promedioMin?formatoTiempoTarea({tiempoMinutos:promedioMin}):'—'}</div>
+        </div>
+        <div style={{...S.card,padding:'13px 15px'}}>
+          <div style={{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em'}}>Promedio de cierre</div>
+          <div style={{fontSize:18,fontWeight:800,color:'var(--text)',marginTop:7}}>{promedioDias==='—'?'—':promedioDias+' días'}</div>
+        </div>
+      </div>
+
+      <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+        {[
+          ['abiertas',`Abiertas (${abiertas.length})`],
+          ['finalizadas',`Finalizadas (${finalizadas.length})`],
+          ['todas',`Todas (${tareas.length})`]
+        ].map(([id,label])=>(
+          <button key={id} onClick={()=>setFiltroVista(id)} style={{
+            ...S.btn(filtroVista===id?'var(--accent)':'var(--bg3)',filtroVista===id?'#fff':'var(--text2)'),
+            fontSize:11,padding:'6px 12px'
+          }}>{label}</button>
+        ))}
+      </div>
+
+      <div style={{display:'flex',flexDirection:'column',gap:10}}>
+        {tareasVista.length===0&&(
+          <div style={{...S.card,padding:36,textAlign:'center',color:'var(--text3)'}}>
+            {filtroVista==='finalizadas'?'Aún no tienes tareas finalizadas.':'No tienes tareas en esta vista.'}
+          </div>
+        )}
+        {tareasVista.map(t=><TarjetaPersonal key={t.id} t={t}/>)}
+      </div>
 
       {modal&&(
         <Modal title="Nueva tarea personal" onClose={()=>!guardando&&setModal(false)}>
@@ -3764,7 +3887,25 @@ function MisTareas({ data, setData, usuario }) {
 
 function TareasYProyectos({ data, setData, usuario }) {
   const [seccion, setSeccion] = useState('proyectos') // proyectos | tareas
-  const proyectos = data.proyectos || []
+
+  const personaActual = nombrePersonaPorUsuario(usuario)
+  const esLiderProyecto = usuario?.rol==='lider'
+
+  // Cada usuario operativo ve únicamente proyectos donde participa.
+  // Paola conserva la vista consolidada completa.
+  const proyectos = (data.proyectos || []).filter(p=>{
+    if(esLiderProyecto) return true
+
+    const fueCreadoPorMi =
+      normalizarNombreResponsable(p.creadoPor) === normalizarNombreResponsable(usuario?.nombre) ||
+      normalizarNombreResponsable(p.creadoPor) === normalizarNombreResponsable(personaActual)
+
+    const participaEnSubtarea = (p.subtareas||[]).some(s=>
+      normalizarNombreResponsable(s.responsable) === normalizarNombreResponsable(personaActual)
+    )
+
+    return fueCreadoPorMi || participaEnSubtarea
+  })
   const [vista, setVista] = useState('lista') // lista | detalle
   const [proyectoActivo, setProyectoActivo] = useState(null)
   const [modalProyecto, setModalProyecto] = useState(false)
@@ -4314,6 +4455,15 @@ function TareasYProyectos({ data, setData, usuario }) {
   // ── LISTA ──
   return (
     <div style={{display:'flex',flexDirection:'column',gap:16}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}>
+        <div>
+          <h2 style={{fontSize:18,margin:0}}>Mi espacio de trabajo</h2>
+          <div style={{fontSize:11,color:'var(--text3)',marginTop:3}}>
+            {usuario?.rol==='lider'?'Vista consolidada del equipo':`Información visible únicamente para ${personaActual}`}
+          </div>
+        </div>
+      </div>
+
       {/* Tabs de sección */}
       <div style={{display:'flex',gap:6,borderBottom:'2px solid var(--border)',paddingBottom:0}}>
         {[['proyectos','🗂️ Proyectos'],['tareas','✅ Mis Tareas']].map(([id,label])=>(
@@ -4619,12 +4769,33 @@ function AsignarTareasEquipoPaola() {
   })
 
   const refrescar = async () => {
-    const d = await cargarDesdeSheets('distribucion')
-    if(d) {
-      setTareasCentral({
-        asignadas:d.tareasAsignadas||[],
-        personales:d.misTareas||[],
+    const fuentes = ['distribucion','industria','juan','camilo','julian']
+
+    const dedupe = lista => {
+      const mapa = new Map()
+      lista.forEach(x=>{
+        const key = String(x.id || `${x.nombre||''}_${x.responsable||''}_${x.fechaCreacion||''}`)
+        const anterior = mapa.get(key)
+        if(!anterior) mapa.set(key,x)
+        else {
+          // Preferir la versión que tenga cierre/tiempo actualizado.
+          const score = y => (y.fechaFinalizacion?2:0) + (Number(y.tiempoMinutos||0)>0?2:0) + (y.estado==='Finalizada'?1:0)
+          if(score(x)>=score(anterior)) mapa.set(key,x)
+        }
       })
+      return [...mapa.values()]
+    }
+
+    try {
+      const resultados = await Promise.all(fuentes.map(uid=>cargarDesdeSheets(uid)))
+      const validos = resultados.filter(Boolean)
+
+      setTareasCentral({
+        asignadas:dedupe(validos.flatMap(d=>d.tareasAsignadas||[])),
+        personales:dedupe(validos.flatMap(d=>d.misTareas||[])),
+      })
+    } catch(e) {
+      console.error('Error consolidando tareas del equipo:',e)
     }
   }
 
@@ -4705,6 +4876,27 @@ function AsignarTareasEquipoPaola() {
           <button onClick={refrescar} style={S.btn('var(--bg3)','var(--text2)')}>↻ Actualizar</button>
           <button onClick={()=>setModal(true)} style={S.btn('var(--accent)','#fff')}><PlusCircle size={14}/> Nueva tarea</button>
         </div>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,minmax(0,1fr))',gap:10}}>
+        {(()=>{
+          const todas=[...tareasCentral.asignadas,...tareasCentral.personales]
+          const abiertas=todas.filter(t=>!['Finalizada','Cancelada','Listo'].includes(t.estado))
+          const cerradas=todas.filter(t=>t.estado==='Finalizada'||t.estado==='Listo')
+          const minutos=cerradas.reduce((s,t)=>s+(Number(t.tiempoMinutos)||0),0)
+          const responsables=new Set(todas.map(t=>normalizarNombreResponsable(t.responsable)).filter(Boolean)).size
+          return [
+            ['📋','Tareas del equipo',todas.length,'var(--accent2)'],
+            ['⏳','Abiertas',abiertas.length,'var(--yellow)'],
+            ['✅','Finalizadas',cerradas.length,'var(--green)'],
+            ['⏱️','Tiempo registrado',formatoTiempoTarea({tiempoMinutos:minutos}),'#0891b2'],
+          ].map(([icon,label,value,color])=>(
+            <div key={label} style={{...S.card,padding:'12px 14px',borderTop:'3px solid '+color}}>
+              <div style={{fontSize:10,color:'var(--text3)',fontWeight:700,textTransform:'uppercase'}}>{icon} {label}</div>
+              <div style={{fontSize:20,fontWeight:800,color,marginTop:5}}>{value}</div>
+            </div>
+          ))
+        })()}
       </div>
 
       <TareasEquipoPaola
@@ -4839,8 +5031,38 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
   const [formPend, setFormPend] = useState({nombre:'',descripcion:'',responsable:'',areas:[],fechaLimite:'',estado:'Pendiente',prioridad:'Media'})
 
   const refrescarTareasCentral = async () => {
-    const d = await cargarDesdeSheets('distribucion')
-    if(d) setTareasCentral({asignadas:d.tareasAsignadas||[],personales:d.misTareas||[],proyectos:d.proyectos||[]})
+    const fuentes = ['distribucion','industria','juan','camilo','julian']
+
+    const dedupe = lista => {
+      const mapa = new Map()
+      lista.forEach(x=>{
+        const key = String(x.id || `${x.nombre||''}_${x.responsable||''}_${x.fechaCreacion||''}`)
+        const anterior = mapa.get(key)
+        if(!anterior) mapa.set(key,x)
+        else {
+          const score = y =>
+            (y.fechaFinalizacion?2:0) +
+            (Number(y.tiempoMinutos||y.tiempoTotalMinutos||0)>0?2:0) +
+            ((y.subtareas||[]).length||0) +
+            (y.estado==='Finalizada'?1:0)
+          if(score(x)>=score(anterior)) mapa.set(key,x)
+        }
+      })
+      return [...mapa.values()]
+    }
+
+    try {
+      const resultados = await Promise.all(fuentes.map(uid=>cargarDesdeSheets(uid)))
+      const validos = resultados.filter(Boolean)
+
+      setTareasCentral({
+        asignadas:dedupe(validos.flatMap(d=>d.tareasAsignadas||[])),
+        personales:dedupe(validos.flatMap(d=>d.misTareas||[])),
+        proyectos:dedupe(validos.flatMap(d=>d.proyectos||[])),
+      })
+    } catch(e) {
+      console.error('Error consolidando productividad del equipo:',e)
+    }
   }
 
   const cargarDashboardDesdeSheets = async () => {
@@ -5251,6 +5473,27 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
               Vista gerencial de inversión, venta consolidada, presupuesto y ejecución. Mercadeo General se integra sin duplicar la venta de los tres canales.
             </p>
           </div>
+
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+            {[
+              {id:'',nombre:'Todas las unidades',emoji:'✨'},
+              {id:'industria',nombre:'Industria',emoji:'🏭'},
+              {id:'distribucion',nombre:'Distribución',emoji:'🛒'},
+              {id:'zonas',nombre:'Zonas Directas',emoji:'📍'},
+              {id:'mercadeoGeneral',nombre:'Mercadeo General',emoji:'📣'},
+            ].map(u=>(
+              <button key={u.id||'all'} onClick={()=>setFiltroUnidad(u.id)}
+                style={{
+                  ...S.btn(filtroUnidad===u.id?'var(--accent)':'var(--bg2)',filtroUnidad===u.id?'#fff':'var(--text2)'),
+                  border:'1px solid '+(filtroUnidad===u.id?'transparent':'var(--border)'),
+                  padding:'7px 12px',fontSize:11,borderRadius:18,
+                  boxShadow:filtroUnidad===u.id?'0 5px 14px rgba(108,63,196,.18)':'none'
+                }}>
+                <span>{u.emoji}</span> {u.nombre}
+              </button>
+            ))}
+          </div>
+
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',gap:12,overflow:'visible'}}>
           <KpiCard icon={ShoppingCart} label={esVistaGeneral?'Venta consolidada':'Venta neta'} value={cop(totalVenta)} sub={esVistaGeneral?(ventaMercadeoGeneral>0?'Referencia cargada en Mercadeo General':'Suma automática de los 3 canales'):(filtroUnidad==='mercadeoGeneral'?'Venta consolidada de referencia':'Unidad seleccionada')} accent="var(--green)"/>
           <KpiCard icon={TrendingUp} label="Inversión total Mercadeo" value={cop(totalInv)} sub={filtroMes||'Acumulado'} accent="var(--accent2)"/>
@@ -5266,6 +5509,32 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
 
       {tabLider==='dashboard'&&(
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(4,minmax(0,1fr))',gap:10}}>
+            {(()=>{
+              const unidadTop=[...porUnidad].sort((a,b)=>b.inv-a.inv)[0]
+              const clienteTop=topClientes[0]
+              const ejecPct=totalPres>0?(totalGastos/totalPres)*100:0
+              const top3Inv=topClientes.slice(0,3).reduce((s,c)=>s+c.inv,0)
+              const concentracion=totalInv>0?(top3Inv/totalInv)*100:0
+              const cards=[
+                {icon:'🏆',titulo:'Unidad líder',valor:unidadTop?.unidad||'—',sub:unidadTop?`${cop(unidadTop.inv)} invertidos`:'Sin datos',color:'var(--accent2)'},
+                {icon:'🎯',titulo:'Cliente con mayor inversión',valor:clienteTop?.nombre||'—',sub:clienteTop?`${cop(clienteTop.inv)}`:'Sin datos',color:'var(--green)'},
+                {icon:'💰',titulo:'Ejecución presupuesto',valor:totalPres?ejecPct.toFixed(1)+'%':'—',sub:totalPres?`${cop(disponiblePresupuesto)} disponibles`:'Sin presupuesto',color:ejecPct>100?'var(--red)':'var(--orange)'},
+                {icon:'📊',titulo:'Concentración Top 3',valor:topClientes.length?concentracion.toFixed(1)+'%':'—',sub:'Peso de los 3 clientes principales',color:'#0891b2'},
+              ]
+              return cards.map(c=>(
+                <div key={c.titulo} style={{...S.card,padding:'13px 15px',borderTop:'3px solid '+c.color}}>
+                  <div style={{display:'flex',justifyContent:'space-between',gap:8,alignItems:'center'}}>
+                    <span style={{fontSize:10,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em'}}>{c.titulo}</span>
+                    <span style={{fontSize:16}}>{c.icon}</span>
+                  </div>
+                  <div style={{fontSize:15,fontWeight:800,color:c.color,marginTop:7,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{c.valor}</div>
+                  <div style={{fontSize:10,color:'var(--text3)',marginTop:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{c.sub}</div>
+                </div>
+              ))
+            })()}
+          </div>
+
           <div style={{display:'grid',gridTemplateColumns:'1.4fr 1fr',gap:16}}>
             <div style={{...S.card,padding:20}}>
               <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:14}}>Venta consolidada vs inversión y presupuesto por mes</h4>
@@ -5282,16 +5551,38 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
               </ResponsiveContainer>
             </div>
             <div style={{...S.card,padding:20}}>
-              <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:14}}>¿Dónde estamos invirtiendo?</h4>
-              <ResponsiveContainer width="100%" height={200}>
-                <PieChart>
-                  <Pie data={porUnidad.filter(u=>u.inv>0)} cx="50%" cy="50%" innerRadius={45} outerRadius={75} dataKey="inv" nameKey="unidad" paddingAngle={3}>
-                    {porUnidad.filter(u=>u.inv>0).map((u,i)=><Cell key={i} fill={u.color}/>)}
-                  </Pie>
-                  <Tooltip formatter={v=>cop(v)} contentStyle={{background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:10,fontSize:11}}/>
-                  <Legend iconSize={7} iconType="circle" wrapperStyle={{fontSize:10,color:'var(--text2)'}}/>
-                </PieChart>
-              </ResponsiveContainer>
+              <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:10,marginBottom:15}}>
+                <div>
+                  <h4 style={{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em',margin:0}}>Inversión por unidad</h4>
+                  <div style={{fontSize:10,color:'var(--text3)',marginTop:4}}>Participación de cada frente en la inversión seleccionada</div>
+                </div>
+                <span style={{fontSize:10,color:'var(--accent2)',fontWeight:700}}>{cop(totalInvVista)}</span>
+              </div>
+
+              <div style={{display:'flex',flexDirection:'column',gap:13}}>
+                {[...inversionPorUnidad].sort((a,b)=>b.inv-a.inv).map((u,i)=>{
+                  const pct=totalInvVista>0?(u.inv/totalInvVista)*100:0
+                  return (
+                    <button key={u.id} onClick={()=>setFiltroUnidad(u.id)}
+                      style={{background:'transparent',border:'none',padding:0,cursor:'pointer',textAlign:'left',fontFamily:'var(--font)'}}>
+                      <div style={{display:'flex',justifyContent:'space-between',gap:10,alignItems:'center',marginBottom:5}}>
+                        <div style={{display:'flex',alignItems:'center',gap:7}}>
+                          <span style={{width:22,height:22,borderRadius:7,background:u.color,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:800}}>{i+1}</span>
+                          <span style={{fontSize:11,fontWeight:700,color:'var(--text)'}}>{u.unidad}</span>
+                        </div>
+                        <div style={{textAlign:'right'}}>
+                          <span style={{fontSize:11,fontWeight:800,color:'var(--text)'}}>{cop(u.inv)}</span>
+                          <span style={{fontSize:10,color:'var(--text3)',marginLeft:7}}>{pct.toFixed(1)}%</span>
+                        </div>
+                      </div>
+                      <div style={{height:8,background:'var(--bg4)',borderRadius:8,overflow:'hidden'}}>
+                        <div style={{height:'100%',width:Math.min(pct,100)+'%',background:u.color,borderRadius:8,transition:'width .35s ease'}}/>
+                      </div>
+                    </button>
+                  )
+                })}
+                {inversionPorUnidad.length===0&&<div style={{padding:34,textAlign:'center',fontSize:12,color:'var(--text3)'}}>Sin inversión para el filtro seleccionado.</div>}
+              </div>
             </div>
           </div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:12}}>
