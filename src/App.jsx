@@ -3891,9 +3891,83 @@ function TareasYProyectos({ data, setData, usuario }) {
   const personaActual = nombrePersonaPorUsuario(usuario)
   const esLiderProyecto = usuario?.rol==='lider'
 
-  // Cada usuario operativo ve únicamente proyectos donde participa.
-  // Paola conserva la vista consolidada completa.
-  const proyectos = (data.proyectos || []).filter(p=>{
+  // ── PROYECTOS VISIBLES POR USUARIO ─────────────────────────────
+  // IMPORTANTE:
+  // Las subtareas también existen como filas independientes en
+  // SUBTAREAS_PROYECTOS. Antes solo mirábamos p.subtareas dentro de PROYECTOS,
+  // por eso un proyecto como Colfecar podía no aparecer aunque Emma sí tuviera
+  // subtareas asignadas en su archivo.
+  const subtareasPlanas = data.subtareasProyectos || []
+
+  // Unimos las subtareas planas con el proyecto padre cuando existe.
+  const proyectosBase = (data.proyectos || []).map(p=>{
+    const nombreProyecto = String(p.nombre||'').trim()
+    const planasDelProyecto = subtareasPlanas.filter(s=>
+      normalizarNombreResponsable(s.proyecto) === normalizarNombreResponsable(nombreProyecto)
+    )
+
+    const mapa = new Map()
+    ;[...(p.subtareas||[]), ...planasDelProyecto].forEach(s=>{
+      const key = String(s.id || `${s.proyecto||nombreProyecto}_${s.nombre||''}_${s.responsable||''}`)
+      if(!mapa.has(key)) mapa.set(key,s)
+      else {
+        const anterior = mapa.get(key)
+        const score = x =>
+          (x.fechaFinalizacion?2:0) +
+          (Number(x.tiempoMinutos||0)>0?2:0) +
+          (x.estado==='Finalizada'?1:0)
+        if(score(s)>=score(anterior)) mapa.set(key,s)
+      }
+    })
+
+    return {...p, subtareas:[...mapa.values()]}
+  })
+
+  // Si existe una subtarea cuyo proyecto padre todavía no fue copiado a
+  // PROYECTOS en este archivo personal, construimos una tarjeta temporal
+  // para que el usuario NO pierda visibilidad de su trabajo.
+  const nombresProyectoExistentes = new Set(
+    proyectosBase.map(p=>normalizarNombreResponsable(p.nombre))
+  )
+
+  const proyectosReconstruidos = []
+  const gruposFaltantes = new Map()
+
+  subtareasPlanas.forEach(s=>{
+    const nombreProyecto = String(s.proyecto||'').trim()
+    if(!nombreProyecto) return
+    const key = normalizarNombreResponsable(nombreProyecto)
+    if(nombresProyectoExistentes.has(key)) return
+
+    if(!gruposFaltantes.has(key)) gruposFaltantes.set(key,[])
+    gruposFaltantes.get(key).push(s)
+  })
+
+  gruposFaltantes.forEach((subs,key)=>{
+    const primera = subs[0]
+    proyectosReconstruidos.push({
+      id:`reconstruido_${key}`,
+      nombre:primera.proyecto,
+      descripcion:'Proyecto reconstruido desde subtareas asignadas',
+      responsable:'',
+      areas:[...new Set(subs.flatMap(s=>Array.isArray(s.areas)?s.areas:String(s.areas||'').split(',').map(x=>x.trim())).filter(Boolean))],
+      fechaEntrega:subs.map(s=>s.fechaEntrega).filter(Boolean).sort()[0]||'',
+      estado:subs.every(s=>s.estado==='Finalizada')?'Finalizada':'Pendiente',
+      prioridad:primera.prioridad||'Media',
+      creadoPor:primera.creadoPor||'',
+      fechaCreacion:primera.fechaCreacion||'',
+      subtareas:subs,
+      _reconstruido:true,
+    })
+  })
+
+  const todosLosProyectos = [...proyectosBase, ...proyectosReconstruidos]
+
+  // Paola ve el consolidado completo.
+  // Cada usuario operativo ve:
+  // 1) proyectos creados por él/ella;
+  // 2) proyectos donde tiene al menos una subtarea asignada.
+  const proyectos = todosLosProyectos.filter(p=>{
     if(esLiderProyecto) return true
 
     const fueCreadoPorMi =
@@ -3937,7 +4011,7 @@ function TareasYProyectos({ data, setData, usuario }) {
     setGuardandoProyecto(true)
 
     const nuevo = { id:Date.now(), ...formP, creadoPor:usuario.nombre, subtareas:[], fechaCreacion:new Date().toLocaleDateString('es-CO'), correoFinalEnviado:'NO' }
-    const nd = {...data, proyectos:[...proyectos, nuevo]}
+    const nd = {...data, proyectos:[...(data.proyectos||[]), nuevo]}
     setData(nd)
     // Todos los proyectos se guardan en el archivo central de Distribución.
     // Así Paola siempre ve el historial completo, sin importar el responsable.
