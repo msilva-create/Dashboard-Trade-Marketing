@@ -1017,353 +1017,6 @@ function Inversiones({ data, setData }) {
         </div>
       )}
 
-      <div style={{fontSize:11,color:'var(--text3)',display:'flex',gap:20,flexWrap:'wrap'}}>
-        <span>💡 Clic en celda para editar · Enter confirma · Tab siguiente</span>
-        <span>📋 Ctrl+V para pegar desde Excel (mismo orden de columnas)</span>
-        <span>☑️ Checkbox para seleccionar y eliminar en bloque</span>
-      </div>
-
-      <div style={{...S.card,overflowX:'auto'}} onPaste={handlePaste}>
-        <table style={{borderCollapse:'collapse',tableLayout:'fixed',minWidth:'100%'}}>
-          <thead>
-            <tr style={{background:'var(--bg3)'}}>
-              <th style={{...S.th,width:36,textAlign:'center',padding:'8px 6px'}}>
-                <input type="checkbox" checked={seleccionados.size===lista.length&&lista.length>0} onChange={toggleTodos} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
-              </th>
-              <th style={{...S.th,width:36,padding:'8px 4px',textAlign:'center',fontSize:10}}>#</th>
-              {COLS.map(c=><th key={c.key} style={{...S.th,width:c.w}}>{c.label}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {lista.length===0&&(
-              <tr><td colSpan={COLS.length+2} style={{padding:48,textAlign:'center',color:'var(--text3)',fontSize:13}}>
-                No hay inversiones. Usa <strong>Añadir fila</strong>, importa tu Excel, o pega con <strong>Ctrl+V</strong>.
-              </td></tr>
-            )}
-            {lista.map((inv,idx)=>(
-              <tr key={inv.id} style={{background:seleccionados.has(inv.id)?'rgba(108,99,255,0.06)':'transparent'}}>
-                <td style={{padding:'6px',textAlign:'center',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}} onClick={e=>e.stopPropagation()}>
-                  <input type="checkbox" checked={seleccionados.has(inv.id)} onChange={()=>{setSeleccionados(prev=>{const n=new Set(prev);n.has(inv.id)?n.delete(inv.id):n.add(inv.id);return n})}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
-                </td>
-                <td style={{padding:'6px 4px',textAlign:'center',fontSize:10,color:'var(--text3)',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>{idx+1}</td>
-                {COLS.map(col=>(
-                  <td key={col.key} style={celda(inv.id,col.key)} onClick={()=>startEdit(inv.id,col.key,inv[col.key])}>
-                    {editCell?.id===inv.id&&editCell?.field===col.key ? (
-                      col.key==='mes'?(
-                        <select value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={()=>commitEdit()} ref={inputRef} autoFocus
-                          style={{background:'var(--bg2)',color:'var(--text)',border:'1px solid var(--accent)',borderRadius:4,fontSize:12,width:'100%',fontFamily:'var(--font)',padding:'2px'}}>
-                          <option value="">— Selecciona mes —</option>{MESES.map(m=><option key={m} value={m}>{m}</option>)}
-                        </select>
-                      ):col.key==='concepto'?(
-                        <select value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={commitEdit} onKeyDown={onKD} ref={inputRef}
-                          style={{background:'transparent',color:'var(--text)',border:'none',outline:'none',fontSize:12,width:'100%',fontFamily:'var(--font)'}}>
-                          {CONCEPTOS.map(c=><option key={c}>{c}</option>)}
-                        </select>
-                      ):(
-                        <input ref={inputRef} value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={commitEdit} onKeyDown={onKD}
-                          type={col.key==='inversion'||col.key==='galonesPlan'||col.key==='anio'?'number':'text'}
-                          style={{background:'transparent',color:'var(--text)',border:'none',outline:'none',fontSize:12,width:'100%',fontFamily:col.key==='inversion'?'var(--mono)':'var(--font)'}}/>
-                      )
-                    ):(
-                      <span style={{color:col.key==='distribuidor'?'var(--text)':'var(--text2)',fontFamily:col.key==='inversion'?'var(--mono)':'inherit'}}>
-                        {col.key==='inversion'?cop(Number(inv[col.key])||0):(inv[col.key]||'')}
-                      </span>
-                    )}
-                  </td>
-                ))}
-              </tr>
-            ))}
-            {lista.length>0&&(
-              <tr style={{background:'var(--bg3)',borderTop:'2px solid var(--border2)'}}>
-                <td colSpan={2} style={{padding:'8px 10px'}}/>
-                <td colSpan={5} style={{padding:'8px 12px',fontWeight:700,fontSize:12,color:'var(--text2)'}}>
-                  TOTAL {filtroMes&&'— '+filtroMes} · {lista.length} registros {seleccionados.size>0&&'· '+seleccionados.size+' seleccionados'}
-                </td>
-                <td style={{padding:'8px 12px',fontFamily:'var(--mono)',fontWeight:700,fontSize:13,color:'var(--accent2)'}}>{cop(totalFiltrado)}</td>
-                <td colSpan={2} style={{padding:'8px 10px'}}/>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-
-// ═══════════════════════════════════════════════════════
-// PRESUPUESTO — con filtro de mes corregido (normMes)
-// ═══════════════════════════════════════════════════════
-function Presupuesto({ data, setData }) {
-  const [filtroMes, setFiltroMes] = useState('')
-  const [filtroAnio, setFiltroAnio] = useState('2026')
-  const [busqueda, setBusqueda] = useState('')
-  const [seleccionados, setSeleccionados] = useState(new Set())
-  const [editCell, setEditCell] = useState(null)
-  const [editVal, setEditVal] = useState('')
-  const [modalPres, setModalPres] = useState(false)
-  const [formP, setFormP] = useState({ mes:'', anio:2026, monto:'' })
-  const inputRef = useRef(null)
-  const COLS_G = [
-    {key:'mes',          label:'Mes',                    w:85},
-    {key:'gasto',        label:'Gasto (Nom. Producto, Cliente)', w:260},
-    {key:'valorFactura', label:'Valor Factura',           w:125},
-    {key:'canal',        label:'Canal',                   w:80},
-    {key:'observacion',  label:'Observación (ATJ)',       w:180},
-    {key:'estado',       label:'Estado',                  w:100},
-    {key:'centroCostos', label:'Centro de Costos',        w:120},
-    {key:'ordenCompra',  label:'Orden de Compra',         w:110},
-    {key:'nitProveedor', label:'NIT Proveedor',           w:110},
-    {key:'nomProveedor', label:'Nom. Proveedor',          w:140},
-    {key:'docCargado',   label:'Doc. Cargado',            w:90},
-    {key:'obsKatherine', label:'Obs. Katherine',          w:160},
-  ]
-  const ESTADOS_G = ['Pendiente','Ingresado','Aprobado','Pagado','Rechazado']
-  const anios = [...new Set([...(data.gastosPresupuesto||[]).map(g=>g.anio),...data.presupuestos.map(p=>p.anio)])].sort()
-
-  // FIX: todos los filtros usan normMes para comparar independiente de capitalización
-  const gastos = (data.gastosPresupuesto||[]).filter(g=>
-    (!filtroMes||normMes(g.mes)===normMes(filtroMes)) &&
-    (!filtroAnio||g.anio===Number(filtroAnio)) &&
-    (!busqueda||[g.gasto,g.observacion,g.estado,g.centroCostos,g.canal].some(v=>String(v||'').toLowerCase().includes(busqueda.toLowerCase())))
-  ).sort((a,b)=>{
-    const mi=MESES.indexOf(normMes(a.mes)),mj=MESES.indexOf(normMes(b.mes))
-    if(mi===-1&&mj===-1) return 0; if(mi===-1) return 1; if(mj===-1) return -1; return mi-mj
-  })
-
-  const totalGastado = gastos.reduce((s,g)=>s+(Number(g.valorFactura)||0),0)
-
-  // FIX: presAsignado usa normMes
-  const presAsignado = data.presupuestos
-    .filter(p=>(!filtroMes||normMes(p.mes)===normMes(filtroMes))&&(!filtroAnio||p.anio===Number(filtroAnio)))
-    .reduce((s,p)=>s+(Number(p.monto)||0),0)
-
-  const ejec = presAsignado>0?(totalGastado/presAsignado)*100:0
-  const disponible = presAsignado - totalGastado
-
-  const toggleTodos = () => setSeleccionados(prev=>prev.size===gastos.length&&gastos.length>0?new Set():new Set(gastos.map(g=>g.id)))
-  const eliminarSel = () => {
-    if(!seleccionados.size||!confirm('¿Eliminar '+seleccionados.size+' gastos?')) return
-    const nd={...data,gastosPresupuesto:(data.gastosPresupuesto||[]).filter(g=>!seleccionados.has(g.id))}
-    setData(nd);save(nd);setSeleccionados(new Set())
-  }
-
-  const startEdit = (id,field,val) => { setEditCell({id,field});setEditVal(String(val||''));setTimeout(()=>inputRef.current?.focus(),20) }
-  const commitEdit = () => {
-    if(!editCell) return
-    const {id,field}=editCell
-    const gastosPresupuesto=(data.gastosPresupuesto||[]).map(g=>{
-      if(g.id!==id) return g
-      const val=field==='valorFactura'?(Number(editVal)||0):editVal
-      return {...g,[field]:val}
-    })
-    const nd={...data,gastosPresupuesto};setData(nd);save(nd);setEditCell(null)
-  }
-  const onKD = e => { if(e.key==='Enter'){commitEdit();e.preventDefault()} else if(e.key==='Escape') setEditCell(null); else if(e.key==='Tab'){commitEdit();e.preventDefault()} }
-
-  const addFila = () => {
-    const n={id:Date.now(),anio:Number(filtroAnio)||2026,mes:filtroMes||'',gasto:'',valorFactura:0,canal:'',observacion:'',estado:'Pendiente',centroCostos:'',notas:''}
-    const nd={...data,gastosPresupuesto:[...(data.gastosPresupuesto||[]),n]};setData(nd);save(nd,{insertar:n,tipo:'gastosPresupuesto'})
-    setTimeout(()=>startEdit(n.id,'gasto',''),60)
-  }
-
-  const handlePaste = e => {
-    const text=e.clipboardData.getData('text')
-    if(!text.includes('\t')&&!text.includes('\n')) return
-    e.preventDefault()
-    const rows=text.trim().split('\n').map(r=>r.split('\t'))
-    const nuevas=rows.filter(r=>r[0]||r[1]).map((r,i)=>({
-      id:Date.now()+i, anio:Number(filtroAnio)||2026,
-      mes:normMes(r[0]||filtroMes||''), gasto:r[1]||'',
-      valorFactura:parseN(r[2]||0), canal:r[3]||'',
-      observacion:r[4]||'', estado:r[5]||'Pendiente',
-      centroCostos:r[6]||'', notas:''
-    })).filter(r=>r.gasto||r.mes)
-    if(nuevas.length){
-      const nd={...data,gastosPresupuesto:[...(data.gastosPresupuesto||[]),...nuevas]};setData(nd);save(nd)
-      alert('✅ '+nuevas.length+' filas pegadas')
-    }
-  }
-
-  const celda = (id,field) => ({
-    padding:'6px 10px',fontSize:12,
-    borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)',
-    cursor:'cell',whiteSpace:'nowrap',overflow:'hidden',maxWidth:300,
-    background:editCell?.id===id&&editCell?.field===field?'rgba(108,99,255,0.18)':seleccionados.has(id)?'rgba(108,99,255,0.07)':'transparent',
-    outline:editCell?.id===id&&editCell?.field===field?'2px solid var(--accent)':'none',
-    outlineOffset:'-1px',
-  })
-
-  // FIX: resumenMeses usa normMes
-  const resumenMeses = MESES.map(m=>{
-    const gastado=(data.gastosPresupuesto||[]).filter(g=>normMes(g.mes)===m&&(!filtroAnio||g.anio===Number(filtroAnio))).reduce((s,g)=>s+(Number(g.valorFactura)||0),0)
-    const asignado=data.presupuestos.filter(p=>normMes(p.mes)===m&&(!filtroAnio||p.anio===Number(filtroAnio))).reduce((s,p)=>s+(Number(p.monto)||0),0)
-    return {mes:m,gastado,asignado,ejec:asignado>0?(gastado/asignado)*100:0,disponible:asignado-gastado}
-  }).filter(r=>r.gastado>0||r.asignado>0)
-
-  const submitPres = () => {
-    if(!formP.mes||!formP.monto) return
-    const entry={id:Date.now(),mes:formP.mes,anio:Number(formP.anio),monto:Number(formP.monto)}
-    const nd={...data,presupuestos:[...data.presupuestos,entry]};setData(nd);save(nd,{insertar:entry,tipo:'presupuestos'});setModalPres(false);setFormP({mes:'',anio:2026,monto:''})
-  }
-  const delPres = id => { const nd={...data,presupuestos:data.presupuestos.filter(p=>p.id!==id)};setData(nd);save(nd,{eliminar:id,tipo:'presupuestos'}) }
-
-  return (
-    <div style={{display:'flex',flexDirection:'column',gap:18}}>
-      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
-        <div style={{position:'relative',display:'flex',alignItems:'center'}}>
-          <Search size={13} style={{position:'absolute',left:9,color:'var(--text3)',pointerEvents:'none'}}/>
-          <input value={busqueda} onChange={e=>setBusqueda(e.target.value)} placeholder="Buscar gasto..." style={{paddingLeft:30,width:190,fontSize:13}}/>
-        </div>
-        <select value={filtroAnio} onChange={e=>setFiltroAnio(e.target.value)} style={{width:100}}>
-          <option value="">Año</option>{anios.map(a=><option key={a}>{a}</option>)}
-        </select>
-        <select value={filtroMes} onChange={e=>setFiltroMes(e.target.value)} style={{width:140}}>
-          <option value="">Todos los meses</option>{MESES.map(m=><option key={m}>{m}</option>)}
-        </select>
-        {(filtroMes||busqueda)&&<button onClick={()=>{setFiltroMes('');setBusqueda('')}} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:12}}>✕</button>}
-        <div style={{marginLeft:'auto',display:'flex',gap:8,flexWrap:'wrap'}}>
-          {seleccionados.size>0&&<button onClick={eliminarSel} style={{...S.btn('var(--red-soft)','var(--red)'),fontSize:12}}><Trash2 size={13}/> Eliminar {seleccionados.size}</button>}
-          <button onClick={()=>setModalPres(true)} style={{...S.btn('var(--bg3)','var(--text2)'),border:'1px solid var(--border2)',fontSize:12}}><DollarSign size={13}/> Asignar presupuesto</button>
-          <button onClick={addFila} style={{...S.btn('var(--green-soft)','var(--green)'),fontSize:12,border:'1px solid rgba(61,214,140,0.2)'}}><PlusCircle size={14}/> Añadir fila</button>
-        </div>
-      </div>
-
-      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
-        <KpiCard icon={DollarSign} label="Presupuesto asignado" value={cop(presAsignado)} sub={filtroMes||(filtroAnio||'')+' Total período'}/>
-        <KpiCard icon={TrendingUp} label="Total ejecutado" value={cop(totalGastado)} sub={gastos.length+' registros'} accent="var(--accent2)"/>
-        <KpiCard icon={BarChart2} label="% Ejecutado" value={ejec.toFixed(1)+'%'} sub={ejec>100?'Excedido':ejec>80?'Casi al límite':'Dentro del presupuesto'} accent={ejec>100?'var(--red)':ejec>80?'var(--yellow)':'var(--green)'}/>
-        <KpiCard icon={DollarSign} label={disponible>=0?'Disponible':'Excedido'} value={cop(Math.abs(disponible))} accent={disponible>=0?'var(--green)':'var(--red)'}/>
-      </div>
-
-      {resumenMeses.length>0&&(
-        <div style={S.card}>
-          <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-            <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Ejecutado vs Presupuesto por mes</h4>
-            <span style={{fontSize:11,color:'var(--text3)'}}>Clic en un mes para filtrar el detalle</span>
-          </div>
-          <table style={{width:'100%',borderCollapse:'collapse'}}>
-            <thead><tr>{['Mes','Presupuesto asignado','Ejecutado','Disponible','% Ejec.','Barra',''].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
-            <tbody>
-              {resumenMeses.map((r,i)=>(
-                <tr key={i} onClick={()=>setFiltroMes(filtroMes===r.mes?'':r.mes)} style={{cursor:'pointer',background:filtroMes===r.mes?'rgba(108,99,255,0.07)':'transparent'}}>
-                  <td style={{...S.td,fontWeight:600,color:filtroMes===r.mes?'var(--accent2)':'var(--text)'}}>{r.mes}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--text2)'}}>{cop(r.asignado)}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:500}}>{cop(r.gastado)}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',color:r.disponible>=0?'var(--green)':'var(--red)',fontWeight:500}}>{r.disponible>=0?'':'-'}{cop(Math.abs(r.disponible))}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:600,color:r.ejec>100?'var(--red)':r.ejec>80?'var(--yellow)':'var(--green)'}}>{r.ejec.toFixed(1)}%</td>
-                  <td style={{...S.td,minWidth:120}}>
-                    <div style={{height:6,background:'var(--bg4)',borderRadius:3}}>
-                      <div style={{width:Math.min(r.ejec,100)+'%',height:'100%',background:r.ejec>100?'var(--red)':r.ejec>80?'var(--yellow)':'var(--green)',borderRadius:3}}/>
-                    </div>
-                  </td>
-                  <td style={{...S.td,fontSize:11,color:'var(--text3)'}}>{filtroMes===r.mes?'◀ Filtrando':'Ver →'}</td>
-                </tr>
-              ))}
-              <tr style={{borderTop:'2px solid var(--border2)',background:'var(--bg3)'}}>
-                <td style={{...S.td,fontWeight:700}}>TOTAL</td>
-                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--text2)'}}>{cop(resumenMeses.reduce((s,r)=>s+r.asignado,0))}</td>
-                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:'var(--accent2)'}}>{cop(resumenMeses.reduce((s,r)=>s+r.gastado,0))}</td>
-                <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:resumenMeses.reduce((s,r)=>s+r.disponible,0)>=0?'var(--green)':'var(--red)'}}>{cop(resumenMeses.reduce((s,r)=>s+r.disponible,0))}</td>
-                <td colSpan={3} style={S.td}/>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <div style={{fontSize:11,color:'var(--text3)',display:'flex',gap:20,flexWrap:'wrap'}}>
-        <span>💡 Clic en celda para editar · Enter confirma · Tab siguiente</span>
-        <span>📋 Ctrl+V para pegar desde Excel (Mes, Gasto, Valor, Canal, Observación, Estado)</span>
-        <span>☑️ Checkbox para seleccionar y eliminar en bloque</span>
-      </div>
-
-      <div style={S.card}>
-        <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-          <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>
-            Detalle de gastos {filtroMes&&'— '+filtroMes} · {gastos.length} registros
-          </h4>
-          {filtroMes&&<button onClick={()=>setFiltroMes('')} style={{...S.btn('var(--bg3)','var(--text2)'),fontSize:11,padding:'3px 10px'}}>← Ver todos</button>}
-        </div>
-        <div style={{overflowX:'auto'}} onPaste={handlePaste}>
-          <table style={{borderCollapse:'collapse',tableLayout:'fixed',minWidth:'100%'}}>
-            <thead>
-              <tr style={{background:'var(--bg3)'}}>
-                <th style={{...S.th,width:36,textAlign:'center',padding:'8px 6px'}}>
-                  <input type="checkbox" checked={seleccionados.size===gastos.length&&gastos.length>0} onChange={toggleTodos} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
-                </th>
-                <th style={{...S.th,width:36,padding:'8px 4px',textAlign:'center',fontSize:10}}>#</th>
-                <th style={{...S.th,width:36}}></th>
-                {COLS_G.map(c=><th key={c.key} style={{...S.th,width:c.w}}>{c.label}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {gastos.length===0&&(
-                <tr><td colSpan={COLS_G.length+3} style={{padding:48,textAlign:'center',color:'var(--text3)',fontSize:13}}>
-                  No hay gastos. <strong>Añadir fila</strong>, importar Excel, o pegar con <strong>Ctrl+V</strong>.
-                </td></tr>
-              )}
-              {gastos.map((g,idx)=>(
-                <tr key={g.id} style={{background:seleccionados.has(g.id)?'rgba(108,99,255,0.06)':'transparent'}}>
-                  <td style={{padding:'6px',textAlign:'center',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>
-                    <input type="checkbox" checked={seleccionados.has(g.id)} onChange={()=>{setSeleccionados(prev=>{const n=new Set(prev);n.has(g.id)?n.delete(g.id):n.add(g.id);return n})}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
-                  </td>
-                  <td style={{padding:'6px 4px',textAlign:'center',fontSize:10,color:'var(--text3)',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>{idx+1}</td>
-                  <td style={{padding:'4px',borderTop:'1px solid var(--border)',textAlign:'center',width:36}}>
-                    <button onClick={()=>{if(window.confirm('¿Eliminar?')){const nd={...data,gastosPresupuesto:(data.gastosPresupuesto||[]).filter(x=>x.id!==g.id)};setData(nd);save(nd)}}} style={{background:'var(--red-soft)',color:'var(--red)',border:'none',borderRadius:6,padding:'2px 8px',cursor:'pointer',fontSize:13,fontWeight:700,lineHeight:1}}>✕</button>
-                  </td>
-                  {COLS_G.map(col=>(
-                    <td key={col.key} style={celda(g.id,col.key)} onClick={()=>startEdit(g.id,col.key,g[col.key])}>
-                      {editCell?.id===g.id&&editCell?.field===col.key ? (
-                        col.key==='mes'?(
-                          <select defaultValue={editVal} onChange={e=>{
-                            const v=e.target.value
-                            if(!editCell) return
-                            const {id,field}=editCell
-                            const gastosPresupuesto=(data.gastosPresupuesto||[]).map(g=>g.id!==id?g:{...g,[field]:v})
-                            const nd={...data,gastosPresupuesto};setData(nd);save(nd);setEditCell(null);setEditVal(v)
-                          }} ref={inputRef} autoFocus
-                            style={{background:'var(--bg2)',color:'var(--text)',border:'1px solid var(--accent)',borderRadius:4,fontSize:12,width:'100%',fontFamily:'var(--font)',padding:'2px'}}>
-                            <option value="">— Selecciona mes —</option>{MESES.map(m=><option key={m} value={m}>{m}</option>)}
-                          </select>
-                        ):col.key==='estado'?(
-                          <select defaultValue={editVal} onChange={e=>{
-                            const v=e.target.value
-                            if(!editCell) return
-                            const {id,field}=editCell
-                            const gastosPresupuesto=(data.gastosPresupuesto||[]).map(g=>g.id!==id?g:{...g,[field]:v})
-                            const nd={...data,gastosPresupuesto};setData(nd);save(nd);setEditCell(null);setEditVal(v)
-                          }} ref={inputRef} autoFocus
-                            style={{background:'var(--bg2)',color:'var(--text)',border:'1px solid var(--accent)',borderRadius:4,fontSize:12,width:'100%',fontFamily:'var(--font)',padding:'2px'}}>
-                            {ESTADOS_G.map(s=><option key={s} value={s}>{s}</option>)}
-                          </select>
-                        ):(
-                          <input ref={inputRef} value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={commitEdit} onKeyDown={onKD}
-                            type={col.key==='valorFactura'?'number':'text'}
-                            style={{background:'transparent',color:'var(--text)',border:'none',outline:'none',fontSize:12,width:'100%',fontFamily:col.key==='valorFactura'?'var(--mono)':'var(--font)'}}/>
-                        )
-                      ):(
-                        <span style={{fontFamily:col.key==='valorFactura'?'var(--mono)':'inherit',color:col.key==='valorFactura'?'var(--accent2)':col.key==='gasto'?'var(--text)':'var(--text2)',fontWeight:col.key==='valorFactura'?500:400}}>
-                          {col.key==='valorFactura'?cop(Number(g[col.key])||0):col.key==='estado'?(<Badge label={g[col.key]}/>):(g[col.key]||'')}
-                        </span>
-                      )}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-              {gastos.length>0&&(
-                <tr style={{background:'var(--bg3)',borderTop:'2px solid var(--border2)'}}>
-                  <td colSpan={3} style={{padding:'8px 10px'}}/>
-                  <td colSpan={2} style={{padding:'8px 12px',fontWeight:700,fontSize:12,color:'var(--text2)'}}>TOTAL {filtroMes&&'— '+filtroMes}</td>
-                  <td style={{padding:'8px 12px',fontFamily:'var(--mono)',fontWeight:700,fontSize:13,color:'var(--accent2)'}}>{cop(totalGastado)}</td>
-                  <td colSpan={4} style={{padding:'8px 10px'}}/>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
       <div style={S.card}>
         <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}><h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Presupuestos asignados por mes</h4></div>
         <table style={{width:'100%',borderCollapse:'collapse'}}>
@@ -1404,6 +1057,284 @@ function Presupuesto({ data, setData }) {
     </div>
   )
 }
+
+
+function DetalleGastos({ data, setData, mesInicial='', onVolver }) {
+  const [filtroMes, setFiltroMes] = useState(mesInicial||'')
+  const [filtroAnio, setFiltroAnio] = useState('2026')
+  const [busqueda, setBusqueda] = useState('')
+  const [seleccionados, setSeleccionados] = useState(new Set())
+  const [editCell, setEditCell] = useState(null)
+  const [editVal, setEditVal] = useState('')
+  const inputRef = useRef(null)
+
+  useEffect(()=>{
+    if(mesInicial) setFiltroMes(mesInicial)
+  },[mesInicial])
+
+  const COLS_G = [
+    {key:'mes',          label:'Mes',                    w:85},
+    {key:'gasto',        label:'Gasto (Nom. Producto, Cliente)', w:260},
+    {key:'valorFactura', label:'Valor Factura',           w:125},
+    {key:'canal',        label:'Canal',                   w:80},
+    {key:'observacion',  label:'Observación (ATJ)',       w:180},
+    {key:'estado',       label:'Estado',                  w:100},
+    {key:'centroCostos', label:'Centro de Costos',        w:120},
+    {key:'ordenCompra',  label:'Orden de Compra',         w:110},
+    {key:'nitProveedor', label:'NIT Proveedor',           w:110},
+    {key:'nomProveedor', label:'Nom. Proveedor',          w:140},
+    {key:'docCargado',   label:'Doc. Cargado',            w:90},
+    {key:'obsKatherine', label:'Obs. Katherine',          w:160},
+  ]
+  const ESTADOS_G = ['Pendiente','Ingresado','Aprobado','Pagado','Rechazado']
+  const anios = [...new Set([...(data.gastosPresupuesto||[]).map(g=>g.anio),...(data.presupuestos||[]).map(p=>p.anio)])].filter(Boolean).sort()
+
+  const gastos = (data.gastosPresupuesto||[]).filter(g=>
+    (!filtroMes||normMes(g.mes)===normMes(filtroMes)) &&
+    (!filtroAnio||g.anio===Number(filtroAnio)) &&
+    (!busqueda||[g.gasto,g.observacion,g.estado,g.centroCostos,g.canal,g.nomProveedor,g.ordenCompra].some(v=>String(v||'').toLowerCase().includes(busqueda.toLowerCase())))
+  ).sort((a,b)=>{
+    const mi=MESES.indexOf(normMes(a.mes)),mj=MESES.indexOf(normMes(b.mes))
+    if(mi===-1&&mj===-1) return 0
+    if(mi===-1) return 1
+    if(mj===-1) return -1
+    return mi-mj
+  })
+
+  const totalGastado = gastos.reduce((s,g)=>s+(Number(g.valorFactura)||0),0)
+
+  const toggleTodos = () => setSeleccionados(prev=>prev.size===gastos.length&&gastos.length>0?new Set():new Set(gastos.map(g=>g.id)))
+
+  const eliminarSel = () => {
+    if(!seleccionados.size||!confirm('¿Eliminar '+seleccionados.size+' gastos?')) return
+    const ids=[...seleccionados]
+    const nd={...data,gastosPresupuesto:(data.gastosPresupuesto||[]).filter(g=>!seleccionados.has(g.id))}
+    setData(nd)
+    ids.forEach(id=>eliminarFilaSheets(_currentUserKey.replace('tracker_v3_',''),'gastosPresupuesto',id).catch(()=>{}))
+    save(nd)
+    setSeleccionados(new Set())
+  }
+
+  const startEdit = (id,field,val) => {
+    setEditCell({id,field})
+    setEditVal(String(val||''))
+    setTimeout(()=>inputRef.current?.focus(),20)
+  }
+
+  const guardarCampo = (id,field,val) => {
+    const gastosPresupuesto=(data.gastosPresupuesto||[]).map(g=>{
+      if(g.id!==id) return g
+      return {...g,[field]:field==='valorFactura'?(Number(val)||0):val}
+    })
+    const nd={...data,gastosPresupuesto}
+    setData(nd)
+    save(nd)
+  }
+
+  const commitEdit = () => {
+    if(!editCell) return
+    guardarCampo(editCell.id,editCell.field,editVal)
+    setEditCell(null)
+  }
+
+  const onKD = e => {
+    if(e.key==='Enter'){commitEdit();e.preventDefault()}
+    else if(e.key==='Escape') setEditCell(null)
+    else if(e.key==='Tab'){commitEdit();e.preventDefault()}
+  }
+
+  const addFila = () => {
+    const n={
+      id:Date.now(),
+      anio:Number(filtroAnio)||2026,
+      mes:filtroMes||'',
+      gasto:'',
+      valorFactura:0,
+      canal:'',
+      observacion:'',
+      estado:'Pendiente',
+      centroCostos:'',
+      ordenCompra:'',
+      nitProveedor:'',
+      nomProveedor:'',
+      docCargado:'',
+      obsKatherine:'',
+      notas:''
+    }
+    const nd={...data,gastosPresupuesto:[...(data.gastosPresupuesto||[]),n]}
+    setData(nd)
+    save(nd,{insertar:n,tipo:'gastosPresupuesto'})
+    setTimeout(()=>startEdit(n.id,'gasto',''),60)
+  }
+
+  const handlePaste = e => {
+    const txt=e.clipboardData.getData('text')
+    if(!txt.includes('\t')&&!txt.includes('\n')) return
+    e.preventDefault()
+    const rows=txt.trim().split('\n').map(r=>r.split('\t'))
+    const nuevas=rows.filter(r=>r[0]||r[1]).map((r,i)=>({
+      id:Date.now()+i,
+      anio:Number(filtroAnio)||2026,
+      mes:normMes(r[0]||filtroMes||''),
+      gasto:r[1]||'',
+      valorFactura:parseN(r[2]||0),
+      canal:r[3]||'',
+      observacion:r[4]||'',
+      estado:r[5]||'Pendiente',
+      centroCostos:r[6]||'',
+      ordenCompra:r[7]||'',
+      nitProveedor:r[8]||'',
+      nomProveedor:r[9]||'',
+      docCargado:r[10]||'',
+      obsKatherine:r[11]||'',
+      notas:''
+    })).filter(r=>r.gasto||r.mes)
+
+    if(nuevas.length){
+      const nd={...data,gastosPresupuesto:[...(data.gastosPresupuesto||[]),...nuevas]}
+      setData(nd)
+      save(nd)
+      alert('✅ '+nuevas.length+' filas pegadas')
+    }
+  }
+
+  const celda = (id,field) => ({
+    padding:'6px 10px',
+    fontSize:12,
+    borderTop:'1px solid var(--border)',
+    borderRight:'1px solid var(--border)',
+    cursor:'cell',
+    whiteSpace:'nowrap',
+    overflow:'hidden',
+    maxWidth:300,
+    background:editCell?.id===id&&editCell?.field===field?'rgba(108,99,255,0.18)':seleccionados.has(id)?'rgba(108,99,255,0.07)':'transparent',
+    outline:editCell?.id===id&&editCell?.field===field?'2px solid var(--accent)':'none',
+    outlineOffset:'-1px',
+  })
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:16}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12,flexWrap:'wrap'}}>
+        <div>
+          <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+            <button onClick={onVolver} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:11}}>← Presupuesto</button>
+            <h2 style={{fontSize:18,margin:0}}>Detalle de gastos</h2>
+          </div>
+          <p style={{fontSize:11,color:'var(--text3)',margin:'5px 0 0'}}>
+            Consulta, registra y edita todos los movimientos que componen la ejecución del presupuesto.
+          </p>
+        </div>
+        <button onClick={addFila} style={{...S.btn('var(--green-soft)','var(--green)'),fontSize:12,border:'1px solid rgba(61,214,140,0.2)'}}>
+          <PlusCircle size={14}/> Añadir gasto
+        </button>
+      </div>
+
+      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+        <div style={{position:'relative',display:'flex',alignItems:'center'}}>
+          <Search size={13} style={{position:'absolute',left:9,color:'var(--text3)',pointerEvents:'none'}}/>
+          <input value={busqueda} onChange={e=>setBusqueda(e.target.value)} placeholder="Buscar gasto, proveedor, OC..." style={{paddingLeft:30,width:230,fontSize:13}}/>
+        </div>
+        <select value={filtroAnio} onChange={e=>setFiltroAnio(e.target.value)} style={{width:100}}>
+          <option value="">Año</option>{anios.map(a=><option key={a}>{a}</option>)}
+        </select>
+        <select value={filtroMes} onChange={e=>setFiltroMes(e.target.value)} style={{width:145}}>
+          <option value="">Todos los meses</option>{MESES.map(m=><option key={m}>{m}</option>)}
+        </select>
+        {(filtroMes||busqueda)&&<button onClick={()=>{setFiltroMes('');setBusqueda('')}} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:12}}>✕ Limpiar</button>}
+        <div style={{marginLeft:'auto',display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+          <span style={{fontSize:11,color:'var(--text3)'}}>{gastos.length} registros · <strong style={{color:'var(--accent2)'}}>{cop(totalGastado)}</strong></span>
+          {seleccionados.size>0&&<button onClick={eliminarSel} style={{...S.btn('var(--red-soft)','var(--red)'),fontSize:12}}><Trash2 size={13}/> Eliminar {seleccionados.size}</button>}
+        </div>
+      </div>
+
+      <div style={{fontSize:11,color:'var(--text3)',display:'flex',gap:20,flexWrap:'wrap'}}>
+        <span>💡 Clic en una celda para editar</span>
+        <span>📋 Ctrl+V para pegar desde Excel</span>
+        <span>☑️ Selecciona varias filas para eliminar en bloque</span>
+      </div>
+
+      <div style={S.card}>
+        <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}>
+          <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>
+            Registros {filtroMes&&'— '+filtroMes}
+          </h4>
+          <span style={{fontSize:11,color:'var(--text3)'}}>Total visible: {cop(totalGastado)}</span>
+        </div>
+        <div style={{overflowX:'auto'}} onPaste={handlePaste}>
+          <table style={{borderCollapse:'collapse',tableLayout:'fixed',minWidth:'100%'}}>
+            <thead>
+              <tr style={{background:'var(--bg3)'}}>
+                <th style={{...S.th,width:36,textAlign:'center',padding:'8px 6px'}}>
+                  <input type="checkbox" checked={seleccionados.size===gastos.length&&gastos.length>0} onChange={toggleTodos} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
+                </th>
+                <th style={{...S.th,width:36,padding:'8px 4px',textAlign:'center',fontSize:10}}>#</th>
+                <th style={{...S.th,width:36}}></th>
+                {COLS_G.map(c=><th key={c.key} style={{...S.th,width:c.w}}>{c.label}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {gastos.length===0&&(
+                <tr><td colSpan={COLS_G.length+3} style={{padding:48,textAlign:'center',color:'var(--text3)',fontSize:13}}>
+                  No hay gastos para este filtro. Usa <strong>Añadir gasto</strong> o pega registros desde Excel.
+                </td></tr>
+              )}
+              {gastos.map((g,idx)=>(
+                <tr key={g.id} style={{background:seleccionados.has(g.id)?'rgba(108,99,255,0.06)':'transparent'}}>
+                  <td style={{padding:'6px',textAlign:'center',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>
+                    <input type="checkbox" checked={seleccionados.has(g.id)} onChange={()=>{setSeleccionados(prev=>{const n=new Set(prev);n.has(g.id)?n.delete(g.id):n.add(g.id);return n})}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
+                  </td>
+                  <td style={{padding:'6px 4px',textAlign:'center',fontSize:10,color:'var(--text3)',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>{idx+1}</td>
+                  <td style={{padding:'4px',borderTop:'1px solid var(--border)',textAlign:'center',width:36}}>
+                    <button onClick={()=>{
+                      if(!window.confirm('¿Eliminar este gasto?')) return
+                      const nd={...data,gastosPresupuesto:(data.gastosPresupuesto||[]).filter(x=>x.id!==g.id)}
+                      setData(nd)
+                      save(nd,{eliminar:g.id,tipo:'gastosPresupuesto'})
+                    }} style={{background:'var(--red-soft)',color:'var(--red)',border:'none',borderRadius:6,padding:'2px 8px',cursor:'pointer',fontSize:13,fontWeight:700,lineHeight:1}}>✕</button>
+                  </td>
+                  {COLS_G.map(col=>(
+                    <td key={col.key} style={celda(g.id,col.key)} onClick={()=>startEdit(g.id,col.key,g[col.key])}>
+                      {editCell?.id===g.id&&editCell?.field===col.key ? (
+                        col.key==='mes'?(
+                          <select defaultValue={editVal} onChange={e=>{guardarCampo(g.id,col.key,e.target.value);setEditCell(null)}} ref={inputRef} autoFocus
+                            style={{background:'var(--bg2)',color:'var(--text)',border:'1px solid var(--accent)',borderRadius:4,fontSize:12,width:'100%',fontFamily:'var(--font)',padding:'2px'}}>
+                            <option value="">— Mes —</option>{MESES.map(m=><option key={m} value={m}>{m}</option>)}
+                          </select>
+                        ):col.key==='estado'?(
+                          <select defaultValue={editVal} onChange={e=>{guardarCampo(g.id,col.key,e.target.value);setEditCell(null)}} ref={inputRef} autoFocus
+                            style={{background:'var(--bg2)',color:'var(--text)',border:'1px solid var(--accent)',borderRadius:4,fontSize:12,width:'100%',fontFamily:'var(--font)',padding:'2px'}}>
+                            {ESTADOS_G.map(s=><option key={s} value={s}>{s}</option>)}
+                          </select>
+                        ):(
+                          <input ref={inputRef} value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={commitEdit} onKeyDown={onKD}
+                            type={col.key==='valorFactura'?'number':'text'}
+                            style={{background:'transparent',color:'var(--text)',border:'none',outline:'none',fontSize:12,width:'100%',fontFamily:col.key==='valorFactura'?'var(--mono)':'var(--font)'}}/>
+                        )
+                      ):(
+                        <span style={{fontFamily:col.key==='valorFactura'?'var(--mono)':'inherit',color:col.key==='valorFactura'?'var(--accent2)':col.key==='gasto'?'var(--text)':'var(--text2)',fontWeight:col.key==='valorFactura'?500:400}}>
+                          {col.key==='valorFactura'?cop(Number(g[col.key])||0):col.key==='estado'?(<Badge label={g[col.key]}/>):(g[col.key]||'')}
+                        </span>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+              {gastos.length>0&&(
+                <tr style={{background:'var(--bg3)',borderTop:'2px solid var(--border2)'}}>
+                  <td colSpan={3} style={{padding:'8px 10px'}}/>
+                  <td colSpan={2} style={{padding:'8px 12px',fontWeight:700,fontSize:12,color:'var(--text2)'}}>TOTAL {filtroMes&&'— '+filtroMes}</td>
+                  <td style={{padding:'8px 12px',fontFamily:'var(--mono)',fontWeight:700,fontSize:13,color:'var(--accent2)'}}>{cop(totalGastado)}</td>
+                  <td colSpan={COLS_G.length-2} style={{padding:'8px 10px'}}/>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 
 function Ventas({ data, setData }) {
   const [modal, setModal] = useState(false)
@@ -5735,6 +5666,7 @@ export default function App() {
   const [sheetsLoading, setSheetsLoading] = useState(false)
   const [sheetsSync, setSheetsSync] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [detalleGastosMes, setDetalleGastosMes] = useState('')
   const [mostrarGuiaIOS, setMostrarGuiaIOS] = useState(false)
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState(null)
   const [appInstalada, setAppInstalada] = useState(
@@ -5943,7 +5875,8 @@ export default function App() {
     {id:'dashboard',label:'Dashboard financiero',icon:LayoutDashboard},
     {id:'inversiones',label:'Inversiones',icon:TrendingUp},
     {id:'ventas',label:'Venta consolidada',icon:ShoppingCart},
-    {id:'presupuesto',label:'Presupuesto y gastos',icon:DollarSign},
+    {id:'presupuesto',label:'Presupuesto',icon:DollarSign},
+    {id:'detalleGastos',label:'Detalle de gastos',icon:ListTodo},
   ]
   const responsableActualMenu = nombrePersonaPorUsuario(usuario)
   const tareasAsignadasUsuario = (data.tareasAsignadas||[]).filter(
@@ -5960,6 +5893,7 @@ export default function App() {
     {id:'ventas',     label:'Ventas',      icon:ShoppingCart},
     {id:'planes',     label:'Planes Q',    icon:BookOpen},
     {id:'presupuesto',label:'Presupuesto', icon:DollarSign},
+    {id:'detalleGastos',label:'Detalle de gastos',icon:ListTodo},
     {id:'pendientes', label:'Pendientes',  icon:ListTodo},
     {id:'apoyocierre', label:'Apoyo Cierre', icon:DollarSign},
   ]
@@ -6045,7 +5979,7 @@ export default function App() {
         {/* SIDEBAR OSCURO */}
         <aside className="app-sidebar" style={{width:sidebarOpen?220:60,flexShrink:0,background:'var(--sidebar-bg)',display:'flex',flexDirection:'column',padding:'16px 0',gap:2,transition:'width 0.22s cubic-bezier(.4,0,.2,1)',overflow:'hidden',position:'sticky',top:52,height:'calc(100vh - 52px)',boxShadow:'4px 0 24px rgba(30,16,64,0.18)'}}>
           {tabs.map(t=>{ const Icon=t.icon; const active=tab===t.id; return (
-            <button key={t.id} onClick={()=>setTab(t.id)} title={t.label} style={{display:'flex',alignItems:'center',gap:11,padding:sidebarOpen?'10px 18px':'10px 0',justifyContent:sidebarOpen?'flex-start':'center',margin:'0 8px',borderRadius:10,fontSize:13,fontWeight:active?600:400,background:active?'rgba(255,255,255,0.13)':'transparent',color:active?'#fff':'rgba(255,255,255,0.55)',border:'none',cursor:'pointer',fontFamily:'var(--font)',whiteSpace:'nowrap',position:'relative',transition:'all 0.15s',borderLeft:active?'3px solid #a855f7':'3px solid transparent'}}>
+            <button key={t.id} onClick={()=>{if(t.id==='detalleGastos') setDetalleGastosMes('');setTab(t.id)}} title={t.label} style={{display:'flex',alignItems:'center',gap:11,padding:sidebarOpen?'10px 18px':'10px 0',justifyContent:sidebarOpen?'flex-start':'center',margin:'0 8px',borderRadius:10,fontSize:13,fontWeight:active?600:400,background:active?'rgba(255,255,255,0.13)':'transparent',color:active?'#fff':'rgba(255,255,255,0.55)',border:'none',cursor:'pointer',fontFamily:'var(--font)',whiteSpace:'nowrap',position:'relative',transition:'all 0.15s',borderLeft:active?'3px solid #a855f7':'3px solid transparent'}}>
               <Icon size={16} style={{flexShrink:0,color:active?'#c084fc':'rgba(255,255,255,0.5)'}}/>
               {sidebarOpen&&<span style={{overflow:'hidden',textOverflow:'ellipsis'}}>{t.label}</span>}
               {t.badge>0&&<span style={{background:'#a855f7',color:'#fff',borderRadius:10,fontSize:9,fontWeight:700,padding:'1px 6px',marginLeft:'auto',flexShrink:0}}>{t.badge}</span>}
@@ -6073,7 +6007,8 @@ export default function App() {
               {tab==='dashboard'    && <Dashboard    data={data}/>}
               {tab==='inversiones' && <Inversiones  data={data} setData={setDataUser}/>}
               {tab==='ventas'      && <Ventas       data={data} setData={setDataUser}/>}
-              {tab==='presupuesto' && <Presupuesto  data={data} setData={setDataUser}/>}
+              {tab==='presupuesto' && <Presupuesto data={data} setData={setDataUser} onIrDetalle={mes=>{setDetalleGastosMes(mes||'');setTab('detalleGastos')}}/>}
+              {tab==='detalleGastos' && <DetalleGastos data={data} setData={setDataUser} mesInicial={detalleGastosMes} onVolver={()=>{setDetalleGastosMes('');setTab('presupuesto')}}/>}
             </>
           )}
           {!esLider&&!esPresupuesto&&!esColaborador&&!esMercadeoGeneral&&(
@@ -6102,7 +6037,8 @@ export default function App() {
               {tab==='inversiones'     &&<Inversiones       data={data} setData={setDataUser}/>}
               {tab==='ventas'          &&<Ventas            data={data} setData={setDataUser}/>}
               {tab==='planes'          &&<Planes            data={data} setData={setDataUser}/>}
-              {tab==='presupuesto'     &&<Presupuesto       data={data} setData={setDataUser}/>}
+              {tab==='presupuesto'     &&<Presupuesto data={data} setData={setDataUser} onIrDetalle={mes=>{setDetalleGastosMes(mes||'');setTab('detalleGastos')}}/>}
+              {tab==='detalleGastos'    &&<DetalleGastos data={data} setData={setDataUser} mesInicial={detalleGastosMes} onVolver={()=>{setDetalleGastosMes('');setTab('presupuesto')}}/>}
               {tab==='pendientes'      &&<Pendientes        data={data} setData={setDataUser}/>}
               {tab==='apoyocierre'     &&<ApoyoCierre       data={data} setData={setDataUser} usuario={usuario}/>}
               {tab==='tareasasignadas' &&<TareasAsignadas   data={data} setData={setDataUser} usuario={usuario}/>}
