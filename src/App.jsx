@@ -1017,26 +1017,262 @@ function Inversiones({ data, setData }) {
         </div>
       )}
 
-      <div style={S.card}>
-        <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}><h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Presupuestos asignados por mes</h4></div>
-        <table style={{width:'100%',borderCollapse:'collapse'}}>
-          <thead><tr>{['Año','Mes','Monto asignado','Ejecutado','Disponible',''].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+      <div style={{fontSize:11,color:'var(--text3)',display:'flex',gap:20,flexWrap:'wrap'}}>
+        <span>💡 Clic en celda para editar · Enter confirma · Tab siguiente</span>
+        <span>📋 Ctrl+V para pegar desde Excel (mismo orden de columnas)</span>
+        <span>☑️ Checkbox para seleccionar y eliminar en bloque</span>
+      </div>
+
+      <div style={{...S.card,overflowX:'auto'}} onPaste={handlePaste}>
+        <table style={{borderCollapse:'collapse',tableLayout:'fixed',minWidth:'100%'}}>
+          <thead>
+            <tr style={{background:'var(--bg3)'}}>
+              <th style={{...S.th,width:36,textAlign:'center',padding:'8px 6px'}}>
+                <input type="checkbox" checked={seleccionados.size===lista.length&&lista.length>0} onChange={toggleTodos} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
+              </th>
+              <th style={{...S.th,width:36,padding:'8px 4px',textAlign:'center',fontSize:10}}>#</th>
+              {COLS.map(c=><th key={c.key} style={{...S.th,width:c.w}}>{c.label}</th>)}
+            </tr>
+          </thead>
           <tbody>
-            {data.presupuestos.length===0&&<tr><td colSpan={6} style={{...S.td,textAlign:'center',color:'var(--text3)',padding:28}}>No hay presupuestos. Usa "Asignar presupuesto".</td></tr>}
-            {[...data.presupuestos].sort((a,b)=>a.anio!==b.anio?b.anio-a.anio:MESES.indexOf(normMes(a.mes))-MESES.indexOf(normMes(b.mes))).map(p=>{
-              // FIX: compara mes normalizado
-              const ejec2=(data.gastosPresupuesto||[]).filter(g=>normMes(g.mes)===normMes(p.mes)&&g.anio===p.anio).reduce((s,g)=>s+(Number(g.valorFactura)||0),0)
-              return (
-                <tr key={p.id}>
-                  <td style={{...S.td,color:'var(--text2)'}}>{p.anio}</td>
-                  <td style={{...S.td,fontWeight:500}}>{p.mes}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--text2)'}}>{cop(p.monto)}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--accent2)'}}>{cop(ejec2)}</td>
-                  <td style={{...S.td,fontFamily:'var(--mono)',color:p.monto-ejec2>=0?'var(--green)':'var(--red)'}}>{cop(p.monto-ejec2)}</td>
-                  <td style={S.td}><button onClick={()=>delPres(p.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'4px 8px'}}><Trash2 size={13}/></button></td>
+            {lista.length===0&&(
+              <tr><td colSpan={COLS.length+2} style={{padding:48,textAlign:'center',color:'var(--text3)',fontSize:13}}>
+                No hay inversiones. Usa <strong>Añadir fila</strong>, importa tu Excel, o pega con <strong>Ctrl+V</strong>.
+              </td></tr>
+            )}
+            {lista.map((inv,idx)=>(
+              <tr key={inv.id} style={{background:seleccionados.has(inv.id)?'rgba(108,99,255,0.06)':'transparent'}}>
+                <td style={{padding:'6px',textAlign:'center',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}} onClick={e=>e.stopPropagation()}>
+                  <input type="checkbox" checked={seleccionados.has(inv.id)} onChange={()=>{setSeleccionados(prev=>{const n=new Set(prev);n.has(inv.id)?n.delete(inv.id):n.add(inv.id);return n})}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
+                </td>
+                <td style={{padding:'6px 4px',textAlign:'center',fontSize:10,color:'var(--text3)',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>{idx+1}</td>
+                {COLS.map(col=>(
+                  <td key={col.key} style={celda(inv.id,col.key)} onClick={()=>startEdit(inv.id,col.key,inv[col.key])}>
+                    {editCell?.id===inv.id&&editCell?.field===col.key ? (
+                      col.key==='mes'?(
+                        <select value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={()=>commitEdit()} ref={inputRef} autoFocus
+                          style={{background:'var(--bg2)',color:'var(--text)',border:'1px solid var(--accent)',borderRadius:4,fontSize:12,width:'100%',fontFamily:'var(--font)',padding:'2px'}}>
+                          <option value="">— Selecciona mes —</option>{MESES.map(m=><option key={m} value={m}>{m}</option>)}
+                        </select>
+                      ):col.key==='concepto'?(
+                        <select value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={commitEdit} onKeyDown={onKD} ref={inputRef}
+                          style={{background:'transparent',color:'var(--text)',border:'none',outline:'none',fontSize:12,width:'100%',fontFamily:'var(--font)'}}>
+                          {CONCEPTOS.map(c=><option key={c}>{c}</option>)}
+                        </select>
+                      ):(
+                        <input ref={inputRef} value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={commitEdit} onKeyDown={onKD}
+                          type={col.key==='inversion'||col.key==='galonesPlan'||col.key==='anio'?'number':'text'}
+                          style={{background:'transparent',color:'var(--text)',border:'none',outline:'none',fontSize:12,width:'100%',fontFamily:col.key==='inversion'?'var(--mono)':'var(--font)'}}/>
+                      )
+                    ):(
+                      <span style={{color:col.key==='distribuidor'?'var(--text)':'var(--text2)',fontFamily:col.key==='inversion'?'var(--mono)':'inherit'}}>
+                        {col.key==='inversion'?cop(Number(inv[col.key])||0):(inv[col.key]||'')}
+                      </span>
+                    )}
+                  </td>
+                ))}
+              </tr>
+            ))}
+            {lista.length>0&&(
+              <tr style={{background:'var(--bg3)',borderTop:'2px solid var(--border2)'}}>
+                <td colSpan={2} style={{padding:'8px 10px'}}/>
+                <td colSpan={5} style={{padding:'8px 12px',fontWeight:700,fontSize:12,color:'var(--text2)'}}>
+                  TOTAL {filtroMes&&'— '+filtroMes} · {lista.length} registros {seleccionados.size>0&&'· '+seleccionados.size+' seleccionados'}
+                </td>
+                <td style={{padding:'8px 12px',fontFamily:'var(--mono)',fontWeight:700,fontSize:13,color:'var(--accent2)'}}>{cop(totalFiltrado)}</td>
+                <td colSpan={2} style={{padding:'8px 10px'}}/>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+
+// ═══════════════════════════════════════════════════════
+// PRESUPUESTO — con filtro de mes corregido (normMes)
+// ═══════════════════════════════════════════════════════
+
+function Presupuesto({ data, setData, onIrDetalle }) {
+  const [filtroMes, setFiltroMes] = useState('')
+  const [filtroAnio, setFiltroAnio] = useState('2026')
+  const [modalPres, setModalPres] = useState(false)
+  const [formP, setFormP] = useState({ mes:'', anio:2026, monto:'' })
+
+  const anios = [...new Set([
+    ...(data.gastosPresupuesto||[]).map(g=>g.anio),
+    ...(data.presupuestos||[]).map(p=>p.anio)
+  ])].filter(Boolean).sort()
+
+  const totalGastado = (data.gastosPresupuesto||[])
+    .filter(g=>
+      (!filtroMes||normMes(g.mes)===normMes(filtroMes)) &&
+      (!filtroAnio||g.anio===Number(filtroAnio))
+    )
+    .reduce((s,g)=>s+(Number(g.valorFactura)||0),0)
+
+  const presAsignado = (data.presupuestos||[])
+    .filter(p=>
+      (!filtroMes||normMes(p.mes)===normMes(filtroMes)) &&
+      (!filtroAnio||p.anio===Number(filtroAnio))
+    )
+    .reduce((s,p)=>s+(Number(p.monto)||0),0)
+
+  const ejec = presAsignado>0 ? (totalGastado/presAsignado)*100 : 0
+  const disponible = presAsignado-totalGastado
+
+  const resumenMeses = MESES.map(m=>{
+    const gastado=(data.gastosPresupuesto||[])
+      .filter(g=>normMes(g.mes)===m&&(!filtroAnio||g.anio===Number(filtroAnio)))
+      .reduce((s,g)=>s+(Number(g.valorFactura)||0),0)
+
+    const asignado=(data.presupuestos||[])
+      .filter(p=>normMes(p.mes)===m&&(!filtroAnio||p.anio===Number(filtroAnio)))
+      .reduce((s,p)=>s+(Number(p.monto)||0),0)
+
+    return {
+      mes:m,
+      gastado,
+      asignado,
+      ejec:asignado>0?(gastado/asignado)*100:0,
+      disponible:asignado-gastado
+    }
+  }).filter(r=>r.gastado>0||r.asignado>0)
+
+  const submitPres = () => {
+    if(!formP.mes||!formP.monto) return
+    const entry={
+      id:Date.now(),
+      mes:formP.mes,
+      anio:Number(formP.anio),
+      monto:Number(formP.monto)
+    }
+    const nd={...data,presupuestos:[...(data.presupuestos||[]),entry]}
+    setData(nd)
+    save(nd,{insertar:entry,tipo:'presupuestos'})
+    setModalPres(false)
+    setFormP({mes:'',anio:2026,monto:''})
+  }
+
+  const delPres = id => {
+    const nd={...data,presupuestos:(data.presupuestos||[]).filter(p=>p.id!==id)}
+    setData(nd)
+    save(nd,{eliminar:id,tipo:'presupuestos'})
+  }
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:18}}>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+        <select value={filtroAnio} onChange={e=>setFiltroAnio(e.target.value)} style={{width:110}}>
+          <option value="">Año</option>
+          {anios.map(a=><option key={a}>{a}</option>)}
+        </select>
+
+        <select value={filtroMes} onChange={e=>setFiltroMes(e.target.value)} style={{width:150}}>
+          <option value="">Todos los meses</option>
+          {MESES.map(m=><option key={m}>{m}</option>)}
+        </select>
+
+        {filtroMes&&(
+          <button onClick={()=>setFiltroMes('')} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:12}}>
+            ✕
+          </button>
+        )}
+
+        <div style={{marginLeft:'auto',display:'flex',gap:8,flexWrap:'wrap'}}>
+          <button onClick={()=>setModalPres(true)} style={{...S.btn('var(--bg3)','var(--text2)'),border:'1px solid var(--border2)',fontSize:12}}>
+            <DollarSign size={13}/> Asignar presupuesto
+          </button>
+
+          <button onClick={()=>onIrDetalle?.(filtroMes||'')} style={{...S.btn('var(--accent)','#fff'),fontSize:12}}>
+            <ListTodo size={14}/> Ver detalle de gastos
+          </button>
+        </div>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
+        <KpiCard icon={DollarSign} label="Presupuesto asignado" value={cop(presAsignado)} sub={filtroMes||(filtroAnio||'')+' Total período'}/>
+        <KpiCard icon={TrendingUp} label="Total ejecutado" value={cop(totalGastado)} accent="var(--accent2)"/>
+        <KpiCard icon={BarChart2} label="% Ejecutado" value={ejec.toFixed(1)+'%'} sub={ejec>100?'Excedido':ejec>80?'Casi al límite':'Dentro del presupuesto'} accent={ejec>100?'var(--red)':ejec>80?'var(--yellow)':'var(--green)'}/>
+        <KpiCard icon={DollarSign} label={disponible>=0?'Disponible':'Excedido'} value={cop(Math.abs(disponible))} accent={disponible>=0?'var(--green)':'var(--red)'}/>
+      </div>
+
+      {resumenMeses.length>0&&(
+        <div style={S.card}>
+          <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+            <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>
+              Ejecutado vs Presupuesto por mes
+            </h4>
+            <span style={{fontSize:11,color:'var(--text3)'}}>Clic en un mes para abrir sus registros</span>
+          </div>
+
+          <table style={{width:'100%',borderCollapse:'collapse'}}>
+            <thead>
+              <tr>
+                {['Mes','Presupuesto asignado','Ejecutado','Disponible','% Ejec.','Barra',''].map(h=><th key={h} style={S.th}>{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {resumenMeses.map((r,i)=>(
+                <tr key={i} onClick={()=>onIrDetalle?.(r.mes)} style={{cursor:'pointer'}}>
+                  <td style={{...S.td,fontWeight:600}}>{r.mes}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--text2)'}}>{cop(r.asignado)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:600}}>{cop(r.gastado)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',color:r.disponible>=0?'var(--green)':'var(--red)'}}>{cop(r.disponible)}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',fontWeight:700,color:r.ejec>100?'var(--red)':r.ejec>80?'var(--yellow)':'var(--green)'}}>{r.ejec.toFixed(1)}%</td>
+                  <td style={{...S.td,minWidth:150}}>
+                    <div style={{height:6,background:'var(--bg4)',borderRadius:4,overflow:'hidden'}}>
+                      <div style={{height:'100%',width:Math.min(r.ejec,100)+'%',background:r.ejec>100?'var(--red)':r.ejec>80?'var(--yellow)':'var(--green)',borderRadius:4}}/>
+                    </div>
+                  </td>
+                  <td style={{...S.td,fontSize:11,color:'var(--accent2)',fontWeight:600}}>Ver detalle →</td>
                 </tr>
-              )
-            })}
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div style={S.card}>
+        <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)'}}>
+          <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>
+            Presupuestos asignados por mes
+          </h4>
+        </div>
+
+        <table style={{width:'100%',borderCollapse:'collapse'}}>
+          <thead>
+            <tr>{['Año','Mes','Monto asignado','Ejecutado','Disponible',''].map(h=><th key={h} style={S.th}>{h}</th>)}</tr>
+          </thead>
+          <tbody>
+            {(data.presupuestos||[]).length===0&&(
+              <tr><td colSpan={6} style={{...S.td,textAlign:'center',color:'var(--text3)',padding:28}}>No hay presupuestos. Usa "Asignar presupuesto".</td></tr>
+            )}
+
+            {[...(data.presupuestos||[])]
+              .sort((a,b)=>a.anio!==b.anio?b.anio-a.anio:MESES.indexOf(normMes(a.mes))-MESES.indexOf(normMes(b.mes)))
+              .map(p=>{
+                const ejec2=(data.gastosPresupuesto||[])
+                  .filter(g=>normMes(g.mes)===normMes(p.mes)&&g.anio===p.anio)
+                  .reduce((s,g)=>s+(Number(g.valorFactura)||0),0)
+
+                return (
+                  <tr key={p.id}>
+                    <td style={{...S.td,color:'var(--text2)'}}>{p.anio}</td>
+                    <td style={{...S.td,fontWeight:500}}>{p.mes}</td>
+                    <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--text2)'}}>{cop(p.monto)}</td>
+                    <td style={{...S.td,fontFamily:'var(--mono)',color:'var(--accent2)'}}>{cop(ejec2)}</td>
+                    <td style={{...S.td,fontFamily:'var(--mono)',color:p.monto-ejec2>=0?'var(--green)':'var(--red)'}}>{cop(p.monto-ejec2)}</td>
+                    <td style={S.td}>
+                      <button onClick={()=>delPres(p.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'4px 8px'}}>
+                        <Trash2 size={13}/>
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
           </tbody>
         </table>
       </div>
@@ -1044,10 +1280,20 @@ function Inversiones({ data, setData }) {
       {modalPres&&(
         <Modal title="Asignar presupuesto mensual" onClose={()=>setModalPres(false)}>
           <div style={{display:'flex',flexDirection:'column',gap:14}}>
-            <Field label="Año"><input type="number" value={formP.anio} onChange={e=>setFormP({...formP,anio:e.target.value})} placeholder="2026"/></Field>
-            <Field label="Mes *"><select value={formP.mes} onChange={e=>setFormP({...formP,mes:e.target.value})}><option value="">Selecciona...</option>{MESES.map(m=><option key={m}>{m}</option>)}</select></Field>
-            <Field label="Monto (COP) *"><input type="number" value={formP.monto} onChange={e=>setFormP({...formP,monto:e.target.value})} placeholder="0"/></Field>
+            <Field label="Año">
+              <input type="number" value={formP.anio} onChange={e=>setFormP({...formP,anio:e.target.value})} placeholder="2026"/>
+            </Field>
+            <Field label="Mes *">
+              <select value={formP.mes} onChange={e=>setFormP({...formP,mes:e.target.value})}>
+                <option value="">Selecciona...</option>
+                {MESES.map(m=><option key={m}>{m}</option>)}
+              </select>
+            </Field>
+            <Field label="Monto (COP) *">
+              <input type="number" value={formP.monto} onChange={e=>setFormP({...formP,monto:e.target.value})} placeholder="0"/>
+            </Field>
           </div>
+
           <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:20}}>
             <button onClick={()=>setModalPres(false)} style={S.btn('var(--bg3)','var(--text2)')}>Cancelar</button>
             <button onClick={submitPres} style={S.btn('var(--accent)','#fff')}><Check size={15}/> Guardar</button>
@@ -1057,7 +1303,6 @@ function Inversiones({ data, setData }) {
     </div>
   )
 }
-
 
 function DetalleGastos({ data, setData, mesInicial='', onVolver }) {
   const [filtroMes, setFiltroMes] = useState(mesInicial||'')
@@ -1073,77 +1318,58 @@ function DetalleGastos({ data, setData, mesInicial='', onVolver }) {
   },[mesInicial])
 
   const COLS_G = [
-    {key:'mes',          label:'Mes',                    w:85},
-    {key:'gasto',        label:'Gasto (Nom. Producto, Cliente)', w:260},
-    {key:'valorFactura', label:'Valor Factura',           w:125},
-    {key:'canal',        label:'Canal',                   w:80},
-    {key:'observacion',  label:'Observación (ATJ)',       w:180},
-    {key:'estado',       label:'Estado',                  w:100},
-    {key:'centroCostos', label:'Centro de Costos',        w:120},
-    {key:'ordenCompra',  label:'Orden de Compra',         w:110},
-    {key:'nitProveedor', label:'NIT Proveedor',           w:110},
-    {key:'nomProveedor', label:'Nom. Proveedor',          w:140},
-    {key:'docCargado',   label:'Doc. Cargado',            w:90},
-    {key:'obsKatherine', label:'Obs. Katherine',          w:160},
+    {key:'mes',label:'Mes',w:85},
+    {key:'gasto',label:'Gasto (Nom. Producto, Cliente)',w:260},
+    {key:'valorFactura',label:'Valor Factura',w:125},
+    {key:'canal',label:'Canal',w:80},
+    {key:'observacion',label:'Observación (ATJ)',w:180},
+    {key:'estado',label:'Estado',w:100},
+    {key:'centroCostos',label:'Centro de Costos',w:120},
+    {key:'ordenCompra',label:'Orden de Compra',w:110},
+    {key:'nitProveedor',label:'NIT Proveedor',w:110},
+    {key:'nomProveedor',label:'Nom. Proveedor',w:140},
+    {key:'docCargado',label:'Doc. Cargado',w:90},
+    {key:'obsKatherine',label:'Obs. Katherine',w:160},
   ]
-  const ESTADOS_G = ['Pendiente','Ingresado','Aprobado','Pagado','Rechazado']
-  const anios = [...new Set([...(data.gastosPresupuesto||[]).map(g=>g.anio),...(data.presupuestos||[]).map(p=>p.anio)])].filter(Boolean).sort()
 
-  const gastos = (data.gastosPresupuesto||[]).filter(g=>
+  const ESTADOS_G = ['Pendiente','Ingresado','Aprobado','Pagado','Rechazado']
+
+  const anios=[...new Set([
+    ...(data.gastosPresupuesto||[]).map(g=>g.anio),
+    ...(data.presupuestos||[]).map(p=>p.anio)
+  ])].filter(Boolean).sort()
+
+  const gastos=(data.gastosPresupuesto||[]).filter(g=>
     (!filtroMes||normMes(g.mes)===normMes(filtroMes)) &&
     (!filtroAnio||g.anio===Number(filtroAnio)) &&
-    (!busqueda||[g.gasto,g.observacion,g.estado,g.centroCostos,g.canal,g.nomProveedor,g.ordenCompra].some(v=>String(v||'').toLowerCase().includes(busqueda.toLowerCase())))
-  ).sort((a,b)=>{
-    const mi=MESES.indexOf(normMes(a.mes)),mj=MESES.indexOf(normMes(b.mes))
-    if(mi===-1&&mj===-1) return 0
-    if(mi===-1) return 1
-    if(mj===-1) return -1
-    return mi-mj
-  })
+    (!busqueda||[g.gasto,g.observacion,g.estado,g.centroCostos,g.canal,g.nomProveedor,g.ordenCompra]
+      .some(v=>String(v||'').toLowerCase().includes(busqueda.toLowerCase())))
+  )
 
-  const totalGastado = gastos.reduce((s,g)=>s+(Number(g.valorFactura)||0),0)
+  const totalGastado=gastos.reduce((s,g)=>s+(Number(g.valorFactura)||0),0)
 
-  const toggleTodos = () => setSeleccionados(prev=>prev.size===gastos.length&&gastos.length>0?new Set():new Set(gastos.map(g=>g.id)))
-
-  const eliminarSel = () => {
-    if(!seleccionados.size||!confirm('¿Eliminar '+seleccionados.size+' gastos?')) return
-    const ids=[...seleccionados]
-    const nd={...data,gastosPresupuesto:(data.gastosPresupuesto||[]).filter(g=>!seleccionados.has(g.id))}
-    setData(nd)
-    ids.forEach(id=>eliminarFilaSheets(_currentUserKey.replace('tracker_v3_',''),'gastosPresupuesto',id).catch(()=>{}))
-    save(nd)
-    setSeleccionados(new Set())
-  }
-
-  const startEdit = (id,field,val) => {
+  const startEdit=(id,field,val)=>{
     setEditCell({id,field})
     setEditVal(String(val||''))
     setTimeout(()=>inputRef.current?.focus(),20)
   }
 
-  const guardarCampo = (id,field,val) => {
-    const gastosPresupuesto=(data.gastosPresupuesto||[]).map(g=>{
-      if(g.id!==id) return g
-      return {...g,[field]:field==='valorFactura'?(Number(val)||0):val}
-    })
+  const guardarCampo=(id,field,val)=>{
+    const gastosPresupuesto=(data.gastosPresupuesto||[]).map(g=>
+      g.id===id?{...g,[field]:field==='valorFactura'?(Number(val)||0):val}:g
+    )
     const nd={...data,gastosPresupuesto}
     setData(nd)
     save(nd)
   }
 
-  const commitEdit = () => {
+  const commitEdit=()=>{
     if(!editCell) return
     guardarCampo(editCell.id,editCell.field,editVal)
     setEditCell(null)
   }
 
-  const onKD = e => {
-    if(e.key==='Enter'){commitEdit();e.preventDefault()}
-    else if(e.key==='Escape') setEditCell(null)
-    else if(e.key==='Tab'){commitEdit();e.preventDefault()}
-  }
-
-  const addFila = () => {
+  const addFila=()=>{
     const n={
       id:Date.now(),
       anio:Number(filtroAnio)||2026,
@@ -1167,10 +1393,34 @@ function DetalleGastos({ data, setData, mesInicial='', onVolver }) {
     setTimeout(()=>startEdit(n.id,'gasto',''),60)
   }
 
-  const handlePaste = e => {
+  const eliminarUno=id=>{
+    if(!window.confirm('¿Eliminar este gasto?')) return
+    const nd={...data,gastosPresupuesto:(data.gastosPresupuesto||[]).filter(g=>g.id!==id)}
+    setData(nd)
+    save(nd,{eliminar:id,tipo:'gastosPresupuesto'})
+  }
+
+  const toggleTodos=()=>{
+    setSeleccionados(prev=>
+      prev.size===gastos.length&&gastos.length>0
+        ?new Set()
+        :new Set(gastos.map(g=>g.id))
+    )
+  }
+
+  const eliminarSel=()=>{
+    if(!seleccionados.size||!window.confirm('¿Eliminar '+seleccionados.size+' gastos?')) return
+    const nd={...data,gastosPresupuesto:(data.gastosPresupuesto||[]).filter(g=>!seleccionados.has(g.id))}
+    setData(nd)
+    save(nd)
+    setSeleccionados(new Set())
+  }
+
+  const handlePaste=e=>{
     const txt=e.clipboardData.getData('text')
     if(!txt.includes('\t')&&!txt.includes('\n')) return
     e.preventDefault()
+
     const rows=txt.trim().split('\n').map(r=>r.split('\t'))
     const nuevas=rows.filter(r=>r[0]||r[1]).map((r,i)=>({
       id:Date.now()+i,
@@ -1188,7 +1438,7 @@ function DetalleGastos({ data, setData, mesInicial='', onVolver }) {
       docCargado:r[10]||'',
       obsKatherine:r[11]||'',
       notas:''
-    })).filter(r=>r.gasto||r.mes)
+    }))
 
     if(nuevas.length){
       const nd={...data,gastosPresupuesto:[...(data.gastosPresupuesto||[]),...nuevas]}
@@ -1198,7 +1448,7 @@ function DetalleGastos({ data, setData, mesInicial='', onVolver }) {
     }
   }
 
-  const celda = (id,field) => ({
+  const celda=(id,field)=>({
     padding:'6px 10px',
     fontSize:12,
     borderTop:'1px solid var(--border)',
@@ -1207,7 +1457,9 @@ function DetalleGastos({ data, setData, mesInicial='', onVolver }) {
     whiteSpace:'nowrap',
     overflow:'hidden',
     maxWidth:300,
-    background:editCell?.id===id&&editCell?.field===field?'rgba(108,99,255,0.18)':seleccionados.has(id)?'rgba(108,99,255,0.07)':'transparent',
+    background:editCell?.id===id&&editCell?.field===field
+      ?'rgba(108,99,255,0.18)'
+      :seleccionados.has(id)?'rgba(108,99,255,0.07)':'transparent',
     outline:editCell?.id===id&&editCell?.field===field?'2px solid var(--accent)':'none',
     outlineOffset:'-1px',
   })
@@ -1217,13 +1469,16 @@ function DetalleGastos({ data, setData, mesInicial='', onVolver }) {
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12,flexWrap:'wrap'}}>
         <div>
           <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-            <button onClick={onVolver} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:11}}>← Presupuesto</button>
+            <button onClick={onVolver} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:11}}>
+              ← Presupuesto
+            </button>
             <h2 style={{fontSize:18,margin:0}}>Detalle de gastos</h2>
           </div>
           <p style={{fontSize:11,color:'var(--text3)',margin:'5px 0 0'}}>
-            Consulta, registra y edita todos los movimientos que componen la ejecución del presupuesto.
+            Consulta y registra todos los movimientos que componen la ejecución del presupuesto.
           </p>
         </div>
+
         <button onClick={addFila} style={{...S.btn('var(--green-soft)','var(--green)'),fontSize:12,border:'1px solid rgba(61,214,140,0.2)'}}>
           <PlusCircle size={14}/> Añadir gasto
         </button>
@@ -1234,99 +1489,140 @@ function DetalleGastos({ data, setData, mesInicial='', onVolver }) {
           <Search size={13} style={{position:'absolute',left:9,color:'var(--text3)',pointerEvents:'none'}}/>
           <input value={busqueda} onChange={e=>setBusqueda(e.target.value)} placeholder="Buscar gasto, proveedor, OC..." style={{paddingLeft:30,width:230,fontSize:13}}/>
         </div>
+
         <select value={filtroAnio} onChange={e=>setFiltroAnio(e.target.value)} style={{width:100}}>
-          <option value="">Año</option>{anios.map(a=><option key={a}>{a}</option>)}
+          <option value="">Año</option>
+          {anios.map(a=><option key={a}>{a}</option>)}
         </select>
+
         <select value={filtroMes} onChange={e=>setFiltroMes(e.target.value)} style={{width:145}}>
-          <option value="">Todos los meses</option>{MESES.map(m=><option key={m}>{m}</option>)}
+          <option value="">Todos los meses</option>
+          {MESES.map(m=><option key={m}>{m}</option>)}
         </select>
-        {(filtroMes||busqueda)&&<button onClick={()=>{setFiltroMes('');setBusqueda('')}} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:12}}>✕ Limpiar</button>}
+
+        {(filtroMes||busqueda)&&(
+          <button onClick={()=>{setFiltroMes('');setBusqueda('')}} style={{...S.btn('var(--bg3)','var(--text2)'),padding:'5px 10px',fontSize:12}}>
+            ✕ Limpiar
+          </button>
+        )}
+
         <div style={{marginLeft:'auto',display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
-          <span style={{fontSize:11,color:'var(--text3)'}}>{gastos.length} registros · <strong style={{color:'var(--accent2)'}}>{cop(totalGastado)}</strong></span>
-          {seleccionados.size>0&&<button onClick={eliminarSel} style={{...S.btn('var(--red-soft)','var(--red)'),fontSize:12}}><Trash2 size={13}/> Eliminar {seleccionados.size}</button>}
+          <span style={{fontSize:11,color:'var(--text3)'}}>
+            {gastos.length} registros · <strong style={{color:'var(--accent2)'}}>{cop(totalGastado)}</strong>
+          </span>
+          {seleccionados.size>0&&(
+            <button onClick={eliminarSel} style={{...S.btn('var(--red-soft)','var(--red)'),fontSize:12}}>
+              <Trash2 size={13}/> Eliminar {seleccionados.size}
+            </button>
+          )}
         </div>
       </div>
 
       <div style={{fontSize:11,color:'var(--text3)',display:'flex',gap:20,flexWrap:'wrap'}}>
         <span>💡 Clic en una celda para editar</span>
         <span>📋 Ctrl+V para pegar desde Excel</span>
-        <span>☑️ Selecciona varias filas para eliminar en bloque</span>
       </div>
 
       <div style={S.card}>
-        <div style={{padding:'12px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}>
-          <h4 style={{fontSize:11,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.05em'}}>
-            Registros {filtroMes&&'— '+filtroMes}
-          </h4>
-          <span style={{fontSize:11,color:'var(--text3)'}}>Total visible: {cop(totalGastado)}</span>
-        </div>
         <div style={{overflowX:'auto'}} onPaste={handlePaste}>
           <table style={{borderCollapse:'collapse',tableLayout:'fixed',minWidth:'100%'}}>
             <thead>
               <tr style={{background:'var(--bg3)'}}>
                 <th style={{...S.th,width:36,textAlign:'center',padding:'8px 6px'}}>
-                  <input type="checkbox" checked={seleccionados.size===gastos.length&&gastos.length>0} onChange={toggleTodos} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
+                  <input type="checkbox" checked={seleccionados.size===gastos.length&&gastos.length>0} onChange={toggleTodos}/>
                 </th>
                 <th style={{...S.th,width:36,padding:'8px 4px',textAlign:'center',fontSize:10}}>#</th>
                 <th style={{...S.th,width:36}}></th>
                 {COLS_G.map(c=><th key={c.key} style={{...S.th,width:c.w}}>{c.label}</th>)}
               </tr>
             </thead>
+
             <tbody>
               {gastos.length===0&&(
-                <tr><td colSpan={COLS_G.length+3} style={{padding:48,textAlign:'center',color:'var(--text3)',fontSize:13}}>
-                  No hay gastos para este filtro. Usa <strong>Añadir gasto</strong> o pega registros desde Excel.
-                </td></tr>
+                <tr>
+                  <td colSpan={COLS_G.length+3} style={{padding:48,textAlign:'center',color:'var(--text3)',fontSize:13}}>
+                    No hay gastos para este filtro.
+                  </td>
+                </tr>
               )}
+
               {gastos.map((g,idx)=>(
-                <tr key={g.id} style={{background:seleccionados.has(g.id)?'rgba(108,99,255,0.06)':'transparent'}}>
+                <tr key={g.id}>
                   <td style={{padding:'6px',textAlign:'center',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>
-                    <input type="checkbox" checked={seleccionados.has(g.id)} onChange={()=>{setSeleccionados(prev=>{const n=new Set(prev);n.has(g.id)?n.delete(g.id):n.add(g.id);return n})}} style={{cursor:'pointer',width:14,height:14,accentColor:'var(--accent)'}}/>
+                    <input
+                      type="checkbox"
+                      checked={seleccionados.has(g.id)}
+                      onChange={()=>{
+                        setSeleccionados(prev=>{
+                          const n=new Set(prev)
+                          n.has(g.id)?n.delete(g.id):n.add(g.id)
+                          return n
+                        })
+                      }}
+                    />
                   </td>
-                  <td style={{padding:'6px 4px',textAlign:'center',fontSize:10,color:'var(--text3)',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>{idx+1}</td>
+
+                  <td style={{padding:'6px 4px',textAlign:'center',fontSize:10,color:'var(--text3)',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)'}}>
+                    {idx+1}
+                  </td>
+
                   <td style={{padding:'4px',borderTop:'1px solid var(--border)',textAlign:'center',width:36}}>
-                    <button onClick={()=>{
-                      if(!window.confirm('¿Eliminar este gasto?')) return
-                      const nd={...data,gastosPresupuesto:(data.gastosPresupuesto||[]).filter(x=>x.id!==g.id)}
-                      setData(nd)
-                      save(nd,{eliminar:g.id,tipo:'gastosPresupuesto'})
-                    }} style={{background:'var(--red-soft)',color:'var(--red)',border:'none',borderRadius:6,padding:'2px 8px',cursor:'pointer',fontSize:13,fontWeight:700,lineHeight:1}}>✕</button>
+                    <button onClick={()=>eliminarUno(g.id)} style={{background:'var(--red-soft)',color:'var(--red)',border:'none',borderRadius:6,padding:'2px 8px',cursor:'pointer',fontSize:13,fontWeight:700,lineHeight:1}}>
+                      ✕
+                    </button>
                   </td>
+
                   {COLS_G.map(col=>(
                     <td key={col.key} style={celda(g.id,col.key)} onClick={()=>startEdit(g.id,col.key,g[col.key])}>
                       {editCell?.id===g.id&&editCell?.field===col.key ? (
                         col.key==='mes'?(
-                          <select defaultValue={editVal} onChange={e=>{guardarCampo(g.id,col.key,e.target.value);setEditCell(null)}} ref={inputRef} autoFocus
-                            style={{background:'var(--bg2)',color:'var(--text)',border:'1px solid var(--accent)',borderRadius:4,fontSize:12,width:'100%',fontFamily:'var(--font)',padding:'2px'}}>
-                            <option value="">— Mes —</option>{MESES.map(m=><option key={m} value={m}>{m}</option>)}
+                          <select
+                            defaultValue={editVal}
+                            onChange={e=>{guardarCampo(g.id,col.key,e.target.value);setEditCell(null)}}
+                            ref={inputRef}
+                            autoFocus
+                            style={{background:'var(--bg2)',color:'var(--text)',border:'1px solid var(--accent)',borderRadius:4,fontSize:12,width:'100%',fontFamily:'var(--font)',padding:'2px'}}
+                          >
+                            <option value="">— Mes —</option>
+                            {MESES.map(m=><option key={m} value={m}>{m}</option>)}
                           </select>
                         ):col.key==='estado'?(
-                          <select defaultValue={editVal} onChange={e=>{guardarCampo(g.id,col.key,e.target.value);setEditCell(null)}} ref={inputRef} autoFocus
-                            style={{background:'var(--bg2)',color:'var(--text)',border:'1px solid var(--accent)',borderRadius:4,fontSize:12,width:'100%',fontFamily:'var(--font)',padding:'2px'}}>
+                          <select
+                            defaultValue={editVal}
+                            onChange={e=>{guardarCampo(g.id,col.key,e.target.value);setEditCell(null)}}
+                            ref={inputRef}
+                            autoFocus
+                            style={{background:'var(--bg2)',color:'var(--text)',border:'1px solid var(--accent)',borderRadius:4,fontSize:12,width:'100%',fontFamily:'var(--font)',padding:'2px'}}
+                          >
                             {ESTADOS_G.map(s=><option key={s} value={s}>{s}</option>)}
                           </select>
                         ):(
-                          <input ref={inputRef} value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={commitEdit} onKeyDown={onKD}
+                          <input
+                            ref={inputRef}
+                            value={editVal}
+                            onChange={e=>setEditVal(e.target.value)}
+                            onBlur={commitEdit}
+                            onKeyDown={e=>{
+                              if(e.key==='Enter'){commitEdit();e.preventDefault()}
+                              if(e.key==='Escape') setEditCell(null)
+                            }}
                             type={col.key==='valorFactura'?'number':'text'}
-                            style={{background:'transparent',color:'var(--text)',border:'none',outline:'none',fontSize:12,width:'100%',fontFamily:col.key==='valorFactura'?'var(--mono)':'var(--font)'}}/>
+                            style={{background:'transparent',color:'var(--text)',border:'none',outline:'none',fontSize:12,width:'100%',fontFamily:col.key==='valorFactura'?'var(--mono)':'var(--font)'}}
+                          />
                         )
                       ):(
                         <span style={{fontFamily:col.key==='valorFactura'?'var(--mono)':'inherit',color:col.key==='valorFactura'?'var(--accent2)':col.key==='gasto'?'var(--text)':'var(--text2)',fontWeight:col.key==='valorFactura'?500:400}}>
-                          {col.key==='valorFactura'?cop(Number(g[col.key])||0):col.key==='estado'?(<Badge label={g[col.key]}/>):(g[col.key]||'')}
+                          {col.key==='valorFactura'
+                            ?cop(Number(g[col.key])||0)
+                            :col.key==='estado'
+                              ?<Badge label={g[col.key]}/>
+                              :(g[col.key]||'')}
                         </span>
                       )}
                     </td>
                   ))}
                 </tr>
               ))}
-              {gastos.length>0&&(
-                <tr style={{background:'var(--bg3)',borderTop:'2px solid var(--border2)'}}>
-                  <td colSpan={3} style={{padding:'8px 10px'}}/>
-                  <td colSpan={2} style={{padding:'8px 12px',fontWeight:700,fontSize:12,color:'var(--text2)'}}>TOTAL {filtroMes&&'— '+filtroMes}</td>
-                  <td style={{padding:'8px 12px',fontFamily:'var(--mono)',fontWeight:700,fontSize:13,color:'var(--accent2)'}}>{cop(totalGastado)}</td>
-                  <td colSpan={COLS_G.length-2} style={{padding:'8px 10px'}}/>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>
@@ -1334,7 +1630,6 @@ function DetalleGastos({ data, setData, mesInicial='', onVolver }) {
     </div>
   )
 }
-
 
 function Ventas({ data, setData }) {
   const [modal, setModal] = useState(false)
