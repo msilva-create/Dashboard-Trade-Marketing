@@ -6282,6 +6282,93 @@ function CampanaNotificaciones({usuario,data,onIr}) {
 // ═══════════════════════════════════════════════════════
 // APP PRINCIPAL
 // ═══════════════════════════════════════════════════════
+// ── CONTROL PRESUPUESTAL MENSUAL COMPARTIDO ──
+const PRESUPUESTO_UNIDADES = ['Industria','Zonas Directas','Mercadeo General']
+const PRESUPUESTO_CENTRAL = SHEETS_CONFIG.distribucion
+function solicitudPresupuesto(payload) {
+  return new Promise((resolve,reject)=>{
+    const cb='proli_pres_'+Date.now()+'_'+Math.random().toString(36).slice(2)
+    const script=document.createElement('script')
+    const timer=setTimeout(()=>finalizar(new Error('Se agotó el tiempo de conexión')),15000)
+    let terminado=false
+    function finalizar(err,result){if(terminado)return;terminado=true;clearTimeout(timer);delete window[cb];script.remove();err?reject(err):resolve(result)}
+    window[cb]=result=>result?.ok===false?finalizar(new Error(result.error||result.mensaje||'Error de Sheets')):finalizar(null,result)
+    script.onerror=()=>finalizar(new Error('No se pudo conectar con Google Sheets'))
+    script.src=PRESUPUESTO_CENTRAL.url+'?callback='+cb+'&data='+encodeURIComponent(JSON.stringify({...payload,spreadsheetId:PRESUPUESTO_CENTRAL.spreadsheetId}))
+    document.head.appendChild(script)
+  })
+}
+async function leerPresupuestoCentral(){
+  const res=await fetch(PRESUPUESTO_CENTRAL.url+'?spreadsheetId='+encodeURIComponent(PRESUPUESTO_CENTRAL.spreadsheetId)+'&v='+Date.now(),{cache:'no-store'})
+  const json=await res.json()
+  if(!json.ok)throw new Error(json.error||'Error leyendo presupuesto')
+  return {bolsas:json.data?.bolsa_presupuestal||[],movimientos:json.data?.movimientos_bolsa||[]}
+}
+function ControlPresupuestalMensual({usuario}) {
+  const administrador=usuario.id==='mercadeoGeneral'||usuario.rol==='lider'
+  const unidadPropia=usuario.id==='industria'?'Industria':usuario.id==='zonas'?'Zonas Directas':'Mercadeo General'
+  const [periodo,setPeriodo]=useState(()=>new Date().toISOString().slice(0,7))
+  const [unidad,setUnidad]=useState(administrador?'Todas':unidadPropia)
+  const [bolsas,setBolsas]=useState([])
+  const [movimientos,setMovimientos]=useState([])
+  const [cargando,setCargando]=useState(true)
+  const [error,setError]=useState('')
+  const [editando,setEditando]=useState(null)
+  const [modal,setModal]=useState(false)
+  const [valorPresupuesto,setValorPresupuesto]=useState('')
+  const [unidadPresupuesto,setUnidadPresupuesto]=useState('Industria')
+  const [form,setForm]=useState({fecha:new Date().toISOString().slice(0,10),cliente:'',concepto:'',estado:'Planeado',valor:'',comentario:'',soporte:'',unidad:unidadPropia})
+  const refrescar=async()=>{setCargando(true);setError('');try{const d=await leerPresupuestoCentral();setBolsas(d.bolsas);setMovimientos(d.movimientos)}catch(e){setError(e.message)}finally{setCargando(false)}}
+  useEffect(()=>{refrescar()},[])
+  const presupuestoMes=bolsas.filter(b=>String(b.periodo).slice(0,7)===periodo)
+  const gastosMes=movimientos.filter(m=>String(m.periodo).slice(0,7)===periodo)
+  const visibles=gastosMes.filter(m=>administrador?(unidad==='Todas'||m.unidad===unidad):m.unidad===unidadPropia)
+  const bolsasVisibles=presupuestoMes.filter(b=>administrador?(unidad==='Todas'||b.unidad===unidad):b.unidad===unidadPropia)
+  const totalPresupuesto=bolsasVisibles.reduce((a,b)=>a+(Number(b.presupuesto)||0),0)
+  const ejecutado=visibles.filter(m=>String(m.estado).toLowerCase()==='ejecutado').reduce((a,m)=>a+(Number(m.valor)||0),0)
+  const planeado=visibles.filter(m=>String(m.estado).toLowerCase()!=='ejecutado'&&String(m.estado).toLowerCase()!=='cancelado').reduce((a,m)=>a+(Number(m.valor)||0),0)
+  const saldo=totalPresupuesto-ejecutado-planeado
+  const inputStyle={padding:'9px 11px',border:'1px solid var(--border2)',borderRadius:9,background:'var(--bg3)',color:'var(--text)',width:'100%',fontFamily:'var(--font)'}
+  const abrirNuevo=()=>{setEditando(null);setForm({fecha:periodo+'-01',cliente:'',concepto:'',estado:'Planeado',valor:'',comentario:'',soporte:'',unidad:administrador?(unidad==='Todas'?'Mercadeo General':unidad):unidadPropia});setModal(true)}
+  const guardarMovimiento=async()=>{
+    if(!form.concepto.trim()||!form.valor||Number(form.valor)<0){alert('Ingresa concepto y valor aproximado válido.');return}
+    if(!administrador&&form.unidad!==unidadPropia){alert('Solo puedes registrar gastos de tu unidad.');return}
+    if(form.fecha.slice(0,7)!==periodo){alert('La fecha debe corresponder al mes seleccionado.');return}
+    const fila={id:editando?.id||('mov_'+Date.now()+'_'+Math.random().toString(36).slice(2)),periodo,unidad:form.unidad,fecha:form.fecha,cliente:form.cliente,concepto:form.concepto,estado:form.estado,valor:Number(form.valor),comentario:form.comentario,soporte:form.soporte,creadoPor:editando?.creadoPor||usuario.nombre}
+    try{
+      if(editando)await solicitudPresupuesto({accion:'eliminar',hoja:'MOVIMIENTOS_BOLSA',id:editando.id})
+      await solicitudPresupuesto({accion:'insertar',hoja:'MOVIMIENTOS_BOLSA',fila})
+      setModal(false);await refrescar()
+    }catch(e){setError('No se pudo guardar: '+e.message);await refrescar()}
+  }
+  const borrarMovimiento=async m=>{
+    if(!administrador&&m.unidad!==unidadPropia)return
+    if(!window.confirm('¿Eliminar este gasto estimado?'))return
+    try{await solicitudPresupuesto({accion:'eliminar',hoja:'MOVIMIENTOS_BOLSA',id:m.id});await refrescar()}catch(e){setError(e.message)}
+  }
+  const guardarPresupuesto=async()=>{
+    const n=Number(valorPresupuesto)
+    if(!Number.isFinite(n)||n<0||valorPresupuesto===''){alert('Escribe un presupuesto válido');return}
+    const existente=presupuestoMes.find(b=>b.unidad===unidadPresupuesto)
+    try{
+      if(existente)await solicitudPresupuesto({accion:'eliminar',hoja:'BOLSA_PRESUPUESTAL',id:existente.id})
+      await solicitudPresupuesto({accion:'insertar',hoja:'BOLSA_PRESUPUESTAL',fila:{id:existente?.id||('bol_'+Date.now()),periodo,unidad:unidadPresupuesto,presupuesto:n}})
+      setValorPresupuesto('');await refrescar()
+    }catch(e){setError('No se pudo guardar el presupuesto: '+e.message);await refrescar()}
+  }
+  return <div style={{display:'flex',flexDirection:'column',gap:18}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'}}><div><h2 style={{fontSize:22,fontWeight:800}}>💰 Gastos de presupuesto</h2><p style={{fontSize:12,color:'var(--text3)'}}>Planeación mensual · El historial de meses anteriores se conserva.</p></div><button style={S.btn('var(--accent)','white')} onClick={abrirNuevo}><PlusCircle size={15}/> Registrar actividad</button></div>
+    <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center'}}><label>Mes <input type="month" value={periodo} onChange={e=>setPeriodo(e.target.value)} style={{...inputStyle,width:165,marginLeft:8}}/></label>{administrador&&<label>Unidad <select value={unidad} onChange={e=>setUnidad(e.target.value)} style={{...inputStyle,width:200,marginLeft:8}}><option>Todas</option>{PRESUPUESTO_UNIDADES.map(x=><option key={x}>{x}</option>)}</select></label>}<button onClick={refrescar} style={S.btn('var(--bg3)','var(--text)')}>Actualizar</button></div>
+    {error&&<div style={{padding:12,borderRadius:9,background:'var(--red-soft)',color:'var(--red)'}}>{error}</div>}
+    {cargando?<p>Sincronizando presupuesto...</p>:<>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:12}}><KpiCard icon={DollarSign} label="Presupuesto del mes" value={cop(totalPresupuesto)}/><KpiCard icon={BookOpen} label="Planeado por ejecutar" value={cop(planeado)}/><KpiCard icon={Check} label="Ejecutado" value={cop(ejecutado)}/><KpiCard icon={TrendingUp} label="Saldo disponible" value={cop(saldo)} accent={saldo<0?'var(--red)':'var(--green)'}/></div>
+      {administrador&&<div style={{...S.card,padding:18}}><h3 style={{fontWeight:700,marginBottom:12}}>Asignación mensual por unidad</h3><div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'end'}}><label>Unidad<select value={unidadPresupuesto} onChange={e=>{setUnidadPresupuesto(e.target.value);setValorPresupuesto(String(presupuestoMes.find(b=>b.unidad===e.target.value)?.presupuesto??''))}} style={{...inputStyle,width:205,marginTop:5}}>{PRESUPUESTO_UNIDADES.map(x=><option key={x}>{x}</option>)}</select></label><label>Presupuesto asignado<input type="number" min="0" value={valorPresupuesto} onChange={e=>setValorPresupuesto(e.target.value)} style={{...inputStyle,width:200,marginTop:5}}/></label><button onClick={guardarPresupuesto} style={S.btn('var(--accent)','white')}>Guardar asignación</button></div><div style={{display:'flex',gap:12,flexWrap:'wrap',marginTop:12,fontSize:12}}>{PRESUPUESTO_UNIDADES.map(x=><span key={x}>{x}: <strong>{cop(Number(presupuestoMes.find(b=>b.unidad===x)?.presupuesto)||0)}</strong></span>)}</div></div>}
+      <div style={S.card}><div style={{padding:16,fontWeight:700}}>Registro de actividades · {visibles.length} registros</div><div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse',minWidth:1050}}><thead><tr>{['Fecha','Unidad','Cliente','Concepto del gasto','Estado','Valor aproximado','Saldo después','Comentario / ajuste','Correo / soporte','Acciones'].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead><tbody>{visibles.slice().sort((a,b)=>String(a.fecha).localeCompare(String(b.fecha))).map((m,i,arr)=>{const saldoFila=totalPresupuesto-arr.slice(0,i+1).filter(x=>x.estado!=='Cancelado').reduce((a,x)=>a+(Number(x.valor)||0),0);return <tr key={m.id}><td style={S.td}>{String(m.fecha).slice(0,10)}</td><td style={S.td}>{m.unidad}</td><td style={S.td}>{m.cliente}</td><td style={S.td}>{m.concepto}</td><td style={S.td}><Badge label={m.estado}/></td><td style={S.td}>{cop(Number(m.valor)||0)}</td><td style={S.td}>{cop(saldoFila)}</td><td style={S.td}>{m.comentario}</td><td style={S.td}>{m.soporte}</td><td style={S.td}><div style={{display:'flex',gap:7}}><button onClick={()=>{setEditando(m);setForm({...m,valor:String(m.valor)});setModal(true)}} title="Editar" style={S.btn('var(--bg3)','var(--text)')}><Edit2 size={13}/></button><button onClick={()=>borrarMovimiento(m)} title="Eliminar" style={S.btn('var(--red-soft)','var(--red)')}><Trash2 size={13}/></button></div></td></tr>})}{!visibles.length&&<tr><td colSpan={10} style={{padding:24,textAlign:'center',color:'var(--text3)'}}>Sin actividades para este mes.</td></tr>}</tbody></table></div></div>
+    </>}
+    {modal&&<Modal title={editando?'Editar actividad':'Registrar gasto estimado'} onClose={()=>setModal(false)} wide><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>{administrador&&<Field label="Unidad"><select value={form.unidad} onChange={e=>setForm({...form,unidad:e.target.value})} style={inputStyle}>{PRESUPUESTO_UNIDADES.map(x=><option key={x}>{x}</option>)}</select></Field>}<Field label="Fecha"><input type="date" value={form.fecha} onChange={e=>setForm({...form,fecha:e.target.value})} style={inputStyle}/></Field><Field label="Cliente"><input value={form.cliente} onChange={e=>setForm({...form,cliente:e.target.value})} style={inputStyle}/></Field><Field label="Concepto del gasto"><input value={form.concepto} onChange={e=>setForm({...form,concepto:e.target.value})} style={inputStyle}/></Field><Field label="Estado"><select value={form.estado} onChange={e=>setForm({...form,estado:e.target.value})} style={inputStyle}><option>Planeado</option><option>Ejecutado</option><option>Cancelado</option></select></Field><Field label="Valor aproximado"><input type="number" min="0" value={form.valor} onChange={e=>setForm({...form,valor:e.target.value})} style={inputStyle}/></Field><Field label="Comentario / ajuste"><input value={form.comentario} onChange={e=>setForm({...form,comentario:e.target.value})} style={inputStyle}/></Field><Field label="Correo / soporte"><input value={form.soporte} onChange={e=>setForm({...form,soporte:e.target.value})} style={inputStyle}/></Field></div><div style={{display:'flex',justifyContent:'flex-end',gap:10,marginTop:20}}><button onClick={()=>setModal(false)} style={S.btn('var(--bg3)','var(--text)')}>Cancelar</button><button onClick={guardarMovimiento} style={S.btn('var(--accent)','white')}>Guardar actividad</button></div></Modal>}
+  </div>
+}
+
 export default function App() {
   const [usuario, setUsuario] = useState(getSessionUser)
   const [tab, setTab] = useState(()=>getSessionUser()?.rol==='lider'?'dashboardFinanciero':'dashboard')
@@ -6489,9 +6576,10 @@ export default function App() {
     {id:'dashboardEquipo',label:'Dashboard de tiempos',icon:BarChart2},
     {id:'asignarTareas',label:'Tareas asignadas',icon:ListTodo},
     {id:'tareasProyectos',label:'Proyectos y subtareas',icon:BookOpen},
-    {id:'notificaciones',label:'Notificaciones',icon:Bell}
+    {id:'notificaciones',label:'Notificaciones',icon:Bell},
+    {id:'controlPresupuestal',label:'Gastos de presupuesto',icon:DollarSign}
   ]
-  const TABS_PRES = [{id:'dashboard',label:'Presupuesto Consolidado',icon:DollarSign}]
+  const TABS_PRES = [{id:'dashboard',label:'Presupuesto Consolidado',icon:DollarSign},{id:'controlPresupuestal',label:'Gastos de presupuesto',icon:DollarSign}]
   const TABS_COLAB = [
     {id:'tareasasignadas',label:'Tareas Asignadas',icon:ListTodo},
     {id:'tareasProyectos',label:'Proyectos y Subtareas',icon:BookOpen},
@@ -6502,6 +6590,7 @@ export default function App() {
     {id:'ventas',label:'Venta consolidada',icon:ShoppingCart},
     {id:'presupuesto',label:'Presupuesto',icon:DollarSign},
     {id:'detalleGastos',label:'Detalle de gastos',icon:ListTodo},
+    {id:'controlPresupuestal',label:'Gastos de presupuesto',icon:DollarSign},
   ]
   const responsableActualMenu = nombrePersonaPorUsuario(usuario)
   const tareasAsignadasUsuario = (data.tareasAsignadas||[]).filter(
@@ -6521,6 +6610,7 @@ export default function App() {
     {id:'detalleGastos',label:'Detalle de gastos',icon:ListTodo},
     {id:'pendientes', label:'Pendientes',  icon:ListTodo},
     {id:'apoyocierre', label:'Apoyo Cierre', icon:DollarSign},
+    {id:'controlPresupuestal',label:'Gastos de presupuesto',icon:DollarSign},
   ]
   const tabs = esLider?TABS_LIDER:esPresupuesto?TABS_PRES:esColaborador?TABS_COLAB:esMercadeoGeneral?TABS_MERCADEO_GENERAL:TABS_NORMAL
 
@@ -6615,12 +6705,13 @@ export default function App() {
         {/* CONTENIDO */}
         <main className="app-main" style={{flex:1,padding:'24px 28px',overflowY:'auto',minWidth:0}}>
         <div key={tab+usuario.id}>
+          {tab==='controlPresupuestal' && <ControlPresupuestalMensual usuario={usuario}/>}
           {esLider && tab==='dashboardEquipo' && <DashboardLider initialTab="equipo" hideTabs/>}
           {esLider && tab==='dashboardFinanciero' && <DashboardLider initialTab="dashboard" hideTabs/>}
           {esLider && tab==='asignarTareas' && <AsignarTareasEquipoPaola/>}
           {esLider && tab==='notificaciones' && <NotificacionesEquipoPaola/>}
           {esLider && tab==='tareasProyectos' && <TareasYProyectos data={data} setData={setDataUser} usuario={usuario}/>}
-          {esPresupuesto && <PresupuestoConsolidado/>}
+          {esPresupuesto && tab==='dashboard' && <PresupuestoConsolidado/>}
           {esColaborador && (
             <>
               {tab==='tareasasignadas' && <TareasAsignadas data={data} setData={setDataUser} usuario={usuario}/>}
