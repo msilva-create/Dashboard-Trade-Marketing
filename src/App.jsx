@@ -2336,7 +2336,7 @@ function ApoyoCierre({ data, setData, usuario }) {
   const _canalActual = usuario?.id || 'distribucion'
   const EMAILS = EMAILS_POR_CANAL[_canalActual] || EMAILS_POR_CANAL.distribucion
   const JEFES_CANAL = JEFES_POR_CANAL[_canalActual] || {}
-  const EMAIL_JEFE = 'cgil@prolub.com.co'
+  const EMAIL_JEFE = 'epabon@gulfcolombia.com'
 
   // Emails por unidad para notificaciones de tareas
   const EMAILS_UNIDAD = {
@@ -2344,7 +2344,7 @@ function ApoyoCierre({ data, setData, usuario }) {
     distribucion: 'msilva@prolub.com.co',
     zonas:        'msilva@prolub.com.co',
     diseno:       'aalvarado@gulfcolombia.com',
-    lider:        'cgil@prolub.com.co',
+    lider:        'epabon@gulfcolombia.com',
   }
 
   const apoyos = data.apoyoCierre || []
@@ -3083,13 +3083,13 @@ const EMAILS_EQUIPO = {
   'Maria P': 'msilva@prolub.com.co',
   'Juan':    'acomercial@prolub.com.co',
   'Camilo':  'aalvarado@gulfcolombia.com',
-  'Julian':  'jacifuentes@prolub.com.co',
-  'Julián':  'jacifuentes@prolub.com.co',
+  'Brayan':  '',
+  
 }
 
-const EMAIL_LIDER_PROY = 'cgil@prolub.com.co'
+const EMAIL_LIDER_PROY = 'epabon@gulfcolombia.com'
 const AREAS = ['Compras','Facturación','Logística','Comercial']
-const RESPONSABLES = ['Emma','María P','Juan','Camilo','Julian']
+const RESPONSABLES = ['Emma','María P','Juan','Camilo','Brayan']
 
 // Archivos personales de seguimiento.
 // El Apps Script puede usar estos IDs para copiar tareas y proyectos
@@ -3097,8 +3097,8 @@ const RESPONSABLES = ['Emma','María P','Juan','Camilo','Julian']
 const SHEETS_RESPONSABLES = {
   'Juan':   '1s6fkyyCihzOki9Fan9EKIIvxwlra-QizwI7fy210GUI',
   'Camilo': '1jVKNc8krqeClgfzaXr-i7YIHwuYRmjkoU35NEjz4oDk',
-  'Julian': '1nEdGAcy45hMckYxOC_SRfrYEqW6ifgRv9fFoJA75YlY',
-  'Julián': '1nEdGAcy45hMckYxOC_SRfrYEqW6ifgRv9fFoJA75YlY',
+  'Brayan': '1nEdGAcy45hMckYxOC_SRfrYEqW6ifgRv9fFoJA75YlY',
+  
 }
 
 const SHEETS_URL_PROY = SHEETS_CONFIG.distribucion.url
@@ -3118,7 +3118,7 @@ function obtenerCorreoResponsable(nombre='') {
     'maria p': 'msilva@prolub.com.co',
     'juan': 'acomercial@prolub.com.co',
     'camilo': 'aalvarado@gulfcolombia.com',
-    'julian': 'jacifuentes@prolub.com.co',
+    'brayan': '',
   }
   return mapa[normalizado] || EMAILS_EQUIPO[nombre] || ''
 }
@@ -3130,7 +3130,7 @@ function obtenerUidResponsable(nombre='') {
     'emma': 'industria',
     'juan': 'juan',
     'camilo': 'camilo',
-    'julian': 'julian',
+    'brayan': 'julian',
   }
   return mapa[normalizado] || 'distribucion'
 }
@@ -3369,7 +3369,7 @@ function nombrePersonaPorUsuario(usuario) {
     distribucion:'María P',
     presupuesto:'Juan',
     diseno:'Camilo',
-    julian:'Julian',
+    julian:'Brayan',
     lider:'Paola',
   }
   return mapa[usuario?.id] || usuario?.nombre || ''
@@ -4659,8 +4659,8 @@ const USUARIOS = [
   { id:'zonas',        nombre:'Zonas Directas',      pass:'zon2026',   color:'#ff9f43', rol:'normal' },
   { id:'presupuesto',  nombre:'Presupuesto (Juan)',  pass:'pres2026',  color:'#a78bfa', rol:'presupuesto' },
   { id:'lider',        nombre:'Líder de Mercadeo',   pass:'lider2026', color:'#f59e0b', rol:'lider' },
-  { id:'diseno',       nombre:'Diseño',              pass:'dis2026x',  color:'#ec4899', rol:'normal' },
-  { id:'julian',       nombre:'Comunicaciones',      pass:'jul2026',   color:'#14b8a6', rol:'colaborador' },
+  { id:'diseno',       nombre:'Diseño · Camilo',     pass:'dis2026x',  color:'#ec4899', rol:'colaborador' },
+  { id:'julian',       nombre:'Comunicaciones · Brayan', pass:'jul2026', color:'#14b8a6', rol:'colaborador' },
   { id:'mercadeoGeneral', nombre:'Mercadeo General',   pass:'merc2026',  color:'#a855f7', rol:'mercadeo' },
 ]
 const AUTH_KEY = 'prolub_auth'
@@ -6370,7 +6370,7 @@ function ControlPresupuestalMensual({usuario}) {
 }
 
 export default function App() {
-  const [usuario, setUsuario] = useState(getSessionUser)
+  const [usuario, setUsuario] = useState(() => { const previo=getSessionUser(); if(!previo) return null; const vigente=USUARIOS.find(u=>u.id===previo.id); return vigente ? {...previo,nombre:vigente.nombre,rol:vigente.rol,color:vigente.color} : null })
   const [tab, setTab] = useState(()=>getSessionUser()?.rol==='lider'?'dashboardFinanciero':'dashboard')
   const [importResult, setImportResult] = useState(null)
   const [importando, setImportando] = useState(false)
@@ -6705,7 +6705,7 @@ export default function App() {
         {/* CONTENIDO */}
         <main className="app-main" style={{flex:1,padding:'24px 28px',overflowY:'auto',minWidth:0}}>
         <div key={tab+usuario.id}>
-          {tab==='controlPresupuestal' && <ControlPresupuestalMensual usuario={usuario}/>}
+          {!esColaborador && tab==='controlPresupuestal' && <ControlPresupuestalMensual usuario={usuario}/>}
           {esLider && tab==='dashboardEquipo' && <DashboardLider initialTab="equipo" hideTabs/>}
           {esLider && tab==='dashboardFinanciero' && <DashboardLider initialTab="dashboard" hideTabs/>}
           {esLider && tab==='asignarTareas' && <AsignarTareasEquipoPaola/>}
