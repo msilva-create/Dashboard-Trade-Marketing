@@ -3083,7 +3083,7 @@ const EMAILS_EQUIPO = {
   'Maria P': 'msilva@prolub.com.co',
   'Juan':    'acomercial@prolub.com.co',
   'Camilo':  'aalvarado@gulfcolombia.com',
-  'Brayan':  '',
+  'Brayan':  'buruena@prolub.com.co',
   
 }
 
@@ -3118,7 +3118,7 @@ function obtenerCorreoResponsable(nombre='') {
     'maria p': 'msilva@prolub.com.co',
     'juan': 'acomercial@prolub.com.co',
     'camilo': 'aalvarado@gulfcolombia.com',
-    'brayan': '',
+    'brayan': 'buruena@prolub.com.co',
   }
   return mapa[normalizado] || EMAILS_EQUIPO[nombre] || ''
 }
