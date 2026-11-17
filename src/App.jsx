@@ -2584,7 +2584,7 @@ function ApoyoCierre({ data, setData, usuario }) {
             <Field label="Notas"><textarea value={formRed.notas} onChange={e=>setFormRed({...formRed,notas:e.target.value})} rows={2} style={{resize:'vertical'}} placeholder="Observaciones..."/></Field>
           </div>
           <div style={{background:'rgba(255,159,67,0.08)',border:'1px solid rgba(255,159,67,0.2)',borderRadius:8,padding:'8px 12px',fontSize:11,color:'var(--orange)',marginTop:14}}>
-            ✉️ Al registrar se enviará correo automático a <strong>{EMAILS[comercialActivo.comercial]||'comercial'}</strong> con copia a Paola
+            ✉️ Al registrar se enviará correo automático a <strong>{EMAILS[comercialActivo.comercial]||'comercial'}</strong> con copia al líder
           </div>
           <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:14}}>
             <button onClick={()=>setModalRedencion(false)} style={S.btn('var(--bg3)','var(--text2)')}>Cancelar</button>
@@ -3010,6 +3010,8 @@ function TareasAsignadas({ data, setData, usuario }) {
             accion:'enviar_correo_tarea',
             destinatario:email,
             copia:EMAIL_LIDER_PROY,
+            asignadoPor:nombrePersonaPorUsuario(usuario),
+            prioridad:actualizada.prioridad||'',
             comercial:actualizada.responsable,
             responsable:actualizada.responsable,
             tarea:actualizada.nombre,
@@ -3036,7 +3038,7 @@ function TareasAsignadas({ data, setData, usuario }) {
       <div style={{flex:1,minWidth:0}}>
         <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',marginBottom:6}}>
           <span style={{fontWeight:700,fontSize:14}}>{t.nombre}</span>
-          <span style={{fontSize:10,padding:'2px 8px',borderRadius:6,background:'var(--accent-soft)',color:'var(--accent2)'}}>Asignada por Paola</span>
+          <span style={{fontSize:10,padding:'2px 8px',borderRadius:6,background:'var(--accent-soft)',color:'var(--accent2)'}}>Asignada por {t.asignadoPor||NOMBRE_LIDER}</span>
           <BadgePrioridad prioridad={t.prioridad}/>
           <BadgeVencimiento item={t}/>
         </div>
@@ -3088,6 +3090,8 @@ const EMAILS_EQUIPO = {
 }
 
 const EMAIL_LIDER_PROY = 'epabon@gulfcolombia.com'
+// Nombre que aparece cuando se asigna desde el perfil "Líder de Mercadeo".
+const NOMBRE_LIDER = 'Emma'
 const AREAS = ['Compras','Facturación','Logística','Comercial']
 const RESPONSABLES = ['Emma','María P','Juan','Camilo','Brayan']
 
@@ -3190,7 +3194,7 @@ async function enviarViaJsonp(url, payload) {
   }
 }
 
-async function enviarCorreoProyecto({ proyecto, subtarea, uid='distribucion' }) {
+async function enviarCorreoProyecto({ proyecto, subtarea, uid='distribucion', asignadoPor='' }) {
   const resp = subtarea?.responsable || proyecto.responsable
   const email = obtenerCorreoResponsable(resp)
   if(!email) {
@@ -3209,7 +3213,7 @@ async function enviarCorreoProyecto({ proyecto, subtarea, uid='distribucion' }) 
     const end = fmt(new Date(d.getTime()+3600000))
     calLink = `https://calendar.google.com/calendar/r/eventedit?text=${titulo}&dates=${start}/${end}&details=${detalle}&add=${encodeURIComponent(email)}`
   }
-  // Generar enlace calendario también para Paola
+  // Enlace de calendario para el líder
   let calLinkLider = ''
   if(fechaEntrega) {
     const d2 = new Date(fechaEntrega)
@@ -3229,6 +3233,8 @@ async function enviarCorreoProyecto({ proyecto, subtarea, uid='distribucion' }) 
       proyecto: proyecto.nombre,
       subtarea: subtarea?.nombre || '',
       responsable: resp,
+      asignadoPor,
+      prioridad: subtarea?.prioridad || proyecto.prioridad || '',
       areas: (subtarea?.areas||proyecto.areas||[]).join(', '),
       fechaEntrega,
       calLink,
@@ -3370,7 +3376,7 @@ function nombrePersonaPorUsuario(usuario) {
     presupuesto:'Juan',
     diseno:'Camilo',
     julian:'Brayan',
-    lider:'Paola',
+    lider:NOMBRE_LIDER,
   }
   return mapa[usuario?.id] || usuario?.nombre || ''
 }
@@ -3963,7 +3969,7 @@ function TareasYProyectos({ data, setData, usuario }) {
 
   const todosLosProyectos = [...proyectosBase, ...proyectosReconstruidos]
 
-  // Paola ve el consolidado completo.
+  // el líder ve el consolidado completo.
   // Cada usuario operativo ve:
   // 1) proyectos creados por él/ella;
   // 2) proyectos donde tiene al menos una subtarea asignada.
@@ -4014,7 +4020,7 @@ function TareasYProyectos({ data, setData, usuario }) {
     const nd = {...data, proyectos:[...(data.proyectos||[]), nuevo]}
     setData(nd)
     // Todos los proyectos se guardan en el archivo central de Distribución.
-    // Así Paola siempre ve el historial completo, sin importar el responsable.
+    // Así el líder siempre ve el historial completo, sin importar el responsable.
     const uidCentral = 'distribucion'
     const uidResponsable = obtenerUidResponsable(nuevo.responsable)
 
@@ -4033,7 +4039,7 @@ function TareasYProyectos({ data, setData, usuario }) {
     }
 
     // El correo se dirige al responsable seleccionado.
-    const resultadoCorreo = await enviarCorreoProyecto({
+    const resultadoCorreo = await enviarCorreoProyecto({asignadoPor:nombrePersonaPorUsuario(usuario),
       proyecto:nuevo,
       subtarea:null,
       uid:uidResponsable,
@@ -4108,7 +4114,7 @@ function TareasYProyectos({ data, setData, usuario }) {
         await insertarFilaSheets(uidCentral, 'proyectos', proyectoActualizado)
       }
 
-      // Registro central para que Paola siempre vea todas las subtareas.
+      // Registro central para que el líder siempre vea todas las subtareas.
       await insertarFilaSheets(uidCentral, 'subtareasProyectos', filaSubtarea)
 
       // Copia adicional en el archivo personal/área del responsable.
@@ -4125,7 +4131,7 @@ function TareasYProyectos({ data, setData, usuario }) {
       alert('La subtarea se creó en pantalla, pero hubo un error guardándola en Sheets.')
     }
 
-    const resultadoCorreo = await enviarCorreoProyecto({
+    const resultadoCorreo = await enviarCorreoProyecto({asignadoPor:nombrePersonaPorUsuario(usuario),
       proyecto: proyPadre,
       subtarea,
       uid: uidResponsable,
@@ -4170,7 +4176,7 @@ function TareasYProyectos({ data, setData, usuario }) {
       }
 
       if(normalizarNombreResponsable(anterior?.responsable)!==normalizarNombreResponsable(actualizado.responsable)) {
-        await enviarCorreoProyecto({proyecto:actualizado,subtarea:null,uid:uidNuevo})
+        await enviarCorreoProyecto({asignadoPor:nombrePersonaPorUsuario(usuario),proyecto:actualizado,subtarea:null,uid:uidNuevo})
       }
       setEditProyecto(null)
     } catch(e) {
@@ -4227,7 +4233,7 @@ function TareasYProyectos({ data, setData, usuario }) {
       }
 
       if(normalizarNombreResponsable(anterior.responsable)!==normalizarNombreResponsable(actualizada.responsable)) {
-        await enviarCorreoProyecto({proyecto,subtarea:actualizada,uid:uidNuevo})
+        await enviarCorreoProyecto({asignadoPor:nombrePersonaPorUsuario(usuario),proyecto,subtarea:actualizada,uid:uidNuevo})
       }
       setEditSubtarea(null)
     } catch(e) {
@@ -4733,7 +4739,7 @@ function LoginScreen({ onLogin }) {
 // DASHBOARD CONSOLIDADO — LÍDER
 // ═══════════════════════════════════════════════════════
 
-function TareasEquipoPaola({ asignadas, personales, onRefresh }) {
+function TareasEquipo({ asignadas, personales, mostrarPersonales=true, onRefresh }) {
   const [tipo,setTipo] = useState('asignadas')
   const [editando,setEditando] = useState(null)
   const [guardando,setGuardando] = useState(false)
@@ -4765,6 +4771,7 @@ function TareasEquipoPaola({ asignadas, personales, onRefresh }) {
           await enviarViaJsonp(SHEETS_CONFIG.distribucion.url,{
             accion:'enviar_correo_tarea',
             destinatario:email,copia:EMAIL_LIDER_PROY,
+            asignadoPor:actualizada.asignadoPor||NOMBRE_LIDER,
             responsable:actualizada.responsable,comercial:actualizada.responsable,
             tarea:actualizada.nombre,producto:actualizada.nombre,
             descripcion:actualizada.descripcion||'',notas:actualizada.descripcion||'',
@@ -4787,11 +4794,11 @@ function TareasEquipoPaola({ asignadas, personales, onRefresh }) {
     <div style={{display:'flex',flexDirection:'column',gap:14}}>
       <div style={{display:'flex',gap:8}}>
         <button onClick={()=>setTipo('asignadas')} style={S.btn(tipo==='asignadas'?'var(--accent)':'var(--bg3)',tipo==='asignadas'?'#fff':'var(--text2)')}>
-          Asignadas por Paola · {asignadas.length}
+          Asignadas · {asignadas.length}
         </button>
-        <button onClick={()=>setTipo('personales')} style={S.btn(tipo==='personales'?'var(--accent)':'var(--bg3)',tipo==='personales'?'#fff':'var(--text2)')}>
+        {mostrarPersonales&&<button onClick={()=>setTipo('personales')} style={S.btn(tipo==='personales'?'var(--accent)':'var(--bg3)',tipo==='personales'?'#fff':'var(--text2)')}>
           Personales del equipo · {personales.length}
-        </button>
+        </button>}
       </div>
 
       <div style={S.card}>
@@ -4803,6 +4810,7 @@ function TareasEquipoPaola({ asignadas, personales, onRefresh }) {
                 <div style={{fontWeight:700,fontSize:13}}>{t.nombre}</div>
                 <div style={{fontSize:11,color:'var(--text3)',marginTop:4,display:'flex',gap:10,flexWrap:'wrap'}}>
                   <span>👤 {t.responsable||'Sin responsable'}</span>
+                  {t.asignadoPor&&tipo==='asignadas'&&<span>✍️ Asignó: {t.asignadoPor}</span>}
                   {t.fechaLimite&&<span>📅 {String(t.fechaLimite).slice(0,10)}</span>}
                   <span>{t.estado||'Pendiente'}</span>
                   {Number(t.tiempoMinutos)>0&&<span>⏱️ {formatoTiempoTarea(t)}</span>}
@@ -4829,7 +4837,10 @@ function TareasEquipoPaola({ asignadas, personales, onRefresh }) {
 }
 
 
-function AsignarTareasEquipoPaola() {
+function AsignarTareasEquipo({ usuario }) {
+  const esLiderVista = usuario?.rol==='lider'
+  const yo = nombrePersonaPorUsuario(usuario)
+  const soyYo = n => normalizarNombreResponsable(n)===normalizarNombreResponsable(yo)
   const [tareasCentral,setTareasCentral] = useState({asignadas:[],personales:[]})
   const [modal,setModal] = useState(false)
   const [guardando,setGuardando] = useState(false)
@@ -4864,10 +4875,12 @@ function AsignarTareasEquipoPaola() {
       const resultados = await Promise.all(fuentes.map(uid=>cargarDesdeSheets(uid)))
       const validos = resultados.filter(Boolean)
 
-      setTareasCentral({
-        asignadas:dedupe(validos.flatMap(d=>d.tareasAsignadas||[])),
-        personales:dedupe(validos.flatMap(d=>d.misTareas||[])),
-      })
+      const asignadas = dedupe(validos.flatMap(d=>d.tareasAsignadas||[]))
+      const personales = dedupe(validos.flatMap(d=>d.misTareas||[]))
+      // El líder ve todo el equipo; los demás perfiles ven solo lo que ellos asignaron.
+      setTareasCentral(esLiderVista
+        ? {asignadas,personales}
+        : {asignadas:asignadas.filter(t=>soyYo(t.asignadoPor)),personales:[]})
     } catch(e) {
       console.error('Error consolidando tareas del equipo:',e)
     }
@@ -4887,7 +4900,7 @@ function AsignarTareasEquipoPaola() {
     const nueva = {
       id:Date.now(),
       ...form,
-      asignadoPor:'Paola',
+      asignadoPor:yo,
       fechaCreacion:new Date().toLocaleString('es-CO'),
       fechaFinalizacion:'',
       tiempoValor:'',
@@ -4898,7 +4911,7 @@ function AsignarTareasEquipoPaola() {
     const destinoUid = obtenerUidResponsable(nueva.responsable)
 
     try {
-      // Copia central de Paola.
+      // Copia central (archivo de Distribución).
       await insertarFilaSheets('distribucion','tareasAsignadas',nueva)
 
       // Copia en el archivo del responsable.
@@ -4913,6 +4926,7 @@ function AsignarTareasEquipoPaola() {
           accion:'enviar_correo_tarea',
           destinatario:email,
           copia:EMAIL_LIDER_PROY,
+          asignadoPor:nueva.asignadoPor,
           comercial:nueva.responsable,
           responsable:nueva.responsable,
           tarea:nueva.nombre,
@@ -4941,9 +4955,11 @@ function AsignarTareasEquipoPaola() {
     <div style={{display:'flex',flexDirection:'column',gap:16}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'}}>
         <div>
-          <h2 style={{fontSize:18,margin:0}}>Asignar tareas al equipo</h2>
+          <h2 style={{fontSize:18,margin:0}}>{esLiderVista?'Asignar tareas al equipo':'Asignar tarea a un compañero'}</h2>
           <p style={{fontSize:12,color:'var(--text3)',margin:'4px 0 0'}}>
-            Paola asigna tareas independientes y consulta el consolidado del equipo.
+            {esLiderVista
+              ? 'Asigna tareas y consulta el consolidado del equipo. El responsable recibe un correo.'
+              : 'El responsable recibe un correo indicando que tú le asignaste la tarea. Aquí ves el avance de lo que asignaste.'}
           </p>
         </div>
         <div style={{display:'flex',gap:8}}>
@@ -4973,9 +4989,10 @@ function AsignarTareasEquipoPaola() {
         })()}
       </div>
 
-      <TareasEquipoPaola
+      <TareasEquipo
         asignadas={tareasCentral.asignadas}
         personales={tareasCentral.personales}
+        mostrarPersonales={esLiderVista}
         onRefresh={refrescar}
       />
 
@@ -4991,7 +5008,7 @@ function AsignarTareasEquipoPaola() {
             <Field label="Responsable *">
               <select value={form.responsable} onChange={e=>setForm({...form,responsable:e.target.value})}>
                 <option value="">Selecciona responsable...</option>
-                {RESPONSABLES.map(r=><option key={r}>{r}</option>)}
+                {RESPONSABLES.filter(r=>esLiderVista||!soyYo(r)).map(r=><option key={r}>{r}</option>)}
               </select>
             </Field>
             <Field label="Fecha límite">
@@ -5039,7 +5056,7 @@ function AsignarTareasEquipoPaola() {
   )
 }
 
-function NotificacionesEquipoPaola() {
+function NotificacionesEquipo() {
   const [datos,setDatos] = useState({asignadas:[],personales:[],proyectos:[]})
   const [cargando,setCargando] = useState(true)
 
@@ -5055,7 +5072,7 @@ function NotificacionesEquipoPaola() {
   const subtareas = (datos.proyectos||[]).flatMap(p=>(p.subtareas||[]).map(s=>({...s,proyectoNombre:p.nombre})))
   const movimientos = [
     ...datos.asignadas.flatMap(t=>[
-      {id:'a-crea-'+t.id,titulo:`Paola asignó una tarea a ${t.responsable||'el equipo'}`,detalle:t.nombre||'Tarea',fecha:t.fechaCreacion||'',estado:'Asignada',finalizada:false},
+      {id:'a-crea-'+t.id,titulo:`${t.asignadoPor||NOMBRE_LIDER} asignó una tarea a ${t.responsable||'el equipo'}`,detalle:t.nombre||'Tarea',fecha:t.fechaCreacion||'',estado:'Asignada',finalizada:false},
       ...(t.estado==='Finalizada'?[{id:'a-fin-'+t.id,titulo:`${t.responsable||'El equipo'} finalizó una tarea`,detalle:t.nombre||'Tarea',fecha:t.fechaFinalizacion||'',estado:'Finalizada',finalizada:true}]:[])
     ]),
     ...datos.personales.flatMap(t=>[
@@ -5372,7 +5389,7 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
     setGuardandoPendiente(true)
 
     const nuevo = {
-      id:Date.now(),...formPend,asignadoPor:'Paola',
+      id:Date.now(),...formPend,asignadoPor:NOMBRE_LIDER,
       fechaCreacion:new Date().toLocaleString('es-CO'),
       fechaFinalizacion:'',tiempoValor:'',tiempoUnidad:'',tiempoMinutos:0
     }
@@ -5387,6 +5404,7 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
         await enviarViaJsonp(SHEETS_CONFIG.distribucion.url,{
           accion:'enviar_correo_tarea',
           destinatario:email,copia:EMAIL_LIDER_PROY,
+          asignadoPor:nuevo.asignadoPor,
           comercial:nuevo.responsable,responsable:nuevo.responsable,
           tarea:nuevo.nombre,producto:nuevo.nombre,
           notas:nuevo.descripcion||'',descripcion:nuevo.descripcion||'',
@@ -6229,7 +6247,7 @@ function CampanaNotificaciones({usuario,data,onIr}) {
 
   const movimientos = [
     ...(fuente.tareasAsignadas||[]).filter(propios).flatMap(t=>[
-      {id:'ta-crea-'+t.id,titulo:`Paola te asignó: ${t.nombre||'Tarea'}`,detalle:`Responsable: ${t.responsable||'—'}`,fecha:t.fechaCreacion||'',finalizada:false,destino:esLider?'asignarTareas':'tareasasignadas'},
+      {id:'ta-crea-'+t.id,titulo:`${t.asignadoPor||NOMBRE_LIDER} te asignó: ${t.nombre||'Tarea'}`,detalle:`Responsable: ${t.responsable||'—'}`,fecha:t.fechaCreacion||'',finalizada:false,destino:esLider?'asignarTareas':'tareasasignadas'},
       ...(t.estado==='Finalizada'?[{id:'ta-fin-'+t.id,titulo:`${t.responsable||'El equipo'} finalizó una tarea`,detalle:t.nombre||'Tarea',fecha:t.fechaFinalizacion||'',finalizada:true,destino:esLider?'asignarTareas':'tareasasignadas'}]:[])
     ]),
     ...(fuente.misTareas||[]).filter(propios).flatMap(t=>[
@@ -6582,6 +6600,7 @@ export default function App() {
   const TABS_PRES = [{id:'dashboard',label:'Presupuesto Consolidado',icon:DollarSign},{id:'controlPresupuestal',label:'Gastos de presupuesto',icon:DollarSign}]
   const TABS_COLAB = [
     {id:'tareasasignadas',label:'Tareas Asignadas',icon:ListTodo},
+    {id:'asignarTareas',label:'Asignar tarea',icon:Send},
     {id:'tareasProyectos',label:'Proyectos y Subtareas',icon:BookOpen},
   ]
   const TABS_MERCADEO_GENERAL = [
@@ -6601,6 +6620,7 @@ export default function App() {
     : 0
   const TABS_NORMAL = [
     {id:'tareasasignadas', label:'Tareas Asignadas', icon:ListTodo, badge:tareasAsignadasCount},
+    {id:'asignarTareas', label:'Asignar tarea', icon:Send},
     {id:'tareasProyectos', label:'Proyectos y Subtareas', icon:BookOpen},
     {id:'dashboard',  label:'Dashboard',   icon:LayoutDashboard},
     {id:'inversiones',label:'Inversiones', icon:TrendingUp},
@@ -6708,13 +6728,14 @@ export default function App() {
           {!esColaborador && tab==='controlPresupuestal' && <ControlPresupuestalMensual usuario={usuario}/>}
           {esLider && tab==='dashboardEquipo' && <DashboardLider initialTab="equipo" hideTabs/>}
           {esLider && tab==='dashboardFinanciero' && <DashboardLider initialTab="dashboard" hideTabs/>}
-          {esLider && tab==='asignarTareas' && <AsignarTareasEquipoPaola/>}
-          {esLider && tab==='notificaciones' && <NotificacionesEquipoPaola/>}
+          {esLider && tab==='asignarTareas' && <AsignarTareasEquipo usuario={usuario}/>}
+          {esLider && tab==='notificaciones' && <NotificacionesEquipo/>}
           {esLider && tab==='tareasProyectos' && <TareasYProyectos data={data} setData={setDataUser} usuario={usuario}/>}
           {esPresupuesto && tab==='dashboard' && <PresupuestoConsolidado/>}
           {esColaborador && (
             <>
               {tab==='tareasasignadas' && <TareasAsignadas data={data} setData={setDataUser} usuario={usuario}/>}
+              {tab==='asignarTareas' && <AsignarTareasEquipo usuario={usuario}/>}
               {tab==='tareasProyectos' && <TareasYProyectos data={data} setData={setDataUser} usuario={usuario}/>}
             </>
           )}
@@ -6742,7 +6763,7 @@ export default function App() {
                   <div style={{background:'rgba(91,82,240,0.08)',border:'1px solid rgba(91,82,240,0.25)',borderRadius:12,padding:'12px 18px',marginBottom:8,display:'flex',alignItems:'center',gap:12,cursor:'pointer'}} onClick={()=>setTab('tareasasignadas')}>
                     <div style={{width:32,height:32,borderRadius:8,background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>📋</div>
                     <div style={{flex:1}}>
-                      <div style={{fontWeight:600,fontSize:13,color:'var(--accent2)'}}>Tienes {tareasLider.length} actividad{tareasLider.length>1?'es':''} asignada{tareasLider.length>1?'s':''} por el Líder de Mercadeo</div>
+                      <div style={{fontWeight:600,fontSize:13,color:'var(--accent2)'}}>Tienes {tareasLider.length} actividad{tareasLider.length>1?'es':''} asignada{tareasLider.length>1?'s':''} pendiente{tareasLider.length>1?'s':''}</div>
                       <div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>{tareasLider.map(t=>t.nombre||t.tarea).slice(0,2).join(' · ')}{tareasLider.length>2?' · ...':''} — Clic para ver</div>
                     </div>
                     <span style={{fontSize:20,color:'var(--accent2)'}}>→</span>
@@ -6758,6 +6779,7 @@ export default function App() {
               {tab==='pendientes'      &&<Pendientes        data={data} setData={setDataUser}/>}
               {tab==='apoyocierre'     &&<ApoyoCierre       data={data} setData={setDataUser} usuario={usuario}/>}
               {tab==='tareasasignadas' &&<TareasAsignadas   data={data} setData={setDataUser} usuario={usuario}/>}
+              {tab==='asignarTareas'   &&<AsignarTareasEquipo usuario={usuario}/>}
               {tab==='tareasProyectos'  &&<TareasYProyectos   data={data} setData={setDataUser} usuario={usuario}/>}
             </>
           )}
