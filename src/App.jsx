@@ -8,37 +8,37 @@ let _currentUserKey = STORAGE_KEY
 
 const SHEETS_CONFIG = {
   distribucion: {
-    url: 'https://script.google.com/macros/s/AKfycbyPJ5B8iotZRFZLD_ByUxEO8Hpyj4tihylyr2qSeRC6uVfS2egNQNDulj78v6AUpml8/exec',
+    url: 'https://script.google.com/macros/s/AKfycbxpXwPP9P6Ik_WTXvoUKCscTZz2lbAARt_NV-2UUY-4bzajnIpEUcigT0VUrLklbKWI/exec',
     spreadsheetId: '15X2WrJGDw__xFvPpe3Gcm5iR9KSKgJP20Q_kyJ0Zn0U',
     enabled: true,
   },
   industria: {
-    url: 'https://script.google.com/macros/s/AKfycbyPJ5B8iotZRFZLD_ByUxEO8Hpyj4tihylyr2qSeRC6uVfS2egNQNDulj78v6AUpml8/exec',
+    url: 'https://script.google.com/macros/s/AKfycbxpXwPP9P6Ik_WTXvoUKCscTZz2lbAARt_NV-2UUY-4bzajnIpEUcigT0VUrLklbKWI/exec',
     spreadsheetId: '1YOqpzgEyLWdqAvXLIQBW9YrQ1KpnvUnEjZvHkY5Ce4A',
     enabled: true,
   },
   zonas: {
-    url: 'https://script.google.com/macros/s/AKfycbyPJ5B8iotZRFZLD_ByUxEO8Hpyj4tihylyr2qSeRC6uVfS2egNQNDulj78v6AUpml8/exec',
+    url: 'https://script.google.com/macros/s/AKfycbxpXwPP9P6Ik_WTXvoUKCscTZz2lbAARt_NV-2UUY-4bzajnIpEUcigT0VUrLklbKWI/exec',
     spreadsheetId: '1OHpuBQ5Aj-NV9n-wQBlkUoT8mgC3DgZhWyAVSAfFL7Y',
     enabled: true,
   },
   juan: {
-    url: 'https://script.google.com/macros/s/AKfycbyPJ5B8iotZRFZLD_ByUxEO8Hpyj4tihylyr2qSeRC6uVfS2egNQNDulj78v6AUpml8/exec',
+    url: 'https://script.google.com/macros/s/AKfycbxpXwPP9P6Ik_WTXvoUKCscTZz2lbAARt_NV-2UUY-4bzajnIpEUcigT0VUrLklbKWI/exec',
     spreadsheetId: '1s6fkyyCihzOki9Fan9EKIIvxwlra-QizwI7fy210GUI',
     enabled: true,
   },
   camilo: {
-    url: 'https://script.google.com/macros/s/AKfycbyPJ5B8iotZRFZLD_ByUxEO8Hpyj4tihylyr2qSeRC6uVfS2egNQNDulj78v6AUpml8/exec',
+    url: 'https://script.google.com/macros/s/AKfycbxpXwPP9P6Ik_WTXvoUKCscTZz2lbAARt_NV-2UUY-4bzajnIpEUcigT0VUrLklbKWI/exec',
     spreadsheetId: '1jVKNc8krqeClgfzaXr-i7YIHwuYRmjkoU35NEjz4oDk',
     enabled: true,
   },
   julian: {
-    url: 'https://script.google.com/macros/s/AKfycbyPJ5B8iotZRFZLD_ByUxEO8Hpyj4tihylyr2qSeRC6uVfS2egNQNDulj78v6AUpml8/exec',
+    url: 'https://script.google.com/macros/s/AKfycbxpXwPP9P6Ik_WTXvoUKCscTZz2lbAARt_NV-2UUY-4bzajnIpEUcigT0VUrLklbKWI/exec',
     spreadsheetId: '1nEdGAcy45hMckYxOC_SRfrYEqW6ifgRv9fFoJA75YlY',
     enabled: true,
   },
   mercadeoGeneral: {
-    url: 'https://script.google.com/macros/s/AKfycbyPJ5B8iotZRFZLD_ByUxEO8Hpyj4tihylyr2qSeRC6uVfS2egNQNDulj78v6AUpml8/exec',
+    url: 'https://script.google.com/macros/s/AKfycbxpXwPP9P6Ik_WTXvoUKCscTZz2lbAARt_NV-2UUY-4bzajnIpEUcigT0VUrLklbKWI/exec',
     spreadsheetId: '1jerDKOKNIpI27A7tDVfylxk2PjQaaegV81L0VdqQcKc',
     enabled: true,
   },
@@ -2331,7 +2331,7 @@ function ApoyoCierre({ data, setData, usuario }) {
   const [formAsig, setFormAsig] = useState({ comercial:'', distribuidor:'', mes:'', anio:2026, monto:'' })
   const [formRed, setFormRed] = useState({ cliente:'', producto:'', valor:'', notas:'', copiarJefe:false })
 
-  const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbyPJ5B8iotZRFZLD_ByUxEO8Hpyj4tihylyr2qSeRC6uVfS2egNQNDulj78v6AUpml8/exec'
+  const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxpXwPP9P6Ik_WTXvoUKCscTZz2lbAARt_NV-2UUY-4bzajnIpEUcigT0VUrLklbKWI/exec'
 
   const _canalActual = usuario?.id || 'distribucion'
   const EMAILS = EMAILS_POR_CANAL[_canalActual] || EMAILS_POR_CANAL.distribucion
@@ -5381,7 +5381,7 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
     zonas:        'msilva@prolub.com.co',
     diseno:       'aalvarado@gulfcolombia.com',
   }
-  const SHEETS_URL_LIDER = 'https://script.google.com/macros/s/AKfycbyPJ5B8iotZRFZLD_ByUxEO8Hpyj4tihylyr2qSeRC6uVfS2egNQNDulj78v6AUpml8/exec'
+  const SHEETS_URL_LIDER = 'https://script.google.com/macros/s/AKfycbxpXwPP9P6Ik_WTXvoUKCscTZz2lbAARt_NV-2UUY-4bzajnIpEUcigT0VUrLklbKWI/exec'
 
   const crearPendiente = async () => {
     if(guardandoPendiente) return
