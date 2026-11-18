@@ -305,6 +305,8 @@ async function cargarDesdeSheets(uid) {
 }
 
 async function insertarFilaSheets(uid, tipo, item) {
+  // Tareas y proyectos: se guardan en el central y sin duplicar.
+  if(TIPOS_TAREAS.includes(tipo)) return actualizarFilaSheets('distribucion', tipo, item)
   const cfg = SHEETS_CONFIG[uid]
   if(!cfg?.enabled) return
   const hoja = HOJA_MAP[tipo]
@@ -327,7 +329,37 @@ async function insertarFilaSheets(uid, tipo, item) {
   })
 }
 
+// Tareas y proyectos viven en UN solo archivo: el central (Distribución).
+const TIPOS_TAREAS = ['tareasAsignadas','misTareas','proyectos','subtareasProyectos']
+
+// Actualiza la misma fila por id (o la crea si no existe). Nunca duplica.
+async function actualizarFilaSheets(uid, tipo, item) {
+  const destino = TIPOS_TAREAS.includes(tipo) ? 'distribucion' : uid
+  const cfg = SHEETS_CONFIG[destino]
+  if(!cfg?.enabled) return
+  const hoja = HOJA_MAP[tipo]
+  if(!hoja) return
+  const fila = toSheetRow(tipo, item)
+  const cb = 'gs_cb_' + Date.now() + '_' + Math.random().toString(36).slice(2)
+  return new Promise(resolve => {
+    window[cb] = () => { resolve(); delete window[cb] }
+    const s = document.createElement('script')
+    s.src = cfg.url + '?callback=' + cb + '&data=' + encodeURIComponent(JSON.stringify({
+      accion:'actualizar',
+      hoja,
+      fila,
+      spreadsheetId: cfg.spreadsheetId || ''
+    }))
+    s.onerror = () => resolve()
+    s.onload = () => { setTimeout(resolve, 200); s.remove() }
+    document.head.appendChild(s)
+    setTimeout(resolve, 4000)
+  })
+}
+
 async function eliminarFilaSheets(uid, tipo, id) {
+  // Las copias en archivos personales ya no se usan: solo se borra en el central.
+  if(TIPOS_TAREAS.includes(tipo) && uid !== 'distribucion') return
   const cfg = SHEETS_CONFIG[uid]
   if(!cfg?.enabled) return
   const hoja = HOJA_MAP[tipo]
@@ -3268,7 +3300,7 @@ function TableroEquipo() {
   const refrescar = async () => {
     setCargando(true)
     try {
-      const fuentes = ['distribucion','industria','juan','camilo','julian']
+      const fuentes = ['distribucion'] // todo está en el archivo central
       const resultados = (await Promise.all(fuentes.map(uid=>cargarDesdeSheets(uid).catch(()=>null)))).filter(Boolean)
       const mapa = new Map()
       const score = y => (y.fechaFinalizacion?2:0)+(Number(y.tiempoMinutos||0)>0?1:0)+(estaCerrada(y)?1:0)
@@ -3374,6 +3406,223 @@ function TableroEquipo() {
   )
 }
 
+// ═══════════════════════════════════════════════════════
+// INDICADORES DEL EQUIPO (líder)
+// ═══════════════════════════════════════════════════════
+const COLOR_TIPO = { asignada:'#0891b2', personal:'#d97706', subtarea:'#db2777' }
+const NOMBRE_TIPO = { asignada:'Asignadas', personal:'Personales', subtarea:'Proyectos' }
+const MESES_CORTOS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+const claveMes = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
+const nombreMes = k => { const [y,m]=k.split('-').map(Number); return `${MESES_CORTOS[m-1]} ${y}` }
+const mesAnterior = k => { const [y,m]=k.split('-').map(Number); const d=new Date(y,m-2,1); return claveMes(d) }
+const soloFecha = d => { if(!d) return null; const x=new Date(d); x.setHours(0,0,0,0); return x }
+
+function medirGrupo(lista) {
+  const conLimite = lista.filter(t=>t.__lim)
+  const aTiempo = conLimite.filter(t=>t.__fin<=t.__lim).length
+  const conDias = lista.filter(t=>t.__dias!==null)
+  return {
+    n: lista.length,
+    pctATiempo: conLimite.length ? Math.round(aTiempo/conLimite.length*100) : null,
+    diasProm: conDias.length ? Math.round(conDias.reduce((s,t)=>s+t.__dias,0)/conDias.length*10)/10 : null,
+    horas: Math.round(lista.reduce((s,t)=>s+(Number(t.tiempoMinutos)||0),0)/6)/10,
+    horasTipo: ['asignada','personal','subtarea'].reduce((o,k)=>({...o,[k]:Math.round(lista.filter(t=>t.__tipo===k).reduce((s,t)=>s+(Number(t.tiempoMinutos)||0),0)/6)/10}),{}),
+  }
+}
+
+function IndicadoresEquipo() {
+  const [items, setItems] = useState([])
+  const [cargando, setCargando] = useState(true)
+  const [mes, setMes] = useState(claveMes(new Date()))
+
+  const cargar = async () => {
+    setCargando(true)
+    try {
+      const d = await cargarDesdeSheets('distribucion')
+      if(!d) return
+      const lista = [
+        ...(d.tareasAsignadas||[]).map(t=>({...t,__tipo:'asignada'})),
+        ...(d.misTareas||[]).map(t=>({...t,__tipo:'personal'})),
+        ...subtareasDeData(d).map(t=>({...t,__tipo:'subtarea'})),
+      ]
+      const vistos = new Set()
+      setItems(lista.filter(t=>{ const k=t.__tipo+'|'+(t.id||t.nombre); if(vistos.has(k)) return false; vistos.add(k); return true }))
+    } finally { setCargando(false) }
+  }
+  useEffect(()=>{ cargar() },[])
+
+  // Solo cuentan las tareas finalizadas con fecha de cierre.
+  const finalizadas = items.filter(t=>(t.estado==='Finalizada'||t.estado==='Listo')).map(t=>{
+    const fin = soloFecha(parseFechaFlexible(t.fechaFinalizacion))
+    const ini = soloFecha(parseFechaFlexible(t.fechaCreacion))
+    const lim = soloFecha(parseFechaFlexible(fechaLimiteItem(t)))
+    return {...t,__fin:fin,__lim:lim,__dias:(fin&&ini)?Math.max(0,Math.round((fin-ini)/86400000)):null,__mes:fin?claveMes(fin):null}
+  }).filter(t=>t.__fin)
+
+  const mesesDisponibles = [...new Set([claveMes(new Date()),...finalizadas.map(t=>t.__mes)])].sort().reverse()
+  const delMes = k => finalizadas.filter(t=>t.__mes===k)
+  const actual = medirGrupo(delMes(mes))
+  const previo = medirGrupo(delMes(mesAnterior(mes)))
+
+  const ultimos6 = (()=>{ const r=[]; let k=mes; for(let i=0;i<6;i++){ r.unshift(k); k=mesAnterior(k) } return r })()
+  const serie = ultimos6.map(k=>({k,...medirGrupo(delMes(k))}))
+
+  const porPersona = RESPONSABLES.map(nombre=>({nombre,...medirGrupo(delMes(mes).filter(t=>normalizarNombreResponsable(t.responsable)===normalizarNombreResponsable(nombre)))}))
+  const maxHorasPersona = Math.max(1,...porPersona.map(p=>p.horas))
+
+  const delta = (a,b,sufijo='',menosEsMejor=false) => {
+    if(a===null||b===null||a===undefined||b===undefined) return <span style={{fontSize:11,color:'var(--text3)'}}>sin dato del mes anterior</span>
+    const d = Math.round((a-b)*10)/10
+    if(d===0) return <span style={{fontSize:11,color:'var(--text3)'}}>= igual que {nombreMes(mesAnterior(mes))}</span>
+    const bueno = menosEsMejor ? d<0 : d>0
+    return <span style={{fontSize:11,fontWeight:700,color:bueno?'#16a25a':'#e03c3c'}}>{d>0?'▲':'▼'} {Math.abs(d)}{sufijo} vs {nombreMes(mesAnterior(mes))}</span>
+  }
+
+  const kpi = (titulo,valor,detalle,color,ayuda) => (
+    <div title={ayuda} style={{...S.card,padding:'14px 16px',borderTop:'3px solid '+color,display:'flex',flexDirection:'column',gap:4}}>
+      <div style={{fontSize:11,color:'var(--text3)',fontWeight:700,textTransform:'uppercase',letterSpacing:'.04em'}}>{titulo}</div>
+      <div style={{fontSize:26,fontWeight:800,color:'var(--text)',fontFamily:'var(--mono)'}}>{valor}</div>
+      {detalle}
+    </div>
+  )
+
+  // Mini gráfico de barras (una sola medida, un solo eje)
+  const MiniBarras = ({titulo,campo,color,formato}) => {
+    const vals = serie.map(x=>x[campo]??0)
+    const max = Math.max(1,...vals)
+    const actualVal = serie[serie.length-1][campo]
+    return (
+      <div style={{...S.card,padding:'14px 16px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:10}}>
+          <span style={{fontSize:12,fontWeight:700,color:'var(--text2)'}}>{titulo}</span>
+          <span style={{fontSize:15,fontWeight:800,color:'var(--text)',fontFamily:'var(--mono)'}}>{actualVal===null?'—':formato(actualVal)}</span>
+        </div>
+        <div style={{display:'flex',alignItems:'flex-end',gap:6,height:90,borderBottom:'1px solid var(--border2)'}}>
+          {serie.map((x,i)=>{
+            const v = x[campo]
+            const h = v ? Math.max(3,Math.round(v/max*86)) : 0
+            const sel = i===serie.length-1
+            return (
+              <div key={x.k} title={`${nombreMes(x.k)}: ${v===null?'sin dato':formato(v)}`} style={{flex:1,height:'100%',display:'flex',alignItems:'flex-end',cursor:'default'}}>
+                <div style={{width:'100%',height:h,background:color,opacity:sel?1:.35,borderRadius:'4px 4px 0 0'}}/>
+              </div>
+            )
+          })}
+        </div>
+        <div style={{display:'flex',gap:6,marginTop:5}}>
+          {serie.map((x,i)=><span key={x.k} style={{flex:1,textAlign:'center',fontSize:10,color:i===serie.length-1?'var(--text)':'var(--text3)',fontWeight:i===serie.length-1?700:400}}>{MESES_CORTOS[Number(x.k.split('-')[1])-1]}</span>)}
+        </div>
+      </div>
+    )
+  }
+
+  const descargarExcel = () => {
+    const wb = XLSX.utils.book_new()
+    const resumen = serie.map(x=>({Mes:nombreMes(x.k),'Tareas finalizadas':x.n,'% cerradas a tiempo':x.pctATiempo??'','Días promedio de cierre':x.diasProm??'','Horas registradas':x.horas,'Horas asignadas':x.horasTipo.asignada,'Horas personales':x.horasTipo.personal,'Horas proyectos':x.horasTipo.subtarea}))
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumen), 'Mes a mes')
+    const personas = porPersona.map(p=>({Persona:p.nombre,'Tareas finalizadas':p.n,'% a tiempo':p.pctATiempo??'','Días promedio de cierre':p.diasProm??'','Horas':p.horas,'Horas asignadas':p.horasTipo.asignada,'Horas personales':p.horasTipo.personal,'Horas proyectos':p.horasTipo.subtarea}))
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(personas), 'Por persona '+nombreMes(mes))
+    const detalle = finalizadas.map(t=>({Mes:nombreMes(t.__mes),Persona:t.responsable||'',Tipo:NOMBRE_TIPO[t.__tipo],Tarea:t.nombre||'',Proyecto:t.proyecto||'','Creada':t.fechaCreacion?String(t.fechaCreacion).slice(0,10):'','Fecha límite':fechaLimiteItem(t)?String(fechaLimiteItem(t)).slice(0,10):'','Finalizada':t.__fin.toLocaleDateString('es-CO'),'A tiempo':t.__lim?(t.__fin<=t.__lim?'Sí':'No'):'Sin fecha','Días de cierre':t.__dias??'','Horas':Math.round((Number(t.tiempoMinutos)||0)/6)/10}))
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detalle), 'Detalle')
+    XLSX.writeFile(wb, `Indicadores_TradeMarketing_${mes}.xlsx`)
+  }
+
+  const fmtH = v => `${v} h`
+  const fmtPct = v => `${v}%`
+  const fmtD = v => `${v} d`
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:18}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+        <div>
+          <h2 style={{fontSize:20,margin:0}}>Indicadores del equipo</h2>
+          <div style={{fontSize:12,color:'var(--text3)',marginTop:4}}>Productividad de Trade Marketing según las tareas finalizadas en el mes{mes===claveMes(new Date())?' · mes en curso (cuenta hasta hoy)':''}</div>
+        </div>
+        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+          <select value={mes} onChange={e=>setMes(e.target.value)} style={{width:'auto',fontSize:12.5,padding:'7px 10px'}}>
+            {mesesDisponibles.map(k=><option key={k} value={k}>{nombreMes(k)}</option>)}
+          </select>
+          <button onClick={cargar} style={S.btn('var(--bg3)','var(--text2)')}>{cargando?'Cargando…':'↻'}</button>
+          <button onClick={descargarExcel} style={S.btn('#16a25a','#fff')}><Download size={14}/> Excel</button>
+        </div>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:12}}>
+        {kpi('Tareas finalizadas',actual.n,delta(actual.n,previo.n),'#2457d6','Tareas asignadas, personales y de proyectos cerradas en el mes')}
+        {kpi('Cerradas a tiempo',actual.pctATiempo===null?'—':actual.pctATiempo+'%',delta(actual.pctATiempo,previo.pctATiempo,' pts'),'#16a25a','De las tareas con fecha límite, cuántas se cerraron ese día o antes')}
+        {kpi('Días promedio de cierre',actual.diasProm===null?'—':actual.diasProm,delta(actual.diasProm,previo.diasProm,' d',true),'#f15a22','Días entre la creación y el cierre de cada tarea')}
+        {kpi('Horas registradas',actual.horas+' h',delta(actual.horas,previo.horas,' h'),'#0d9488','Tiempo que cada persona reportó al finalizar')}
+      </div>
+
+      <div style={{...S.card,padding:'16px 18px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:10,marginBottom:12}}>
+          <div style={{fontWeight:800,fontSize:15}}>Por persona · {nombreMes(mes)}</div>
+          <div style={{display:'flex',gap:14,fontSize:11.5,color:'var(--text2)'}}>
+            {Object.keys(COLOR_TIPO).map(k=><span key={k} style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:10,height:10,borderRadius:3,background:COLOR_TIPO[k]}}/>{NOMBRE_TIPO[k]}</span>)}
+          </div>
+        </div>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',minWidth:720}}>
+            <thead><tr>{['Persona','Finalizadas','A tiempo','Días de cierre','Horas por tipo'].map(h=><th key={h} style={{...S.th,textAlign:h==='Horas por tipo'?'left':'left'}}>{h}</th>)}</tr></thead>
+            <tbody>
+              {porPersona.map(p=>(
+                <tr key={p.nombre}>
+                  <td style={S.td}><span style={{display:'inline-flex',alignItems:'center',gap:8,fontWeight:700}}><span style={{width:24,height:24,borderRadius:'50%',background:colorPersona(p.nombre).c,color:'#fff',display:'inline-grid',placeItems:'center',fontSize:11}}>{p.nombre.charAt(0)}</span>{p.nombre}</span></td>
+                  <td style={{...S.td,fontFamily:'var(--mono)'}}>{p.n}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)',color:p.pctATiempo===null?'var(--text3)':p.pctATiempo>=80?'#16a25a':p.pctATiempo>=60?'#d97706':'#e03c3c',fontWeight:700}}>{p.pctATiempo===null?'—':p.pctATiempo+'%'}</td>
+                  <td style={{...S.td,fontFamily:'var(--mono)'}}>{p.diasProm===null?'—':p.diasProm+' d'}</td>
+                  <td style={{...S.td,minWidth:280}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+                      <div style={{flex:1,display:'flex',gap:2,height:14}}>
+                        {['asignada','personal','subtarea'].map(k=>p.horasTipo[k]>0&&(
+                          <div key={k} title={`${NOMBRE_TIPO[k]}: ${p.horasTipo[k]} h`} style={{width:`${p.horasTipo[k]/maxHorasPersona*100}%`,background:COLOR_TIPO[k],borderRadius:4,minWidth:4}}/>
+                        ))}
+                      </div>
+                      <span style={{fontSize:12,fontWeight:700,fontFamily:'var(--mono)',minWidth:48,textAlign:'right'}}>{p.horas} h</span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <div style={{fontWeight:800,fontSize:15,marginBottom:10}}>Mes a mes · últimos 6 meses</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(230px,1fr))',gap:12}}>
+          <MiniBarras titulo="Tareas finalizadas" campo="n" color="#2457d6" formato={v=>v}/>
+          <MiniBarras titulo="% cerradas a tiempo" campo="pctATiempo" color="#16a25a" formato={fmtPct}/>
+          <MiniBarras titulo="Días promedio de cierre" campo="diasProm" color="#f15a22" formato={fmtD}/>
+          <MiniBarras titulo="Horas registradas" campo="horas" color="#0d9488" formato={fmtH}/>
+        </div>
+      </div>
+
+      <div style={{...S.card,padding:'16px 18px'}}>
+        <div style={{fontWeight:800,fontSize:15,marginBottom:10}}>Tabla mes a mes</div>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',minWidth:640}}>
+            <thead><tr>{['Mes','Finalizadas','% a tiempo','Días de cierre','Horas','Asignadas','Personales','Proyectos'].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+            <tbody>{serie.slice().reverse().map(x=>(
+              <tr key={x.k} style={{background:x.k===mes?'var(--accent-soft)':'transparent'}}>
+                <td style={{...S.td,fontWeight:700}}>{nombreMes(x.k)}</td>
+                <td style={{...S.td,fontFamily:'var(--mono)'}}>{x.n}</td>
+                <td style={{...S.td,fontFamily:'var(--mono)'}}>{x.pctATiempo===null?'—':x.pctATiempo+'%'}</td>
+                <td style={{...S.td,fontFamily:'var(--mono)'}}>{x.diasProm===null?'—':x.diasProm+' d'}</td>
+                <td style={{...S.td,fontFamily:'var(--mono)'}}>{x.horas} h</td>
+                <td style={{...S.td,fontFamily:'var(--mono)'}}>{x.horasTipo.asignada} h</td>
+                <td style={{...S.td,fontFamily:'var(--mono)'}}>{x.horasTipo.personal} h</td>
+                <td style={{...S.td,fontFamily:'var(--mono)'}}>{x.horasTipo.subtarea} h</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+        <div style={{fontSize:11,color:'var(--text3)',marginTop:10}}>"A tiempo" solo considera tareas con fecha límite. Las horas son las que cada persona reporta al finalizar.</div>
+      </div>
+    </div>
+  )
+}
+
 function TareasAsignadas({ data, setData, usuario }) {
   const responsableActual = nombrePersonaPorUsuario(usuario)
   const tareas = (data.tareasAsignadas || []).filter(
@@ -3394,16 +3643,14 @@ function TareasAsignadas({ data, setData, usuario }) {
     const uidAnterior = anterior ? obtenerUidResponsable(anterior.responsable) : uidPersonaPorUsuario(usuario)
     const uidNuevo = obtenerUidResponsable(actualizada.responsable) || uidPersonaPorUsuario(usuario)
 
-    await eliminarFilaSheets('distribucion','tareasAsignadas',actualizada.id)
-    await insertarFilaSheets('distribucion','tareasAsignadas',actualizada)
+    await actualizarFilaSheets('distribucion','tareasAsignadas',actualizada)
 
     if(uidAnterior && uidAnterior!=='distribucion' && uidAnterior!==uidNuevo) {
       await eliminarFilaSheets(uidAnterior,'tareasAsignadas',actualizada.id)
     }
 
     if(uidNuevo && uidNuevo!=='distribucion') {
-      await eliminarFilaSheets(uidNuevo,'tareasAsignadas',actualizada.id)
-      await insertarFilaSheets(uidNuevo,'tareasAsignadas',actualizada)
+      await actualizarFilaSheets(uidNuevo,'tareasAsignadas',actualizada)
     }
   }
 
@@ -4089,11 +4336,9 @@ function MisTareas({ data, setData, usuario }) {
   const persistir = async actualizada => {
     const lista = (data.misTareas||[]).map(t=>String(t.id)===String(actualizada.id)?actualizada:t)
     setData({...data,misTareas:lista})
-    await eliminarFilaSheets(uid,'misTareas',actualizada.id)
-    await insertarFilaSheets(uid,'misTareas',actualizada)
+    await actualizarFilaSheets(uid,'misTareas',actualizada)
     if(uid!=='distribucion') {
-      await eliminarFilaSheets('distribucion','misTareas',actualizada.id)
-      await insertarFilaSheets('distribucion','misTareas',actualizada)
+      await actualizarFilaSheets('distribucion','misTareas',actualizada)
     }
   }
 
@@ -4348,7 +4593,9 @@ function TareasYProyectos({ data, setData, usuario }) {
       normalizarNombreResponsable(s.responsable) === normalizarNombreResponsable(personaActual)
     )
 
-    return fueCreadoPorMi || participaEnSubtarea
+    const soyResponsable = normalizarNombreResponsable(p.responsable) === normalizarNombreResponsable(personaActual)
+
+    return fueCreadoPorMi || participaEnSubtarea || soyResponsable
   })
   const [vista, setVista] = useState('lista') // lista | detalle
   const [proyectoActivo, setProyectoActivo] = useState(null)
@@ -4475,9 +4722,8 @@ function TareasYProyectos({ data, setData, usuario }) {
     const uidResponsable = obtenerUidResponsable(subtarea.responsable)
 
     try {
-      await eliminarFilaSheets(uidCentral, 'proyectos', proyPadre.id)
-      if(proyectoActualizado) {
-        await insertarFilaSheets(uidCentral, 'proyectos', proyectoActualizado)
+      if(proyectoActualizado && !proyPadre._reconstruido) {
+        await actualizarFilaSheets(uidCentral, 'proyectos', proyectoActualizado)
       }
 
       // Registro central para que el líder siempre vea todas las subtareas.
@@ -4530,15 +4776,13 @@ function TareasYProyectos({ data, setData, usuario }) {
       setData({...data,proyectos:lista})
       if(proyectoActivo?.id===actualizado.id) setProyectoActivo(actualizado)
 
-      await eliminarFilaSheets('distribucion','proyectos',actualizado.id)
-      await insertarFilaSheets('distribucion','proyectos',actualizado)
+      await actualizarFilaSheets('distribucion','proyectos',actualizado)
 
       if(uidAnterior && uidAnterior!=='distribucion' && uidAnterior!==uidNuevo) {
         await eliminarFilaSheets(uidAnterior,'proyectos',actualizado.id)
       }
       if(uidNuevo && uidNuevo!=='distribucion') {
-        await eliminarFilaSheets(uidNuevo,'proyectos',actualizado.id)
-        await insertarFilaSheets(uidNuevo,'proyectos',actualizado)
+        await actualizarFilaSheets(uidNuevo,'proyectos',actualizado)
       }
 
       if(normalizarNombreResponsable(anterior?.responsable)!==normalizarNombreResponsable(actualizado.responsable)) {
@@ -4586,17 +4830,14 @@ function TareasYProyectos({ data, setData, usuario }) {
       setData({...data,proyectos:lista})
       if(proyectoActivo?.id===proyecto.id) setProyectoActivo(proyectoActualizado)
 
-      await eliminarFilaSheets('distribucion','proyectos',proyecto.id)
-      await insertarFilaSheets('distribucion','proyectos',proyectoActualizado)
-      await eliminarFilaSheets('distribucion','subtareasProyectos',actualizada.id)
-      await insertarFilaSheets('distribucion','subtareasProyectos',fila)
+      await actualizarFilaSheets('distribucion','proyectos',proyectoActualizado)
+      await actualizarFilaSheets('distribucion','subtareasProyectos',fila)
 
       if(uidAnterior && uidAnterior!=='distribucion' && uidAnterior!==uidNuevo) {
         await eliminarFilaSheets(uidAnterior,'subtareasProyectos',actualizada.id)
       }
       if(uidNuevo && uidNuevo!=='distribucion') {
-        await eliminarFilaSheets(uidNuevo,'subtareasProyectos',actualizada.id)
-        await insertarFilaSheets(uidNuevo,'subtareasProyectos',fila)
+        await actualizarFilaSheets(uidNuevo,'subtareasProyectos',fila)
       }
 
       if(normalizarNombreResponsable(anterior.responsable)!==normalizarNombreResponsable(actualizada.responsable)) {
@@ -4631,11 +4872,9 @@ function TareasYProyectos({ data, setData, usuario }) {
     const uidCentral='distribucion'
     const uidResponsable=obtenerUidResponsable(actualizado.responsable)
     try {
-      await eliminarFilaSheets(uidCentral,'proyectos',pid)
-      await insertarFilaSheets(uidCentral,'proyectos',actualizado)
+      await actualizarFilaSheets(uidCentral,'proyectos',actualizado)
       if(uidResponsable!==uidCentral){
-        await eliminarFilaSheets(uidResponsable,'proyectos',pid)
-        await insertarFilaSheets(uidResponsable,'proyectos',actualizado)
+        await actualizarFilaSheets(uidResponsable,'proyectos',actualizado)
       }
     } catch(e){ console.error('Error actualizando proyecto:',e) }
   }
@@ -4686,8 +4925,7 @@ function TareasYProyectos({ data, setData, usuario }) {
     try {
       // Un proyecto "reconstruido" solo existe en pantalla: no se guarda como fila nueva.
       if(!proyectoOriginal._reconstruido) {
-        await eliminarFilaSheets(uidCentral, 'proyectos', pid)
-        await insertarFilaSheets(uidCentral, 'proyectos', proyectoActualizado)
+        await actualizarFilaSheets(uidCentral,'proyectos',proyectoActualizado)
       }
 
       if(subtareaActualizada) {
@@ -4709,12 +4947,10 @@ function TareasYProyectos({ data, setData, usuario }) {
           comentarios: subtareaActualizada.comentarios || '',
         }
 
-        await eliminarFilaSheets(uidCentral, 'subtareasProyectos', sid)
-        await insertarFilaSheets(uidCentral, 'subtareasProyectos', filaSubtarea)
+        await actualizarFilaSheets(uidCentral,'subtareasProyectos',filaSubtarea)
 
         if(uidResponsable !== uidCentral) {
-          await eliminarFilaSheets(uidResponsable, 'subtareasProyectos', sid)
-          await insertarFilaSheets(uidResponsable, 'subtareasProyectos', filaSubtarea)
+          await actualizarFilaSheets(uidResponsable,'subtareasProyectos',filaSubtarea)
         }
       }
 
@@ -4786,9 +5022,9 @@ function TareasYProyectos({ data, setData, usuario }) {
     const nd = {...data, proyectos: proyectosActualizados}
     const proyectoActualizado = proyectosActualizados.find(p=>p.id===pid)
     setData(nd)
-    const destinoUid = obtenerUidResponsable(proyectoActualizado?.responsable)
-    eliminarFilaSheets(destinoUid,'proyectos',pid)
-      .then(()=>proyectoActualizado&&insertarFilaSheets(destinoUid,'proyectos',proyectoActualizado))
+    const proyectoOriginal = proyectos.find(p=>p.id===pid)
+    eliminarFilaSheets('distribucion','subtareasProyectos',sid)
+      .then(()=>proyectoActualizado&&!proyectoOriginal?._reconstruido&&actualizarFilaSheets('distribucion','proyectos',proyectoActualizado))
       .catch(e=>console.error('Error eliminando subtarea:',e))
     if(proyectoActivo?.id===pid) setProyectoActivo(nd.proyectos.find(p=>p.id===pid))
   }
@@ -5221,8 +5457,7 @@ function TareasEquipo({ asignadas, personales, mostrarPersonales=true, onRefresh
     const actualizada = {...editando,...form}
     const tipoSheet = tipo==='asignadas'?'tareasAsignadas':'misTareas'
     try {
-      await eliminarFilaSheets('distribucion',tipoSheet,actualizada.id)
-      await insertarFilaSheets('distribucion',tipoSheet,actualizada)
+      await actualizarFilaSheets('distribucion',tipoSheet,actualizada)
 
       const uidAnterior = obtenerUidResponsable(editando.responsable)
       const uidNuevo = obtenerUidResponsable(actualizada.responsable)
@@ -5231,8 +5466,7 @@ function TareasEquipo({ asignadas, personales, mostrarPersonales=true, onRefresh
         await eliminarFilaSheets(uidAnterior,tipoSheet,actualizada.id)
       }
       if(uidNuevo!=='distribucion') {
-        await eliminarFilaSheets(uidNuevo,tipoSheet,actualizada.id)
-        await insertarFilaSheets(uidNuevo,tipoSheet,actualizada)
+        await actualizarFilaSheets(uidNuevo,tipoSheet,actualizada)
       }
 
       if(tipo==='asignadas' && normalizarNombreResponsable(editando.responsable)!==normalizarNombreResponsable(actualizada.responsable)) {
@@ -5324,7 +5558,7 @@ function AsignarTareasEquipo({ usuario }) {
   })
 
   const refrescar = async () => {
-    const fuentes = ['distribucion','industria','juan','camilo','julian']
+    const fuentes = ['distribucion'] // todo está en el archivo central
 
     const dedupe = lista => {
       const mapa = new Map()
@@ -5592,7 +5826,7 @@ function DashboardLider({ initialTab='equipo', hideTabs=false }) {
   const [formPend, setFormPend] = useState({nombre:'',descripcion:'',responsable:'',areas:[],fechaLimite:'',estado:'Pendiente',prioridad:'Media'})
 
   const refrescarTareasCentral = async () => {
-    const fuentes = ['distribucion','industria','juan','camilo','julian']
+    const fuentes = ['distribucion'] // todo está en el archivo central
 
     const dedupe = lista => {
       const mapa = new Map()
@@ -7014,7 +7248,13 @@ export default function App() {
       setSheetsLoading(true)
       setSheetsSync('syncing')
       const loadTimeout = setTimeout(() => setSheetsLoading(false), 5000)
-      cargarDesdeSheets(uidCarga).then(sheetData => {
+      Promise.all([
+        cargarDesdeSheets(uidCarga),
+        uidCarga==='distribucion' ? Promise.resolve(null) : cargarDesdeSheets('distribucion'),
+      ]).then(([sheetDataPropio, central]) => {
+        const sheetData = sheetDataPropio
+        // Tareas y proyectos salen SIEMPRE del archivo central.
+        if(sheetData && central) TIPOS_TAREAS.forEach(k => { sheetData[k] = central[k] || [] })
         clearTimeout(loadTimeout)
         setSheetsLoading(false)
         if(sheetData) {
@@ -7102,6 +7342,7 @@ export default function App() {
 
   const TABS_LIDER = [
     {id:'tableroEquipo',label:'Tablero del equipo',icon:Users},
+    {id:'indicadores',label:'Indicadores',icon:TrendingUp},
     {id:'dashboardFinanciero',label:'Dashboard financiero',icon:LayoutDashboard},
     {id:'dashboardEquipo',label:'Dashboard de tiempos',icon:BarChart2},
     {id:'asignarTareas',label:'Tareas asignadas',icon:ListTodo},
@@ -7267,6 +7508,7 @@ export default function App() {
           {esLider && tab==='notificaciones' && <NotificacionesEquipo/>}
           {esLider && tab==='tareasProyectos' && <TareasYProyectos data={data} setData={setDataUser} usuario={usuario}/>}
           {esLider && tab==='tableroEquipo' && <TableroEquipo/>}
+          {esLider && tab==='indicadores' && <IndicadoresEquipo/>}
           {!esLider && !esMercadeoGeneral && tab==='miSemana' && <MiSemana data={data} usuario={usuario} onIr={setTab}/>}
           {esPresupuesto && tab==='dashboard' && <PresupuestoConsolidado/>}
           {esPresupuesto && tab==='tareasasignadas' && <TareasAsignadas data={data} setData={setDataUser} usuario={usuario}/>}
