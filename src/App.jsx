@@ -4684,8 +4684,11 @@ function TareasYProyectos({ data, setData, usuario }) {
     const uidResponsable = obtenerUidResponsable(subtareaActualizada?.responsable)
 
     try {
-      await eliminarFilaSheets(uidCentral, 'proyectos', pid)
-      await insertarFilaSheets(uidCentral, 'proyectos', proyectoActualizado)
+      // Un proyecto "reconstruido" solo existe en pantalla: no se guarda como fila nueva.
+      if(!proyectoOriginal._reconstruido) {
+        await eliminarFilaSheets(uidCentral, 'proyectos', pid)
+        await insertarFilaSheets(uidCentral, 'proyectos', proyectoActualizado)
+      }
 
       if(subtareaActualizada) {
         const filaSubtarea = {
@@ -4959,9 +4962,32 @@ function TareasYProyectos({ data, setData, usuario }) {
         </select>
         <button onClick={()=>setModalProyecto(true)} style={{...S.btn('var(--accent)','#fff'),marginLeft:'auto'}}><PlusCircle size={15}/> Nuevo proyecto</button>
       </div>
-      {!esLiderProyecto&&tipoVista==='grupales'&&(
-        <div style={{fontSize:12,color:'var(--text3)',marginTop:-6}}>Proyectos de otras personas donde tienes actividades. Las tuyas aparecen resaltadas.</div>
-      )}
+      {!esLiderProyecto&&tipoVista==='grupales'&&(()=>{
+        const mias = proyectosGrupales.flatMap(p=>misSubtareasDe(p).map(s=>({...s,__pid:p.id,__proy:p.nombre})))
+        return (
+          <>
+            {mias.length>0&&(
+              <div style={{background:'linear-gradient(180deg, #e0f2fe 0%, #f0f9ff 100%)',border:'1px solid #bae6fd',borderRadius:16,padding:'16px 16px 18px',display:'flex',flexDirection:'column',gap:12}}>
+                <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+                  <span style={{fontSize:20}}>📌</span>
+                  <div style={{flex:1}}>
+                    <div style={{fontWeight:800,fontSize:15,color:'#0c4a6e'}}>Mis actividades en proyectos grupales</div>
+                    <div style={{fontSize:12,color:'#0369a1'}}>Lo que te toca a ti. Cambia el estado o deja un avance aquí mismo.</div>
+                  </div>
+                  <span style={{fontSize:12,fontWeight:800,background:'#0284c7',color:'#fff',borderRadius:999,padding:'4px 12px'}}>{mias.filter(x=>!estaCerrada(x)).length} abiertas</span>
+                </div>
+                <SeccionesPorEstado items={mias} render={s=>(
+                  <TarjetaTarea key={s.__pid+'_'+s.id} t={s} autor={personaActual}
+                    origen={`🗂️ ${s.__proy}`}
+                    onEstado={e=>cambiarEstadoSub(s.__pid,s.id,e)}
+                    onComentar={x=>comentarSub(s.__pid,s,x)}/>
+                )}/>
+              </div>
+            )}
+            <div style={{fontSize:12,color:'var(--text3)',marginTop:mias.length?4:-6}}>{mias.length?'Proyectos completos donde participas:':'Proyectos de otras personas donde tienes actividades. Las tuyas aparecen resaltadas.'}</div>
+          </>
+        )
+      })()}
 
       {proyFiltrados.length===0&&(
         <div style={{...S.card,padding:48,textAlign:'center',color:'var(--text3)'}}>
@@ -5099,19 +5125,25 @@ function TareasYProyectos({ data, setData, usuario }) {
 // ═══════════════════════════════════════════════════════
 const USUARIOS = [
   { id:'industria',    nombre:'Industria',          pass:'ind2026',   color:'#06b6d4', rol:'normal' },
-  { id:'distribucion', nombre:'Distribución',        pass:'0000',      color:'#3dd68c', rol:'normal' },
+  { id:'distribucion', nombre:'Distribución',        pass:'0000',      color:'#ec4899', rol:'normal' },
   { id:'zonas',        nombre:'Zonas Directas',      pass:'zon2026',   color:'#ff9f43', rol:'normal' },
   { id:'presupuesto',  nombre:'Presupuesto (Juan)',  pass:'pres2026',  color:'#a78bfa', rol:'presupuesto' },
   { id:'lider',        nombre:'Líder de Mercadeo',   pass:'lider2026', color:'#f59e0b', rol:'lider' },
-  { id:'diseno',       nombre:'Diseño · Camilo',     pass:'dis2026x',  color:'#ec4899', rol:'colaborador' },
-  { id:'julian',       nombre:'Comunicaciones · Brayan', pass:'jul2026', color:'#14b8a6', rol:'colaborador' },
+  { id:'diseno',       nombre:'Diseño · Camilo',     pass:'dis2026x',  color:'#0d9488', rol:'colaborador' },
+  { id:'julian',       nombre:'Comunicaciones · Brayan', pass:'jul2026', color:'#2457d6', rol:'colaborador' },
   { id:'mercadeoGeneral', nombre:'Mercadeo General',   pass:'merc2026',  color:'#a855f7', rol:'mercadeo' },
 ]
 const AUTH_KEY = 'prolub_auth'
 const getStorageKey = uid => 'tracker_v3_'+uid
 
 function getSessionUser() {
-  try { const s=localStorage.getItem(AUTH_KEY); return s?JSON.parse(s):null } catch { return null }
+  try {
+    const s=localStorage.getItem(AUTH_KEY)
+    if(!s) return null
+    const u=JSON.parse(s)
+    const actual=(typeof USUARIOS!=='undefined'?USUARIOS:[]).find(x=>x.id===u.id)
+    return actual ? {...u,color:actual.color,nombre:actual.nombre} : u
+  } catch { return null }
 }
 
 function hexToRgb(hex) {
@@ -6669,6 +6701,11 @@ function PresupuestoConsolidado() {
 function CampanaNotificaciones({usuario,data,onIr}) {
   const [abierta,setAbierta] = useState(false)
   const [central,setCentral] = useState(null)
+  // Notificaciones leídas: se recuerdan en este navegador para cada perfil.
+  const claveLeidas = 'proli_notif_leidas_'+(usuario?.id||'')
+  const [leidas,setLeidas] = useState(()=>{ try { return new Set(JSON.parse(localStorage.getItem(claveLeidas)||'[]')) } catch { return new Set() } })
+  const [nuevasSesion,setNuevasSesion] = useState([])
+  const [verAnteriores,setVerAnteriores] = useState(false)
 
   useEffect(()=>{
     if(usuario?.rol==='lider') {
@@ -6700,7 +6737,25 @@ function CampanaNotificaciones({usuario,data,onIr}) {
       {id:'st-crea-'+s.id,titulo:`Subtarea asignada a ${s.responsable||'el equipo'}`,detalle:`${s.proyectoNombre||'Proyecto'} · ${s.nombre||'Subtarea'}`,fecha:s.fechaCreacion||'',finalizada:false,destino:'tareasProyectos'},
       ...(s.estado==='Finalizada'?[{id:'st-fin-'+s.id,titulo:`${s.responsable||'El equipo'} finalizó una subtarea`,detalle:`${s.proyectoNombre||'Proyecto'} · ${s.nombre||'Subtarea'}`,fecha:s.fechaFinalizacion||'',finalizada:true,destino:'tareasProyectos'}]:[])
     ]),
-  ].sort((a,b)=>String(b.fecha||'').localeCompare(String(a.fecha||''))).slice(0,30)
+  ].filter(m=>esLider||!m.id.startsWith('mp-crea-'))
+   .sort((a,b)=>String(b.fecha||'').localeCompare(String(a.fecha||''))).slice(0,30)
+
+  const noLeidas = movimientos.filter(m=>!leidas.has(m.id))
+  const guardarLeidas = set => {
+    setLeidas(set)
+    try { localStorage.setItem(claveLeidas, JSON.stringify([...set].slice(-600))) } catch {}
+  }
+  const alternar = () => {
+    if(!abierta) {
+      // Al abrir: se muestran las nuevas y quedan marcadas como leídas.
+      setNuevasSesion(noLeidas.map(m=>m.id))
+      setVerAnteriores(false)
+      if(noLeidas.length) { const set=new Set(leidas); noLeidas.forEach(m=>set.add(m.id)); guardarLeidas(set) }
+    }
+    setAbierta(v=>!v)
+  }
+  const nuevas = movimientos.filter(m=>nuevasSesion.includes(m.id))
+  const anteriores = movimientos.filter(m=>!nuevasSesion.includes(m.id))
 
   const pendientes =
     (fuente.tareasAsignadas||[]).filter(t=>propios(t)&&t.estado!=='Finalizada'&&t.estado!=='Cancelada').length +
@@ -6710,9 +6765,9 @@ function CampanaNotificaciones({usuario,data,onIr}) {
 
   return (
     <div style={{position:'relative'}}>
-      <button onClick={()=>setAbierta(v=>!v)} title="Notificaciones" style={{width:36,height:36,borderRadius:10,background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.16)',display:'grid',placeItems:'center',cursor:'pointer',position:'relative'}}>
+      <button onClick={alternar} title="Notificaciones" style={{width:36,height:36,borderRadius:10,background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.16)',display:'grid',placeItems:'center',cursor:'pointer',position:'relative'}}>
         <Bell size={16} color="#fff"/>
-        {pendientes>0&&<span style={{position:'absolute',top:-5,right:-5,minWidth:18,height:18,padding:'0 4px',borderRadius:10,background:'#ef4444',color:'#fff',fontSize:9,fontWeight:800,display:'grid',placeItems:'center',border:'2px solid var(--sidebar-bg)'}}>{pendientes>99?'99+':pendientes}</span>}
+        {noLeidas.length>0&&<span style={{position:'absolute',top:-5,right:-5,minWidth:18,height:18,padding:'0 4px',borderRadius:10,background:'#ef4444',color:'#fff',fontSize:9,fontWeight:800,display:'grid',placeItems:'center',border:'2px solid var(--sidebar-bg)'}}>{noLeidas.length>99?'99+':noLeidas.length}</span>}
       </button>
       {abierta&&(
         <div style={{position:'absolute',right:0,top:44,width:360,maxHeight:430,overflowY:'auto',background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:12,boxShadow:'0 16px 45px rgba(0,0,0,.25)',zIndex:500,padding:10}}>
@@ -6721,7 +6776,9 @@ function CampanaNotificaciones({usuario,data,onIr}) {
             <span style={{fontSize:10,color:'var(--text3)'}}>{movimientos.length}</span>
           </div>
           {movimientos.length===0&&<div style={{padding:24,textAlign:'center',fontSize:12,color:'var(--text3)'}}>Sin movimientos todavía.</div>}
-          {movimientos.map(m=>(
+          {movimientos.length>0&&nuevas.length===0&&<div style={{padding:'14px 8px',textAlign:'center',fontSize:12,color:'var(--green)',fontWeight:700}}>✓ Estás al día, no hay notificaciones nuevas</div>}
+          {nuevas.length>0&&<div style={{fontSize:10,fontWeight:800,color:'#f15a22',padding:'4px 8px',textTransform:'uppercase',letterSpacing:'.05em'}}>Nuevas · {nuevas.length}</div>}
+          {nuevas.map(m=>(
             <button key={m.id} onClick={()=>{setAbierta(false);onIr?.(m.destino)}} style={{width:'100%',textAlign:'left',background:'transparent',border:'none',borderTop:'1px solid var(--border)',padding:'10px 8px',cursor:'pointer',fontFamily:'var(--font)'}}>
               <div style={{display:'flex',gap:9}}>
                 <div style={{width:28,height:28,borderRadius:8,display:'grid',placeItems:'center',flexShrink:0,background:m.finalizada?'var(--green-soft)':'var(--accent-soft)',color:m.finalizada?'var(--green)':'var(--accent2)'}}>{m.finalizada?'✓':'!'}</div>
@@ -6729,6 +6786,21 @@ function CampanaNotificaciones({usuario,data,onIr}) {
               </div>
             </button>
           ))}
+          {anteriores.length>0&&(
+            <button onClick={()=>setVerAnteriores(v=>!v)} style={{width:'100%',border:'none',borderTop:'1px solid var(--border)',background:'transparent',padding:'10px 8px',fontSize:11.5,fontWeight:700,color:'var(--accent2)',cursor:'pointer',textAlign:'left',fontFamily:'var(--font)'}}>
+              {verAnteriores?'Ocultar anteriores':`Ver anteriores (${anteriores.length})`}
+            </button>
+          )}
+          {verAnteriores&&<div style={{opacity:.6}}>
+          {anteriores.map(m=>(
+            <button key={m.id} onClick={()=>{setAbierta(false);onIr?.(m.destino)}} style={{width:'100%',textAlign:'left',background:'transparent',border:'none',borderTop:'1px solid var(--border)',padding:'10px 8px',cursor:'pointer',fontFamily:'var(--font)'}}>
+              <div style={{display:'flex',gap:9}}>
+                <div style={{width:28,height:28,borderRadius:8,display:'grid',placeItems:'center',flexShrink:0,background:m.finalizada?'var(--green-soft)':'var(--accent-soft)',color:m.finalizada?'var(--green)':'var(--accent2)'}}>{m.finalizada?'✓':'!'}</div>
+                <div style={{minWidth:0}}><div style={{fontSize:11,fontWeight:700,color:'var(--text)'}}>{m.titulo}</div><div style={{fontSize:11,color:'var(--text2)',marginTop:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{m.detalle}</div>{m.fecha&&<div style={{fontSize:9,color:'var(--text3)',marginTop:3}}>{String(m.fecha)}</div>}</div>
+              </div>
+            </button>
+          ))}
+          </div>}
         </div>
       )}
     </div>
