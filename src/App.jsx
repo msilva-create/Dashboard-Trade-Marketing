@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { LayoutDashboard, TrendingUp, DollarSign, ListTodo, PlusCircle, Trash2, Edit2, X, Download, BarChart2, Bell, ShoppingCart, BookOpen, Check, MessageCircle, Bot, Send, Search } from 'lucide-react'
+import { LayoutDashboard, TrendingUp, DollarSign, ListTodo, PlusCircle, Trash2, Edit2, X, Download, BarChart2, Bell, ShoppingCart, BookOpen, Check, MessageCircle, Bot, Send, Search, Users, CalendarDays } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts'
 import * as XLSX from 'xlsx'
 
@@ -127,7 +127,8 @@ const CAMPOS_MAP = {
     fechaFinalizacion:'fechaFinalizacion',
     tiempoValor:'tiempoValor',
     tiempoUnidad:'tiempoUnidad',
-    tiempoMinutos:'tiempoMinutos'
+    tiempoMinutos:'tiempoMinutos',
+    comentarios:'comentarios'
   },
   misTareas: {
     id:'id',
@@ -142,10 +143,11 @@ const CAMPOS_MAP = {
     fechaFinalizacion:'fechaFinalizacion',
     tiempoValor:'tiempoValor',
     tiempoUnidad:'tiempoUnidad',
-    tiempoMinutos:'tiempoMinutos'
+    tiempoMinutos:'tiempoMinutos',
+    comentarios:'comentarios'
   },
   proyectos:    { id:'id', nombre:'nombre', descripcion:'descripcion', responsable:'responsable', areas:'areas', fechaEntrega:'fechaEntrega', estado:'estado', prioridad:'prioridad', creadoPor:'creadoPor', subtareas:'subtareas', fechaCreacion:'fechaCreacion', fechaFinalizacion:'fechaFinalizacion', tiempoTotalMinutos:'tiempoTotalMinutos', totalSubtareas:'totalSubtareas', correoFinalEnviado:'correoFinalEnviado' },
-  subtareasProyectos: { id:'id', proyecto:'proyecto', nombre:'nombre', descripcion:'descripcion', responsable:'responsable', fechaEntrega:'fechaEntrega', estado:'estado', prioridad:'prioridad', areas:'areas', creadoPor:'creadoPor', fechaCreacion:'fechaCreacion', fechaFinalizacion:'fechaFinalizacion', tiempoValor:'tiempoValor', tiempoUnidad:'tiempoUnidad', tiempoMinutos:'tiempoMinutos' },
+  subtareasProyectos: { id:'id', proyecto:'proyecto', nombre:'nombre', descripcion:'descripcion', responsable:'responsable', fechaEntrega:'fechaEntrega', estado:'estado', prioridad:'prioridad', areas:'areas', creadoPor:'creadoPor', fechaCreacion:'fechaCreacion', fechaFinalizacion:'fechaFinalizacion', tiempoValor:'tiempoValor', tiempoUnidad:'tiempoUnidad', tiempoMinutos:'tiempoMinutos', comentarios:'comentarios' },
 }
 
 // ── FECHAS ── "2026-11-18T05:00:00.000Z" → "2026-11-18" (hora de Colombia)
@@ -154,6 +156,14 @@ function limpiarFechaISO(val) {
   const d = new Date(val)
   if(isNaN(d)) return val
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+// Google Sheets convirtió nombres como "7 de agosto" en fecha. Se recupera el texto.
+const MESES_NOMBRE = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre']
+function recuperarNombre(val) {
+  if(typeof val !== 'string' || !/^\d{4}-\d{2}-\d{2}(T|$)/.test(val)) return val
+  const d = val.length > 10 ? new Date(val) : new Date(val+'T12:00:00')
+  if(isNaN(d)) return val
+  return `${d.getDate()} de ${MESES_NOMBRE[d.getMonth()]}`
 }
 function limpiarFechasObj(o) {
   if(!o || typeof o !== 'object') return o
@@ -227,6 +237,7 @@ function fromSheetRow(tipo, row) {
     // Fechas límite/entrega: Google Sheets las devuelve como "2026-11-18T05:00:00.000Z".
     // Se muestran como fecha simple "2026-11-18" (hora de Colombia).
     if(appKey.startsWith('fecha')) val = limpiarFechaISO(val)
+    if((appKey === 'nombre' || appKey === 'proyecto') && ['proyectos','subtareasProyectos','tareasAsignadas','misTareas'].includes(tipo)) val = recuperarNombre(val)
     if(appKey === 'tiposPlan' && typeof val === 'string') {
       val = val.split(',').map(s=>s.trim()).filter(Boolean)
     }
@@ -2963,6 +2974,406 @@ function Asistente({ data, setData, onClose }) {
 // ═══════════════════════════════════════════════════════
 // TAREAS ASIGNADAS — vista del canal
 // ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+// COMPONENTES COMPARTIDOS DE TAREAS (diseño limpio)
+// ═══════════════════════════════════════════════════════
+const ORDEN_ESTADOS = {'En proceso':0,'Pendiente':1,'Finalizada':3,'Listo':3,'Cancelada':4}
+const fechaLimiteItem = t => t?.fechaLimite || t?.fechaEntrega || ''
+const estaCerrada = t => ['Finalizada','Listo','Cancelada'].includes(t?.estado)
+
+function diasParaVencer(t) {
+  const f = parseFechaFlexible(fechaLimiteItem(t))
+  if(!f) return null
+  const hoy = new Date(); hoy.setHours(0,0,0,0)
+  const d = new Date(f); d.setHours(0,0,0,0)
+  return Math.round((d-hoy)/86400000)
+}
+
+function ordenarTareas(lista) {
+  return lista.slice().sort((a,b)=>{
+    const ea = ORDEN_ESTADOS[a.estado] ?? (a.estado?2:1), eb = ORDEN_ESTADOS[b.estado] ?? (b.estado?2:1)
+    if(ea!==eb) return ea-eb
+    return String(fechaLimiteItem(a)||'9999').localeCompare(String(fechaLimiteItem(b)||'9999'))
+  })
+}
+
+// Comentarios guardados como texto JSON: [{a:autor, f:fecha, t:texto}]
+function parseComentarios(v) {
+  if(Array.isArray(v)) return v
+  if(!v) return []
+  try { const r = JSON.parse(v); return Array.isArray(r) ? r : [] } catch { return [] }
+}
+function agregarComentarioA(item, autor, texto) {
+  const lista = parseComentarios(item?.comentarios)
+  const f = new Date()
+  const fecha = `${f.getFullYear()}-${String(f.getMonth()+1).padStart(2,'0')}-${String(f.getDate()).padStart(2,'0')} ${String(f.getHours()).padStart(2,'0')}:${String(f.getMinutes()).padStart(2,'0')}`
+  return JSON.stringify([...lista, {a:autor, f:fecha, t:texto}])
+}
+
+const COLOR_ESTADO = {
+  'En proceso':{c:'#2457d6',bg:'#dbeafe'},
+  'Pendiente':{c:'#b45309',bg:'#fef3c7'},
+  'Finalizada':{c:'var(--green)',bg:'var(--green-soft)'},
+  'Listo':{c:'var(--green)',bg:'var(--green-soft)'},
+  'Cancelada':{c:'#64748b',bg:'#f1f5f9'},
+}
+
+// Un color por persona para reconocerla de un vistazo.
+const COLOR_PERSONA = {
+  'emma':{c:'#f15a22',bg:'#ffedd5'},
+  'maria p':{c:'#db2777',bg:'#fce7f3'},
+  'juan':{c:'#d97706',bg:'#fef3c7'},
+  'camilo':{c:'#0d9488',bg:'#ccfbf1'},
+  'brayan':{c:'#2457d6',bg:'#dbeafe'},
+}
+const colorPersona = n => COLOR_PERSONA[normalizarNombreResponsable(n)] || {c:'#475569',bg:'#e2e8f0'}
+
+// Chip de origen con color: asignada (cian), personal (ámbar), proyecto (rosa)
+function ChipOrigen({ texto }) {
+  const t = String(texto||'')
+  const estilo = t.startsWith('✍️') ? {c:'#0e7490',bg:'#cffafe'} : t.startsWith('🙋') ? {c:'#b45309',bg:'#fef3c7'} : t.startsWith('🗂️') ? {c:'#be185d',bg:'#fce7f3'} : {c:'#475569',bg:'#f1f5f9'}
+  return <span style={{fontSize:10.5,fontWeight:700,padding:'2px 8px',borderRadius:999,background:estilo.bg,color:estilo.c,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:260}}>{t}</span>
+}
+
+// Secciones: En proceso → Pendientes → Otros → Finalizadas (plegadas) → Canceladas (plegadas)
+function SeccionesPorEstado({ items, render, vacio='No hay tareas.' }) {
+  const [abiertas, setAbiertas] = useState({})
+  const grupos = [
+    ['proceso','En proceso','#2457d6',t=>t.estado==='En proceso',false],
+    ['pendiente','Pendientes','#d97706',t=>!t.estado||t.estado==='Pendiente',false],
+    ['otros','Otros','var(--text3)',t=>t.estado&&!(t.estado in ORDEN_ESTADOS),false],
+    ['fin','Finalizadas','var(--green)',t=>t.estado==='Finalizada'||t.estado==='Listo',true],
+    ['cancel','Canceladas','#94a3b8',t=>t.estado==='Cancelada',true],
+  ]
+  if(!items.length) return <div style={{...S.card,padding:36,textAlign:'center',color:'var(--text3)',fontSize:13}}>{vacio}</div>
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:14}}>
+      {grupos.map(([id,titulo,color,filtro,plegable])=>{
+        const lista = ordenarTareas(items.filter(filtro))
+        if(!lista.length) return null
+        const abierto = !plegable || abiertas[id]
+        return (
+          <div key={id} style={{display:'flex',flexDirection:'column',gap:8}}>
+            <div onClick={plegable?()=>setAbiertas(a=>({...a,[id]:!a[id]})):undefined} style={{display:'flex',alignItems:'center',gap:8,cursor:plegable?'pointer':'default',userSelect:'none'}}>
+              <span style={{width:8,height:8,borderRadius:'50%',background:color}}/>
+              <span style={{fontSize:13,fontWeight:700,color:'var(--text)'}}>{titulo}</span>
+              <span style={{fontSize:12,color:'var(--text3)'}}>{lista.length}</span>
+              {plegable&&<span style={{fontSize:12,color:'var(--accent2)',fontWeight:600}}>{abierto?'Ocultar':'Mostrar'}</span>}
+              <div style={{flex:1,height:1,background:'var(--border)'}}/>
+            </div>
+            {abierto&&lista.map(render)}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function ComentariosTarea({ comentarios, autor, onAgregar }) {
+  const lista = parseComentarios(comentarios)
+  const [texto, setTexto] = useState('')
+  const [guardando, setGuardando] = useState(false)
+  const enviar = async () => {
+    const t = texto.trim()
+    if(!t || guardando) return
+    setGuardando(true)
+    try { await onAgregar(t); setTexto('') } finally { setGuardando(false) }
+  }
+  return (
+    <div onClick={e=>e.stopPropagation()} style={{borderTop:'1px dashed var(--border2)',paddingTop:10,display:'flex',flexDirection:'column',gap:7}}>
+      {lista.length===0&&<div style={{fontSize:11.5,color:'var(--text3)'}}>Aún no hay comentarios de avance.</div>}
+      {lista.map((c,i)=>(
+        <div key={i} style={{fontSize:12,background:'var(--bg3)',borderRadius:8,padding:'7px 10px'}}>
+          <div style={{fontSize:10.5,color:'var(--text3)',marginBottom:2}}><strong style={{color:'var(--accent2)'}}>{c.a}</strong> · {c.f}</div>
+          <div style={{color:'var(--text)',whiteSpace:'pre-wrap'}}>{c.t}</div>
+        </div>
+      ))}
+      <div style={{display:'flex',gap:6}}>
+        <input value={texto} onChange={e=>setTexto(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')enviar()}}
+          placeholder={`Escribe un avance como ${autor}...`} style={{flex:1,fontSize:12}}/>
+        <button disabled={guardando||!texto.trim()} onClick={enviar} style={{...S.btn(texto.trim()?'var(--accent)':'var(--bg3)',texto.trim()?'#fff':'var(--text3)'),fontSize:12,padding:'6px 12px'}}>
+          {guardando?'…':'Agregar'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// Tarjeta única para tareas asignadas, personales y subtareas.
+function TarjetaTarea({ t, origen, autor, onEstado, onEditar, onEliminar, onComentar, extra }) {
+  const [verComentarios, setVerComentarios] = useState(false)
+  const cerrada = estaCerrada(t)
+  const ce = COLOR_ESTADO[t.estado] || COLOR_ESTADO['Pendiente']
+  const nComentarios = parseComentarios(t.comentarios).length
+  return (
+    <div style={{...S.card,padding:'12px 16px',borderLeft:'3px solid '+ce.c,display:'flex',flexDirection:'column',gap:8,opacity:cerrada?.88:1}}>
+      <div style={{display:'flex',gap:12,alignItems:'flex-start'}}>
+        <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',gap:5}}>
+          <div style={{display:'flex',gap:7,alignItems:'center',flexWrap:'wrap'}}>
+            <span style={{fontWeight:700,fontSize:13.5,color:'var(--text)',textDecoration:t.estado==='Cancelada'?'line-through':'none'}}>{t.nombre}</span>
+            {!cerrada&&fechaLimiteItem(t)&&<BadgeVencimiento item={t}/>}
+            {(t.prioridad==='Alta'||t.prioridad==='Urgente')&&<BadgePrioridad prioridad={t.prioridad}/>}
+          </div>
+          {t.descripcion&&<div style={{fontSize:12,color:'var(--text2)',lineHeight:1.4,display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{t.descripcion}</div>}
+          <div style={{display:'flex',gap:12,flexWrap:'wrap',fontSize:11,color:'var(--text3)'}}>
+            {origen&&<ChipOrigen texto={origen}/>}
+            {fechaLimiteItem(t)&&<span>📅 {String(fechaLimiteItem(t)).slice(0,10)}</span>}
+            {Number(t.tiempoMinutos)>0&&<span style={{color:'var(--green)'}}>⏱️ {formatoTiempoTarea(t)}</span>}
+            {cerrada&&t.fechaFinalizacion&&<span>✅ {String(t.fechaFinalizacion).slice(0,10).replace(/,$/,'')}</span>}
+            {extra}
+          </div>
+        </div>
+        <div style={{display:'flex',gap:4,alignItems:'center',flexShrink:0}}>
+          <select value={t.estado||'Pendiente'} onChange={e=>onEstado(e.target.value)}
+            style={{fontSize:11.5,padding:'5px 8px',borderRadius:8,border:'1px solid transparent',background:ce.bg,color:ce.c,fontWeight:700,cursor:'pointer',width:'auto'}}>
+            {['Pendiente','En proceso','Finalizada','Cancelada'].map(s=><option key={s}>{s}</option>)}
+          </select>
+          {onComentar&&<button title="Comentarios de avance" onClick={()=>setVerComentarios(v=>!v)} style={{border:'none',background:verComentarios?'var(--accent-soft)':'transparent',borderRadius:7,cursor:'pointer',color:nComentarios?'var(--accent2)':'var(--text3)',padding:'5px 7px',fontSize:12,fontWeight:700,display:'flex',alignItems:'center',gap:3}}>
+            <MessageCircle size={14}/>{nComentarios>0&&nComentarios}
+          </button>}
+          {onEditar&&<button title="Editar" onClick={onEditar} style={{border:'none',background:'transparent',cursor:'pointer',color:'var(--text3)',padding:'5px 6px'}}><Edit2 size={13}/></button>}
+          {onEliminar&&<button title="Eliminar" onClick={onEliminar} style={{border:'none',background:'transparent',cursor:'pointer',color:'var(--text3)',padding:'5px 6px'}}><Trash2 size={13}/></button>}
+        </div>
+      </div>
+      {verComentarios&&onComentar&&<ComentariosTarea comentarios={t.comentarios} autor={autor} onAgregar={onComentar}/>}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════
+// MI SEMANA — lo que vence, junto, en un solo lugar
+// ═══════════════════════════════════════════════════════
+function etiquetaDias(d) {
+  if(d===null) return 'Sin fecha'
+  if(d<0) return `Vencida hace ${-d} día${d===-1?'':'s'}`
+  if(d===0) return 'Hoy'
+  if(d===1) return 'Mañana'
+  return `En ${d} días`
+}
+
+function subtareasDeData(data) {
+  const mapa = new Map()
+  ;[
+    ...(data.proyectos||[]).flatMap(p=>(Array.isArray(p.subtareas)?p.subtareas:[]).map(s=>({...s,proyecto:s.proyecto||p.nombre}))),
+    ...(data.subtareasProyectos||[]),
+  ].forEach(s=>{
+    const x = {...limpiarFechasObj(s),proyecto:recuperarNombre(s.proyecto),nombre:recuperarNombre(s.nombre)}
+    const k = String(x.id||`${x.proyecto}_${x.nombre}`)
+    const prev = mapa.get(k)
+    const score = y => (y.fechaFinalizacion?2:0)+(estaCerrada(y)?1:0)
+    if(!prev || score(x)>=score(prev)) mapa.set(k,x)
+  })
+  return [...mapa.values()]
+}
+
+function FilaSemana({ t, onIr }) {
+  const ce = COLOR_ESTADO[t.estado] || COLOR_ESTADO['Pendiente']
+  const d = diasParaVencer(t)
+  return (
+    <div onClick={()=>onIr&&onIr(t.__destino)} style={{...S.card,padding:'10px 14px',display:'flex',alignItems:'center',gap:10,cursor:'pointer',borderLeft:'3px solid '+ce.c}}>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontWeight:700,fontSize:13,color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.nombre}</div>
+        <div style={{marginTop:4,display:'flex'}}><ChipOrigen texto={t.__origen}/></div>
+      </div>
+      <span style={{fontSize:11,fontWeight:700,padding:'3px 9px',borderRadius:999,background:ce.bg,color:ce.c,whiteSpace:'nowrap'}}>{t.estado||'Pendiente'}</span>
+      <span style={{fontSize:11.5,fontWeight:700,whiteSpace:'nowrap',minWidth:92,textAlign:'right',color:d!==null&&d<0?'var(--red)':d===0?'#dc2626':'var(--text2)'}}>{etiquetaDias(d)}</span>
+    </div>
+  )
+}
+
+function MiSemana({ data, usuario, onIr }) {
+  const persona = nombrePersonaPorUsuario(usuario)
+  const esMio = t => normalizarNombreResponsable(t.responsable)===normalizarNombreResponsable(persona)
+  const [verMas, setVerMas] = useState({})
+
+  const todas = [
+    ...(data.tareasAsignadas||[]).filter(esMio).map(t=>({...t,__origen:`✍️ Asignada por ${t.asignadoPor||NOMBRE_LIDER}`,__destino:'tareasasignadas'})),
+    ...(data.misTareas||[]).filter(esMio).map(t=>({...t,__origen:'🙋 Personal',__destino:'tareasProyectos'})),
+    ...subtareasDeData(data).filter(esMio).map(t=>({...t,__origen:`🗂️ ${t.proyecto||'Proyecto'}`,__destino:'tareasProyectos'})),
+  ]
+  const abiertas = todas.filter(t=>!estaCerrada(t))
+  const hace7 = new Date(); hace7.setHours(0,0,0,0); hace7.setDate(hace7.getDate()-7)
+  const hechasSemana = todas.filter(t=>(t.estado==='Finalizada'||t.estado==='Listo') && (parseFechaFlexible(t.fechaFinalizacion)||0) >= hace7)
+
+  const grupo = f => ordenarTareas(abiertas.filter(t=>f(diasParaVencer(t)))).sort((a,b)=>(diasParaVencer(a)??999)-(diasParaVencer(b)??999))
+  const vencidas = grupo(d=>d!==null&&d<0)
+  const hoy = grupo(d=>d===0)
+  const manana = grupo(d=>d===1)
+  const semana = grupo(d=>d!==null&&d>=2&&d<=7)
+  const despues = grupo(d=>d!==null&&d>7)
+  const sinFecha = grupo(d=>d===null)
+
+  const fechaHoyTxt = new Date().toLocaleDateString('es-CO',{weekday:'long',day:'numeric',month:'long'})
+  const fechaHoy = fechaHoyTxt.charAt(0).toUpperCase()+fechaHoyTxt.slice(1)
+  const chip = (n,label,color) => (
+    <div style={{...S.card,padding:'12px 14px',display:'flex',flexDirection:'column',gap:2,borderTop:'3px solid '+color,background:`linear-gradient(180deg, color-mix(in srgb, ${color} 9%, white) 0%, #fff 70%)`}}>
+      <span style={{fontSize:22,fontWeight:800,color}}>{n}</span>
+      <span style={{fontSize:11,color:'var(--text3)',fontWeight:600}}>{label}</span>
+    </div>
+  )
+  const seccion = (id,titulo,color,lista,plegada=false) => {
+    if(!lista.length) return null
+    const abierta = !plegada || verMas[id]
+    return (
+      <div key={id} style={{display:'flex',flexDirection:'column',gap:8}}>
+        <div onClick={plegada?()=>setVerMas(v=>({...v,[id]:!v[id]})):undefined} style={{display:'flex',alignItems:'center',gap:8,cursor:plegada?'pointer':'default'}}>
+          <span style={{width:8,height:8,borderRadius:'50%',background:color}}/>
+          <span style={{fontSize:13,fontWeight:700,color:'var(--text)'}}>{titulo}</span>
+          <span style={{fontSize:12,color:'var(--text3)'}}>{lista.length}</span>
+          {plegada&&<span style={{fontSize:12,color:'var(--accent2)',fontWeight:600}}>{abierta?'Ocultar':'Mostrar'}</span>}
+          <div style={{flex:1,height:1,background:'var(--border)'}}/>
+        </div>
+        {abierta&&lista.map(t=><FilaSemana key={t.__destino+'_'+t.id} t={t} onIr={onIr}/>)}
+      </div>
+    )
+  }
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:18,maxWidth:980}}>
+      <div>
+        <h2 style={{fontSize:20,margin:0}}>Hola {persona} 👋</h2>
+        <div style={{fontSize:12.5,color:'var(--text3)',marginTop:4}}>{fechaHoy}</div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:10}}>
+        {chip(vencidas.length,'Vencidas',vencidas.length?'#e03c3c':'#16a25a')}
+        {chip(hoy.length,'Vencen hoy',hoy.length?'#dc2626':'#64748b')}
+        {chip(manana.length+semana.length,'Resto de la semana','#f15a22')}
+        {chip(abiertas.filter(t=>t.estado==='En proceso').length,'En proceso','#2457d6')}
+        {chip(hechasSemana.length,'Hechas en 7 días','#16a25a')}
+      </div>
+      {!abiertas.length&&(
+        <div style={{...S.card,padding:40,textAlign:'center',color:'var(--text3)'}}>
+          <div style={{fontSize:30,marginBottom:8}}>🎉</div>
+          <div style={{fontWeight:700,color:'var(--text)'}}>No tienes pendientes abiertos</div>
+        </div>
+      )}
+      {seccion('venc','Vencidas','var(--red)',vencidas)}
+      {seccion('hoy','Hoy','#dc2626',hoy)}
+      {seccion('man','Mañana','#d97706',manana)}
+      {seccion('sem','Esta semana','#d97706',semana)}
+      {seccion('desp','Más adelante','#0d9488',despues,true)}
+      {seccion('sinf','Sin fecha límite','var(--text3)',sinFecha,true)}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════
+// TABLERO DEL EQUIPO (líder)
+// ═══════════════════════════════════════════════════════
+function TableroEquipo() {
+  const [items, setItems] = useState([])
+  const [cargando, setCargando] = useState(true)
+  const [abierto, setAbierto] = useState({})
+
+  const refrescar = async () => {
+    setCargando(true)
+    try {
+      const fuentes = ['distribucion','industria','juan','camilo','julian']
+      const resultados = (await Promise.all(fuentes.map(uid=>cargarDesdeSheets(uid).catch(()=>null)))).filter(Boolean)
+      const mapa = new Map()
+      const score = y => (y.fechaFinalizacion?2:0)+(Number(y.tiempoMinutos||0)>0?1:0)+(estaCerrada(y)?1:0)
+      const add = (tipo,x) => {
+        const k = tipo+'|'+String(x.id||x.nombre)
+        const prev = mapa.get(k)
+        if(!prev || score(x)>=score(prev)) mapa.set(k,{...x,__tipo:tipo})
+      }
+      resultados.forEach(d=>{
+        ;(d.tareasAsignadas||[]).forEach(t=>add('asignada',t))
+        ;(d.misTareas||[]).forEach(t=>add('personal',t))
+        subtareasDeData(d).forEach(t=>add('subtarea',t))
+      })
+      setItems([...mapa.values()])
+    } finally { setCargando(false) }
+  }
+  useEffect(()=>{ refrescar() },[])
+
+  const hace7 = new Date(); hace7.setHours(0,0,0,0); hace7.setDate(hace7.getDate()-7)
+  const origen = t => t.__tipo==='personal'?'🙋 Personal':t.__tipo==='subtarea'?`🗂️ ${t.proyecto||'Proyecto'}`:`✍️ ${t.asignadoPor||NOMBRE_LIDER}`
+
+  const personas = RESPONSABLES.map(nombre=>{
+    const mias = items.filter(t=>normalizarNombreResponsable(t.responsable)===normalizarNombreResponsable(nombre))
+    const abiertas = mias.filter(t=>!estaCerrada(t))
+    const vencidas = abiertas.filter(t=>{const d=diasParaVencer(t);return d!==null&&d<0})
+    const pronto = abiertas.filter(t=>{const d=diasParaVencer(t);return d!==null&&d>=0&&d<=2})
+    const hechas = mias.filter(t=>(t.estado==='Finalizada'||t.estado==='Listo')&&(parseFechaFlexible(t.fechaFinalizacion)||0)>=hace7)
+    const minutos = hechas.reduce((s,t)=>s+(Number(t.tiempoMinutos)||0),0)
+    const semaforo = vencidas.length ? {c:'#dc2626',bg:'#fee2e2',l:'Con vencidas'} : pronto.length ? {c:'#d97706',bg:'#fef3c7',l:'Atención'} : {c:'#16a34a',bg:'#dcfce7',l:'Al día'}
+    const urgentes = abiertas.slice().sort((a,b)=>(diasParaVencer(a)??999)-(diasParaVencer(b)??999))
+    return {nombre,abiertas,vencidas,pronto,hechas,minutos,semaforo,urgentes,enProceso:abiertas.filter(t=>t.estado==='En proceso')}
+  })
+  const tot = k => personas.reduce((s,p)=>s+p[k].length,0)
+
+  const mini = (n,label,color) => (
+    <div style={{background:`color-mix(in srgb, ${color} 8%, white)`,borderRadius:9,padding:'8px 6px',textAlign:'center'}}>
+      <div style={{fontSize:17,fontWeight:800,color}}>{n}</div>
+      <div style={{fontSize:10,color:'var(--text3)',fontWeight:600}}>{label}</div>
+    </div>
+  )
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:18}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+        <div>
+          <h2 style={{fontSize:20,margin:0}}>Tablero del equipo</h2>
+          <div style={{fontSize:12,color:'var(--text3)',marginTop:4}}>Tareas asignadas, personales y de proyectos de cada persona</div>
+        </div>
+        <button onClick={refrescar} style={S.btn('var(--bg3)','var(--text2)')}>{cargando?'Cargando…':'↻ Actualizar'}</button>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10}}>
+        {[[tot('abiertas'),'Abiertas','#f15a22'],[tot('enProceso'),'En proceso','#2457d6'],[tot('vencidas'),'Vencidas',tot('vencidas')?'#e03c3c':'#16a25a'],[tot('hechas'),'Hechas en 7 días','#0d9488']].map(([n,l,c])=>(
+          <div key={l} style={{...S.card,padding:'12px 14px',borderTop:'3px solid '+c,background:`linear-gradient(180deg, color-mix(in srgb, ${c} 9%, white) 0%, #fff 70%)`}}>
+            <div style={{fontSize:22,fontWeight:800,color:c}}>{n}</div>
+            <div style={{fontSize:11,color:'var(--text3)',fontWeight:600}}>{l}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(300px,1fr))',gap:14}}>
+        {personas.map(p=>{
+          const lista = abierto[p.nombre] ? p.urgentes : p.urgentes.slice(0,4)
+          return (
+            <div key={p.nombre} style={{...S.card,padding:'14px 16px',display:'flex',flexDirection:'column',gap:12,borderTop:'3px solid '+p.semaforo.c}}>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <div style={{width:38,height:38,borderRadius:'50%',background:colorPersona(p.nombre).c,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:15,boxShadow:`0 3px 10px ${colorPersona(p.nombre).bg}`}}>{p.nombre.charAt(0)}</div>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:800,fontSize:15,color:'var(--text)'}}>{p.nombre}</div>
+                  <div style={{fontSize:11,color:'var(--text3)'}}>⏱️ {p.minutos?formatoTiempoTarea({tiempoMinutos:p.minutos}):'Sin tiempo'} en 7 días</div>
+                </div>
+                <span style={{fontSize:11,fontWeight:700,padding:'4px 10px',borderRadius:999,background:p.semaforo.bg,color:p.semaforo.c}}>● {p.semaforo.l}</span>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6}}>
+                {mini(p.abiertas.length,'Abiertas','#f15a22')}
+                {mini(p.enProceso.length,'En proceso','#2457d6')}
+                {mini(p.vencidas.length,'Vencidas',p.vencidas.length?'#e03c3c':'#94a3b8')}
+                {mini(p.hechas.length,'Hechas','#0d9488')}
+              </div>
+              {p.urgentes.length>0 ? (
+                <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                  {lista.map(t=>{
+                    const d = diasParaVencer(t)
+                    return (
+                      <div key={t.__tipo+t.id} style={{display:'flex',alignItems:'center',gap:8,fontSize:12,padding:'5px 0',borderBottom:'1px solid var(--border)'}}>
+                        <span style={{width:6,height:6,borderRadius:'50%',flexShrink:0,background:(COLOR_ESTADO[t.estado]||COLOR_ESTADO['Pendiente']).c}}/>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'var(--text)',fontWeight:600}}>{t.nombre}</div>
+                          <div style={{marginTop:3,display:'flex'}}><ChipOrigen texto={origen(t)}/></div>
+                        </div>
+                        <span style={{fontSize:11,fontWeight:700,whiteSpace:'nowrap',color:d!==null&&d<0?'var(--red)':d!==null&&d<=2?'#d97706':'var(--text3)'}}>{etiquetaDias(d)}</span>
+                      </div>
+                    )
+                  })}
+                  {p.urgentes.length>4&&<button onClick={()=>setAbierto(a=>({...a,[p.nombre]:!a[p.nombre]}))} style={{border:'none',background:'transparent',color:'var(--accent2)',fontWeight:700,fontSize:12,cursor:'pointer',textAlign:'left',padding:'4px 0'}}>{abierto[p.nombre]?'Ver menos':`Ver las ${p.urgentes.length} abiertas`}</button>}
+                </div>
+              ) : <div style={{fontSize:12,color:'var(--text3)'}}>Sin pendientes abiertos 🎉</div>}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function TareasAsignadas({ data, setData, usuario }) {
   const responsableActual = nombrePersonaPorUsuario(usuario)
   const tareas = (data.tareasAsignadas || []).filter(
@@ -3015,7 +3426,8 @@ function TareasAsignadas({ data, setData, usuario }) {
         tipo:'tarea_finalizada',
         proyecto:{nombre:'Tarea asignada'},
         subtarea:{nombre:actualizada.nombre,responsable:actualizada.responsable,descripcion:actualizada.descripcion},
-        destinatarios:[obtenerCorreoResponsable(actualizada.responsable)],
+        // Responsable + quien asignó la tarea (el líder ya va siempre en copia).
+        destinatarios:[obtenerCorreoResponsable(actualizada.responsable),obtenerCorreoResponsable(actualizada.asignadoPor)],
       })
       setCerrando(null)
     } catch(e) {
@@ -3064,31 +3476,9 @@ function TareasAsignadas({ data, setData, usuario }) {
     }
   }
 
-  const Tarjeta = ({t}) => (
-    <div style={{...S.card,padding:'15px 18px',display:'flex',gap:14,alignItems:'flex-start'}}>
-      <div style={{flex:1,minWidth:0}}>
-        <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',marginBottom:6}}>
-          <span style={{fontWeight:700,fontSize:14}}>{t.nombre}</span>
-          <span style={{fontSize:10,padding:'2px 8px',borderRadius:6,background:'var(--accent-soft)',color:'var(--accent2)'}}>Asignada por {t.asignadoPor||NOMBRE_LIDER}</span>
-          <BadgePrioridad prioridad={t.prioridad}/>
-          <BadgeVencimiento item={t}/>
-        </div>
-        {t.descripcion&&<p style={{fontSize:12,color:'var(--text2)',margin:'0 0 7px'}}>{t.descripcion}</p>}
-        <div style={{display:'flex',gap:12,flexWrap:'wrap',fontSize:11,color:'var(--text3)'}}>
-          {t.fechaLimite&&<span>📅 Límite: {String(t.fechaLimite).slice(0,10)}</span>}
-          {t.areas&&<span>👥 {Array.isArray(t.areas)?t.areas.join(', '):t.areas}</span>}
-          {t.fechaFinalizacion&&<span>✅ {t.fechaFinalizacion}</span>}
-          {Number(t.tiempoMinutos)>0&&<span>⏱️ {formatoTiempoTarea(t)}</span>}
-        </div>
-      </div>
-      <div style={{display:'flex',gap:6,alignItems:'center'}}>
-        <select value={t.estado||'Pendiente'} onChange={e=>cambiarEstado(t,e.target.value)} style={{fontSize:11,padding:'5px 8px'}}>
-          {['Pendiente','En proceso','Finalizada','Cancelada'].map(s=><option key={s}>{s}</option>)}
-        </select>
-        <button onClick={()=>setEditando(t)} style={{...S.btn('var(--accent-soft)','var(--accent2)'),padding:'5px 7px'}}><Edit2 size={12}/></button>
-      </div>
-    </div>
-  )
+  const comentar = async (t,texto) => {
+    await persistir({...t,comentarios:agregarComentarioA(t,responsableActual,texto)},t)
+  }
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:16}}>
@@ -3097,9 +3487,13 @@ function TareasAsignadas({ data, setData, usuario }) {
         <KpiCard icon={ListTodo} label="Abiertas" value={abiertas.length} accent="var(--yellow)"/>
         <KpiCard icon={Check} label="Finalizadas" value={cerradas.filter(t=>t.estado==='Finalizada').length} accent="var(--green)"/>
       </div>
-      {tareas.length===0&&<div style={{...S.card,padding:44,textAlign:'center',color:'var(--text3)'}}>Sin tareas asignadas</div>}
-      {abiertas.map(t=><Tarjeta key={t.id} t={t}/>)}
-      {cerradas.map(t=><Tarjeta key={t.id} t={t}/>)}
+      <SeccionesPorEstado items={tareas} vacio="Sin tareas asignadas" render={t=>(
+        <TarjetaTarea key={t.id} t={t} autor={responsableActual}
+          origen={`✍️ Asignada por ${t.asignadoPor||NOMBRE_LIDER}`}
+          onEstado={e=>cambiarEstado(t,e)}
+          onEditar={()=>setEditando(t)}
+          onComentar={x=>comentar(t,x)}/>
+      )}/>
       {cerrando&&<ModalTiempoTarea tarea={cerrando} onClose={()=>setCerrando(null)} onConfirm={confirmarFinalizacion} guardando={guardandoCierre}/>}
       {editando&&<ModalEditarTarea tarea={editando} onClose={()=>setEditando(null)} onSave={guardarEdicion} guardando={guardandoEdicion} titulo="Editar tarea asignada"/>}
     </div>
@@ -3462,7 +3856,7 @@ function prioridadVisual(prioridad='Media') {
   const mapa = {
     Urgente:{color:'#dc2626',bg:'#fee2e2',icon:'⚡'},
     Alta:{color:'#ea580c',bg:'#ffedd5',icon:'↑'},
-    Media:{color:'#7c3aed',bg:'#ede9fe',icon:'•'},
+    Media:{color:'#2457d6',bg:'#dbeafe',icon:'•'},
     Baja:{color:'#0284c7',bg:'#e0f2fe',icon:'↓'},
   }
   return mapa[p] || mapa.Media
@@ -3781,121 +4175,38 @@ function MisTareas({ data, setData, usuario }) {
       ? finalizadas
       : abiertas
 
-  const TarjetaPersonal = ({t}) => {
-    const finalizada=t.estado==='Finalizada'||t.estado==='Listo'
-    return (
-      <div style={{
-        ...S.card,
-        padding:'14px 16px',
-        display:'grid',
-        gridTemplateColumns:'minmax(220px,1.4fr) minmax(130px,.7fr) minmax(130px,.7fr) auto',
-        gap:14,
-        alignItems:'center',
-        borderLeft:'3px solid '+(finalizada?'var(--green)':t.estado==='En proceso'?'var(--accent)':'var(--yellow)')
-      }}>
-        <div style={{minWidth:0}}>
-          <div style={{display:'flex',alignItems:'center',gap:7,flexWrap:'wrap'}}>
-            <span style={{fontWeight:700,fontSize:13,color:'var(--text)'}}>{t.nombre}</span>
-            <BadgeVencimiento item={t}/>
-          </div>
-          {t.descripcion&&<div style={{fontSize:11,color:'var(--text2)',marginTop:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{t.descripcion}</div>}
-          <div style={{display:'flex',gap:10,flexWrap:'wrap',fontSize:10,color:'var(--text3)',marginTop:6}}>
-            {t.fechaLimite&&<span>📅 {String(t.fechaLimite).slice(0,10)}</span>}
-            {t.areas&&<span>👥 {Array.isArray(t.areas)?t.areas.join(', '):t.areas}</span>}
-          </div>
-        </div>
-
-        <div>
-          <div style={{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:3}}>Tiempo registrado</div>
-          <div style={{fontSize:12,fontWeight:700,color:Number(t.tiempoMinutos)>0?'var(--accent2)':'var(--text3)'}}>
-            {Number(t.tiempoMinutos)>0?formatoTiempoTarea(t):'Sin registrar'}
-          </div>
-        </div>
-
-        <div>
-          <div style={{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:3}}>Cierre</div>
-          <div style={{fontSize:11,fontWeight:600,color:finalizada?'var(--green)':'var(--text2)'}}>
-            {t.fechaFinalizacion?String(t.fechaFinalizacion).slice(0,16):'Pendiente'}
-          </div>
-        </div>
-
-        <div style={{display:'flex',gap:6,alignItems:'center'}}>
-          <select value={t.estado||'Pendiente'} onChange={e=>cambiarEstado(t,e.target.value)} style={{fontSize:11,minWidth:120}}>
-            {['Pendiente','En proceso','Finalizada','Cancelada'].map(s=><option key={s}>{s}</option>)}
-          </select>
-          <button onClick={()=>setEditando(t)} style={{...S.btn('var(--accent-soft)','var(--accent2)'),padding:'5px 7px'}}><Edit2 size={12}/></button>
-          <button disabled={eliminandoId===t.id} onClick={()=>eliminar(t.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'5px 7px'}}>
-            {eliminandoId===t.id?'…':<Trash2 size={12}/>}
-          </button>
-        </div>
-      </div>
-    )
+  const comentar = async (t,texto) => {
+    await persistir({...t,comentarios:agregarComentarioA(t,persona,texto)})
   }
+  const kpi = (label,valor,color) => (
+    <div style={{...S.card,padding:'12px 14px',borderTop:'3px solid '+color,background:`linear-gradient(180deg, color-mix(in srgb, ${color} 9%, white) 0%, #fff 70%)`}}>
+      <div style={{fontSize:10,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em',fontWeight:700}}>{label}</div>
+      <div style={{fontSize:21,fontWeight:800,color,marginTop:4}}>{valor}</div>
+    </div>
+  )
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:16}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12,flexWrap:'wrap'}}>
-        <div>
-          <h3 style={{fontSize:17,margin:0,color:'var(--text)'}}>Mi productividad</h3>
-          <div style={{fontSize:11,color:'var(--text3)',marginTop:4}}>
-            Resumen personal de {persona} · solo tus tareas
-          </div>
-        </div>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+        <div style={{fontSize:12,color:'var(--text3)'}}>Tus tareas personales · solo las ves tú (y el líder en el resumen del equipo)</div>
         <button onClick={()=>setModal(true)} style={S.btn('var(--accent)','#fff')}><PlusCircle size={15}/> Nueva tarea</button>
       </div>
 
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(145px,1fr))',gap:10}}>
-        <div style={{...S.card,padding:'13px 15px'}}>
-          <div style={{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em'}}>Total tareas</div>
-          <div style={{fontSize:23,fontWeight:800,color:'var(--accent2)',marginTop:4}}>{tareas.length}</div>
-        </div>
-        <div style={{...S.card,padding:'13px 15px'}}>
-          <div style={{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em'}}>Abiertas</div>
-          <div style={{fontSize:23,fontWeight:800,color:'var(--yellow)',marginTop:4}}>{abiertas.length}</div>
-        </div>
-        <div style={{...S.card,padding:'13px 15px'}}>
-          <div style={{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em'}}>Finalizadas</div>
-          <div style={{fontSize:23,fontWeight:800,color:'var(--green)',marginTop:4}}>{finalizadas.length}</div>
-        </div>
-        <div style={{...S.card,padding:'13px 15px'}}>
-          <div style={{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em'}}>Vencidas</div>
-          <div style={{fontSize:23,fontWeight:800,color:vencidas.length?'var(--red)':'var(--green)',marginTop:4}}>{vencidas.length}</div>
-        </div>
-        <div style={{...S.card,padding:'13px 15px'}}>
-          <div style={{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em'}}>Tiempo trabajado</div>
-          <div style={{fontSize:18,fontWeight:800,color:'var(--accent2)',marginTop:7}}>{formatoTiempoTarea({tiempoMinutos:minutosTotales})}</div>
-        </div>
-        <div style={{...S.card,padding:'13px 15px'}}>
-          <div style={{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em'}}>Promedio / tarea</div>
-          <div style={{fontSize:18,fontWeight:800,color:'var(--text)',marginTop:7}}>{promedioMin?formatoTiempoTarea({tiempoMinutos:promedioMin}):'—'}</div>
-        </div>
-        <div style={{...S.card,padding:'13px 15px'}}>
-          <div style={{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em'}}>Promedio de cierre</div>
-          <div style={{fontSize:18,fontWeight:800,color:'var(--text)',marginTop:7}}>{promedioDias==='—'?'—':promedioDias+' días'}</div>
-        </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10}}>
+        {kpi('Abiertas',abiertas.length,'#f15a22')}
+        {kpi('Vencidas',vencidas.length,vencidas.length?'#e03c3c':'#16a25a')}
+        {kpi('Finalizadas',finalizadas.length,'#0d9488')}
+        {kpi('Tiempo trabajado',formatoTiempoTarea({tiempoMinutos:minutosTotales}),'#2457d6')}
       </div>
 
-      <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
-        {[
-          ['abiertas',`Abiertas (${abiertas.length})`],
-          ['finalizadas',`Finalizadas (${finalizadas.length})`],
-          ['todas',`Todas (${tareas.length})`]
-        ].map(([id,label])=>(
-          <button key={id} onClick={()=>setFiltroVista(id)} style={{
-            ...S.btn(filtroVista===id?'var(--accent)':'var(--bg3)',filtroVista===id?'#fff':'var(--text2)'),
-            fontSize:11,padding:'6px 12px'
-          }}>{label}</button>
-        ))}
-      </div>
-
-      <div style={{display:'flex',flexDirection:'column',gap:10}}>
-        {tareasVista.length===0&&(
-          <div style={{...S.card,padding:36,textAlign:'center',color:'var(--text3)'}}>
-            {filtroVista==='finalizadas'?'Aún no tienes tareas finalizadas.':'No tienes tareas en esta vista.'}
-          </div>
-        )}
-        {tareasVista.map(t=><TarjetaPersonal key={t.id} t={t}/>)}
-      </div>
+      <SeccionesPorEstado items={tareas} vacio="Aún no tienes tareas personales. Crea una con Nueva tarea." render={t=>(
+        <TarjetaTarea key={t.id} t={t} autor={persona}
+          origen="🙋 Personal"
+          onEstado={e=>cambiarEstado(t,e)}
+          onEditar={()=>setEditando(t)}
+          onEliminar={()=>eliminar(t.id)}
+          onComentar={x=>comentar(t,x)}/>
+      )}/>
 
       {modal&&(
         <Modal title="Nueva tarea personal" onClose={()=>!guardando&&setModal(false)}>
@@ -3940,10 +4251,26 @@ function TareasYProyectos({ data, setData, usuario }) {
   // SUBTAREAS_PROYECTOS. Antes solo mirábamos p.subtareas dentro de PROYECTOS,
   // por eso un proyecto como Colfecar podía no aparecer aunque Emma sí tuviera
   // subtareas asignadas en su archivo.
-  const subtareasPlanas = data.subtareasProyectos || []
+  const subtareasPlanas = (data.subtareasProyectos || []).map(x=>({...limpiarFechasObj(x),nombre:recuperarNombre(x.nombre),proyecto:recuperarNombre(x.proyecto)}))
 
   // Unimos las subtareas planas con el proyecto padre cuando existe.
-  const proyectosBase = (data.proyectos || []).map(p=>{
+  // Quitar proyectos duplicados (misma id, o mismo nombre + creador + fecha de creación).
+  const proyectosUnicos = (()=>{
+    const porClave = new Map()
+    const puntaje = p => (Array.isArray(p.subtareas)?p.subtareas.length:0) + (p.estado==='Finalizada'?2:p.estado==='En proceso'?1:0) + (p.fechaFinalizacion?1:0)
+    ;(data.proyectos||[]).map(x=>({...limpiarFechasObj(x),nombre:recuperarNombre(x.nombre)})).forEach(p=>{
+      const claves = [
+        p.id ? 'id:'+String(p.id) : null,
+        'nom:'+normalizarNombreResponsable(p.nombre)+'|'+normalizarNombreResponsable(p.creadoPor)+'|'+String(p.fechaCreacion||''),
+      ].filter(Boolean)
+      const existente = claves.map(k=>porClave.get(k)).find(Boolean)
+      const ganador = !existente || puntaje(p) >= puntaje(existente) ? p : existente
+      claves.forEach(k=>porClave.set(k,ganador))
+      if(existente && existente!==ganador) porClave.forEach((v,k)=>{ if(v===existente) porClave.set(k,ganador) })
+    })
+    return [...new Set(porClave.values())]
+  })()
+  const proyectosBase = proyectosUnicos.map(p=>{
     const nombreProyecto = String(p.nombre||'').trim()
     const planasDelProyecto = subtareasPlanas.filter(s=>
       normalizarNombreResponsable(s.proyecto) === normalizarNombreResponsable(nombreProyecto)
@@ -3990,7 +4317,7 @@ function TareasYProyectos({ data, setData, usuario }) {
     const primera = subs[0]
     proyectosReconstruidos.push({
       id:`reconstruido_${key}`,
-      nombre:limpiarFechaISO(String(primera.proyecto)),
+      nombre:recuperarNombre(String(primera.proyecto)),
       descripcion:'Proyecto reconstruido desde subtareas asignadas',
       responsable:'',
       areas:[...new Set(subs.flatMap(s=>Array.isArray(s.areas)?s.areas:String(s.areas||'').split(',').map(x=>x.trim())).filter(Boolean))],
@@ -4250,7 +4577,8 @@ function TareasYProyectos({ data, setData, usuario }) {
       areas:Array.isArray(actualizada.areas)?actualizada.areas.join(', '):(actualizada.areas||''),
       creadoPor:actualizada.creadoPor||'',fechaCreacion:actualizada.fechaCreacion||'',
       fechaFinalizacion:actualizada.fechaFinalizacion||'',tiempoValor:actualizada.tiempoValor||'',
-      tiempoUnidad:actualizada.tiempoUnidad||'',tiempoMinutos:Number(actualizada.tiempoMinutos||0)
+      tiempoUnidad:actualizada.tiempoUnidad||'',tiempoMinutos:Number(actualizada.tiempoMinutos||0),
+      comentarios:actualizada.comentarios||''
     }
 
     try {
@@ -4312,7 +4640,7 @@ function TareasYProyectos({ data, setData, usuario }) {
     } catch(e){ console.error('Error actualizando proyecto:',e) }
   }
 
-  const aplicarEstadoSub = async (pid, sid, estado, tiempo=null) => {
+  const aplicarEstadoSub = async (pid, sid, estado, tiempo=null, cambios={}) => {
     const proyectoOriginal = proyectos.find(p => p.id === pid)
     const subtareaOriginal = proyectoOriginal?.subtareas?.find(s => String(s.id) === String(sid))
     if(!proyectoOriginal || !subtareaOriginal) return
@@ -4324,7 +4652,7 @@ function TareasYProyectos({ data, setData, usuario }) {
       ...proyectoOriginal,
       subtareas:(proyectoOriginal.subtareas || []).map(s =>
         String(s.id) === String(sid)
-          ? {...s, estado, ...(tareaSeAcabaDeFinalizar?{fechaFinalizacion,...(tiempo||{})}:{})}
+          ? {...s, ...cambios, estado, ...(tareaSeAcabaDeFinalizar?{fechaFinalizacion,...(tiempo||{})}:{})}
           : s
       ),
     }
@@ -4375,6 +4703,7 @@ function TareasYProyectos({ data, setData, usuario }) {
           tiempoValor: subtareaActualizada.tiempoValor || '',
           tiempoUnidad: subtareaActualizada.tiempoUnidad || '',
           tiempoMinutos: Number(subtareaActualizada.tiempoMinutos || 0),
+          comentarios: subtareaActualizada.comentarios || '',
         }
 
         await eliminarFilaSheets(uidCentral, 'subtareasProyectos', sid)
@@ -4391,7 +4720,13 @@ function TareasYProyectos({ data, setData, usuario }) {
           tipo:'tarea_finalizada',
           proyecto:proyectoActualizado,
           subtarea:subtareaActualizada,
-          destinatarios:[obtenerCorreoResponsable(subtareaActualizada?.responsable)],
+          // Responsable + quien creó la subtarea y el proyecto.
+          destinatarios:[
+            obtenerCorreoResponsable(subtareaActualizada?.responsable),
+            obtenerCorreoResponsable(nombreCreador(subtareaActualizada?.creadoPor)),
+            obtenerCorreoResponsable(nombreCreador(proyectoActualizado?.creadoPor)),
+            obtenerCorreoResponsable(proyectoActualizado?.responsable),
+          ],
         })
       }
 
@@ -4406,6 +4741,10 @@ function TareasYProyectos({ data, setData, usuario }) {
       console.error('Error actualizando o notificando la subtarea:', e)
       alert('El estado cambió en pantalla, pero hubo un error al guardar o enviar la notificación.')
     }
+  }
+
+  const comentarSub = async (pid, s, texto) => {
+    await aplicarEstadoSub(pid, s.id, s.estado||'Pendiente', null, {comentarios:agregarComentarioA(s,personaActual,texto)})
   }
 
   const cambiarEstadoSub = async (pid, sid, estado) => {
@@ -4530,34 +4869,14 @@ function TareasYProyectos({ data, setData, usuario }) {
             <div>Sin subtareas aún — usa <strong>+ Subtarea</strong></div>
           </div>
         )}
-        {subtareas.map((s,i)=>{
-          const se = ESTADO_PROY[s.estado]||ESTADO_PROY['Pendiente']
-          return (
-            <div key={i} style={{...S.card,padding:'14px 18px',borderLeft:'3px solid '+se.color,display:'flex',gap:12,alignItems:'flex-start'}}>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',marginBottom:4}}>
-                  <span style={{fontWeight:600,fontSize:14}}>{s.nombre}</span>
-                  {s.responsable&&<span style={{fontSize:11,background:'var(--bg3)',padding:'2px 8px',borderRadius:5,color:'var(--text2)'}}>👤 {s.responsable}</span>}
-                  {s.fechaEntrega&&<span style={{fontSize:11,color:'var(--text3)'}}>📅 {s.fechaEntrega}</span>}
-                  {Number(s.tiempoMinutos)>0&&<span style={{fontSize:11,color:'var(--green)'}}>⏱️ {formatoTiempoTarea(s)}</span>}
-                </div>
-                {s.descripcion&&<p style={{margin:'0 0 6px',fontSize:12,color:'var(--text2)'}}>{s.descripcion}</p>}
-                <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                  {(s.areas||[]).map(a=><span key={a} style={{fontSize:10,background:'var(--accent-soft)',color:'var(--accent2)',padding:'1px 7px',borderRadius:4}}>{a}</span>)}
-                </div>
-              </div>
-              <div style={{display:'flex',flexDirection:'column',gap:6,alignItems:'flex-end',flexShrink:0}}>
-                <select value={s.estado} onChange={e=>cambiarEstadoSub(proy.id,s.id,e.target.value)} style={{fontSize:11,padding:'3px 8px',borderRadius:6,border:'1px solid '+se.color,color:se.color,background:se.bg,fontWeight:600,cursor:'pointer'}}>
-                  {Object.keys(ESTADO_PROY).map(e=><option key={e}>{e}</option>)}
-                </select>
-                <div style={{display:'flex',gap:5}}>
-                  <button onClick={()=>setEditSubtarea({pid:proy.id,subtarea:s})} style={{...S.btn('var(--accent-soft)','var(--accent2)'),padding:'3px 7px'}}><Edit2 size={11}/></button>
-                  <button onClick={()=>eliminarSub(proy.id,s.id)} style={{...S.btn('var(--red-soft)','var(--red)'),padding:'3px 7px'}}><Trash2 size={11}/></button>
-                </div>
-              </div>
-            </div>
-          )
-        })}
+        {subtareas.length>0&&<SeccionesPorEstado items={subtareas} render={s=>(
+          <TarjetaTarea key={s.id} t={s} autor={personaActual}
+            origen={`👤 ${normalizarNombreResponsable(s.responsable)===normalizarNombreResponsable(personaActual)?'Yo':(s.responsable||'Sin responsable')}`}
+            onEstado={e=>cambiarEstadoSub(proy.id,s.id,e)}
+            onEditar={()=>setEditSubtarea({pid:proy.id,subtarea:s})}
+            onEliminar={()=>{ if(window.confirm('¿Eliminar esta subtarea?')) eliminarSub(proy.id,s.id) }}
+            onComentar={x=>comentarSub(proy.id,s,x)}/>
+        )}/>}
         {cerrandoSubtarea&&<ModalTiempoTarea
           tarea={cerrandoSubtarea.subtarea}
           onClose={()=>setCerrandoSubtarea(null)}
@@ -4654,7 +4973,7 @@ function TareasYProyectos({ data, setData, usuario }) {
 
       {/* Secciones por estado: En proceso → Pendientes → Finalizados (plegados) */}
       {[
-        ['En proceso','En proceso','var(--accent2)'],
+        ['En proceso','En proceso','#2457d6'],
         ['Pendiente','Pendientes','var(--yellow)'],
         ['_otros','Otros','var(--text3)'],
         ['Finalizada','Finalizados','var(--green)'],
@@ -4700,10 +5019,10 @@ function TareasYProyectos({ data, setData, usuario }) {
                         {p.prioridad==='Alta'&&<BadgePrioridad prioridad={p.prioridad}/>}
                       </div>
                       {/* Descripción (se oculta la automática) */}
-                      {p.descripcion&&!p._reconstruido&&<p style={{margin:0,fontSize:12,color:'var(--text2)',lineHeight:1.45,display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{p.descripcion}</p>}
+                      {p.descripcion&&!p._reconstruido&&p.descripcion!=='Proyecto reconstruido desde subtareas asignadas'&&<p style={{margin:0,fontSize:12,color:'var(--text2)',lineHeight:1.45,display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{p.descripcion}</p>}
                       {/* Datos */}
                       <div style={{display:'flex',gap:12,flexWrap:'wrap',fontSize:11.5,color:'var(--text2)'}}>
-                        {p.responsable&&<span>👤 {p.responsable}</span>}
+                        {p.responsable&&<span style={{fontWeight:700,padding:'1px 8px',borderRadius:999,background:colorPersona(p.responsable).bg,color:colorPersona(p.responsable).c}}>{p.responsable}</span>}
                         {p.fechaEntrega&&<span>📅 {p.fechaEntrega}</span>}
                       </div>
                       {/* Progreso */}
@@ -4727,7 +5046,7 @@ function TareasYProyectos({ data, setData, usuario }) {
                               <div key={s.id||s.nombre} style={{display:'flex',alignItems:'center',gap:7,fontSize:11.5,padding:'3px 6px',margin:'0 -6px',borderRadius:6,background:mia?'var(--accent-soft)':'transparent'}}>
                                 <span style={{width:6,height:6,borderRadius:'50%',background:c,flexShrink:0}}/>
                                 <span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:mia?700:400,color:'var(--text)',textDecoration:s.estado==='Finalizada'?'line-through':'none'}}>{s.nombre}</span>
-                                <span style={{color:mia?'var(--accent2)':'var(--text3)',fontWeight:mia?700:400,whiteSpace:'nowrap'}}>{mia?'Yo':(s.responsable||'—')}</span>
+                                <span style={{color:colorPersona(s.responsable).c,fontWeight:700,whiteSpace:'nowrap'}}>{mia?'Yo':(s.responsable||'—')}</span>
                               </div>
                             )
                           })}
@@ -4813,14 +5132,14 @@ function LoginScreen({ onLogin }) {
   }
 
   return (
-    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#1e1040 0%,#2d1a6e 50%,#1e1040 100%)',padding:20}}>
+    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#13203f 0%,#1c3a6e 50%,#13203f 100%)',padding:20}}>
       <div style={{width:'100%',maxWidth:420}}>
         <div style={{textAlign:'center',marginBottom:32}}>
           <div style={{width:74,height:74,borderRadius:20,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 14px',boxShadow:'0 10px 30px rgba(168,85,247,.28)',background:'#fff'}}>
             <img src="/pwa-512x512.png" onError={e=>{e.currentTarget.onerror=null;e.currentTarget.src="/proli-mascota.png"}} alt="PROLI" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
           </div>
           <h1 style={{fontSize:28,fontWeight:900,letterSpacing:'-0.04em',marginBottom:2,color:'#fff'}}>PROLI Marketing 360</h1>
-          <div style={{fontSize:12,fontWeight:700,color:'#c4b5fd',letterSpacing:'.02em',marginBottom:5}}>Prolub Marketing Intelligence</div>
+          <div style={{fontSize:12,fontWeight:700,color:'#93c5fd',letterSpacing:'.02em',marginBottom:5}}>Prolub Marketing Intelligence</div>
           <p style={{fontSize:13,color:'rgba(255,255,255,.62)',margin:0}}>Toda la información. Decisiones que impulsan.</p>
         </div>
         <div style={{background:'rgba(255,255,255,0.97)',border:'1px solid rgba(255,255,255,0.2)',borderRadius:20,padding:32,display:'flex',flexDirection:'column',gap:16,boxShadow:'0 24px 64px rgba(0,0,0,0.4)'}}>
@@ -6508,7 +6827,8 @@ function ControlPresupuestalMensual({usuario}) {
 
 export default function App() {
   const [usuario, setUsuario] = useState(() => { const previo=getSessionUser(); if(!previo) return null; const vigente=USUARIOS.find(u=>u.id===previo.id); return vigente ? {...previo,nombre:vigente.nombre,rol:vigente.rol,color:vigente.color} : null })
-  const [tab, setTab] = useState(()=>getSessionUser()?.rol==='lider'?'dashboardFinanciero':'dashboard')
+  const pestanaInicial = u => u?.rol==='lider' ? 'tableroEquipo' : u?.rol==='mercadeo' ? 'dashboard' : 'miSemana'
+  const [tab, setTab] = useState(()=>pestanaInicial(getSessionUser()))
   const [importResult, setImportResult] = useState(null)
   const [importando, setImportando] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
@@ -6681,17 +7001,17 @@ export default function App() {
   }
   const totalImp = importResult?Object.values(importResult.importados).reduce((s,n)=>s+n,0):0
 
-  if(!usuario) return <LoginScreen onLogin={u=>{setUsuario(u);setTab(u.rol==='colaborador'?'tareasasignadas':u.rol==='lider'?'dashboardFinanciero':'dashboard')}}/>
+  if(!usuario) return <LoginScreen onLogin={u=>{setUsuario(u);setTab(pestanaInicial(u))}}/>
 
   if(sheetsLoading) return (
-    <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#1e1040 0%,#2d1a6e 100%)',gap:20}}>
-      <div style={{width:64,height:64,borderRadius:18,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 8px 32px rgba(91,82,240,0.3)',background:'#fff'}}>
+    <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#13203f 0%,#1c3a6e 100%)',gap:20}}>
+      <div style={{width:64,height:64,borderRadius:18,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 8px 32px rgba(36,87,214,0.3)',background:'#fff'}}>
         <img src="/pwa-512x512.png" onError={e=>{e.currentTarget.onerror=null;e.currentTarget.src="/proli-mascota.png"}} alt="PROLI" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
       </div>
       <div style={{textAlign:'center'}}>
         <div style={{fontWeight:900,fontSize:22,color:'#fff',marginBottom:2,letterSpacing:'-0.02em'}}>PROLI Marketing 360</div>
-        <div style={{fontSize:11,fontWeight:700,color:'#c4b5fd',marginBottom:6}}>Prolub Marketing Intelligence</div>
-        <div style={{fontSize:13,color:'rgba(255,255,255,0.6)'}}>Sincronizando datos de <strong style={{color:'#c084fc'}}>{usuario.nombre}</strong>...</div>
+        <div style={{fontSize:11,fontWeight:700,color:'#93c5fd',marginBottom:6}}>Prolub Marketing Intelligence</div>
+        <div style={{fontSize:13,color:'rgba(255,255,255,0.6)'}}>Sincronizando datos de <strong style={{color:'#ff8a5c'}}>{usuario.nombre}</strong>...</div>
       </div>
       <div style={{width:220,height:5,background:'var(--bg3)',borderRadius:4,overflow:'hidden'}}>
         <div style={{height:'100%',background:'var(--accent)',borderRadius:4,animation:'loadbar 1.8s ease-in-out infinite'}}/>
@@ -6709,6 +7029,7 @@ export default function App() {
   const esMercadeoGeneral = usuario.rol==='mercadeo'
 
   const TABS_LIDER = [
+    {id:'tableroEquipo',label:'Tablero del equipo',icon:Users},
     {id:'dashboardFinanciero',label:'Dashboard financiero',icon:LayoutDashboard},
     {id:'dashboardEquipo',label:'Dashboard de tiempos',icon:BarChart2},
     {id:'asignarTareas',label:'Tareas asignadas',icon:ListTodo},
@@ -6717,6 +7038,7 @@ export default function App() {
     {id:'controlPresupuestal',label:'Gastos de presupuesto',icon:DollarSign}
   ]
   const TABS_PRES = [
+    {id:'miSemana',label:'Mi semana',icon:CalendarDays},
     {id:'dashboard',label:'Presupuesto Consolidado',icon:DollarSign},
     {id:'controlPresupuestal',label:'Gastos de presupuesto',icon:DollarSign},
     {id:'tareasasignadas',label:'Tareas Asignadas',icon:ListTodo},
@@ -6724,6 +7046,7 @@ export default function App() {
     {id:'tareasProyectos',label:'Proyectos y Subtareas',icon:BookOpen},
   ]
   const TABS_COLAB = [
+    {id:'miSemana',label:'Mi semana',icon:CalendarDays},
     {id:'tareasasignadas',label:'Tareas Asignadas',icon:ListTodo},
     {id:'asignarTareas',label:'Asignar tarea',icon:Send},
     {id:'tareasProyectos',label:'Proyectos y Subtareas',icon:BookOpen},
@@ -6744,6 +7067,7 @@ export default function App() {
     ? tareasAsignadasUsuario.filter(p=>p.estado!=='Finalizada'&&p.estado!=='Cancelada'&&p.estado!=='Listo').length
     : 0
   const TABS_NORMAL = [
+    {id:'miSemana', label:'Mi semana', icon:CalendarDays},
     {id:'tareasasignadas', label:'Tareas Asignadas', icon:ListTodo, badge:tareasAsignadasCount},
     {id:'asignarTareas', label:'Asignar tarea', icon:Send},
     {id:'tareasProyectos', label:'Proyectos y Subtareas', icon:BookOpen},
@@ -6762,6 +7086,20 @@ export default function App() {
   return (
     <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',background:'var(--bg)'}}>
       <style>{`
+        :root {
+          --sidebar-bg: #13203f;
+          --sidebar-bg2: #1c2c55;
+          --accent: #2457d6;
+          --accent2: #1f4fc4;
+          --accent-soft: rgba(36,87,214,0.10);
+          --accent-gradient: linear-gradient(135deg, #2457d6 0%, #0ea5e9 100%);
+          --kpi1: linear-gradient(135deg,#2457d6,#0ea5e9);
+          --bg: #f2f4f8;
+          --gulf: #f15a22;
+          --gulf-soft: rgba(241,90,34,0.10);
+          --teal: #0d9488;
+          --teal-soft: rgba(13,148,136,0.10);
+        }
         @media (max-width: 760px) {
           .app-main { padding: 16px 12px 82px !important; }
           .app-topbar { padding: 0 10px !important; }
@@ -6783,7 +7121,7 @@ export default function App() {
         }
       `}</style>
       {/* TOPBAR */}
-      <header className="app-topbar" style={{background:'var(--sidebar-bg)',padding:'0 20px',display:'flex',alignItems:'center',height:56,gap:14,position:'sticky',top:0,zIndex:20,boxShadow:'0 2px 16px rgba(30,16,64,0.2)'}}>
+      <header className="app-topbar" style={{background:'var(--sidebar-bg)',padding:'0 20px',display:'flex',alignItems:'center',height:56,gap:14,position:'sticky',top:0,zIndex:20,boxShadow:'0 2px 16px rgba(19,32,63,0.25)'}}>
         <button onClick={()=>setSidebarOpen(o=>!o)} style={{width:34,height:34,borderRadius:9,background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.15)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0}}>
           <BarChart2 size={15} color="rgba(255,255,255,0.8)"/>
         </button>
@@ -6814,7 +7152,7 @@ export default function App() {
               title={esIOS?'Cómo instalar PROLI en iPhone/iPad':'Instalar PROLI Marketing 360'}
               style={{
                 display:'flex',alignItems:'center',gap:7,
-                background:(deferredInstallPrompt||esIOS)?'linear-gradient(135deg,#7c3aed,#a855f7)':'rgba(255,255,255,0.10)',
+                background:(deferredInstallPrompt||esIOS)?'linear-gradient(135deg,#f15a22,#ff8a5c)':'rgba(255,255,255,0.10)',
                 color:'#fff',border:'1px solid rgba(255,255,255,.18)',
                 borderRadius:20,padding:'6px 12px',cursor:'pointer',
                 fontFamily:'var(--font)',fontSize:11,fontWeight:700,
@@ -6839,10 +7177,10 @@ export default function App() {
         {/* SIDEBAR OSCURO */}
         <aside className="app-sidebar" style={{width:sidebarOpen?220:60,flexShrink:0,background:'var(--sidebar-bg)',display:'flex',flexDirection:'column',padding:'16px 0',gap:2,transition:'width 0.22s cubic-bezier(.4,0,.2,1)',overflow:'hidden',position:'sticky',top:52,height:'calc(100vh - 52px)',boxShadow:'4px 0 24px rgba(30,16,64,0.18)'}}>
           {tabs.map(t=>{ const Icon=t.icon; const active=tab===t.id; return (
-            <button key={t.id} onClick={()=>{if(t.id==='detalleGastos') setDetalleGastosMes('');setTab(t.id)}} title={t.label} style={{display:'flex',alignItems:'center',gap:11,padding:sidebarOpen?'10px 18px':'10px 0',justifyContent:sidebarOpen?'flex-start':'center',margin:'0 8px',borderRadius:10,fontSize:13,fontWeight:active?600:400,background:active?'rgba(255,255,255,0.13)':'transparent',color:active?'#fff':'rgba(255,255,255,0.55)',border:'none',cursor:'pointer',fontFamily:'var(--font)',whiteSpace:'nowrap',position:'relative',transition:'all 0.15s',borderLeft:active?'3px solid #a855f7':'3px solid transparent'}}>
-              <Icon size={16} style={{flexShrink:0,color:active?'#c084fc':'rgba(255,255,255,0.5)'}}/>
+            <button key={t.id} onClick={()=>{if(t.id==='detalleGastos') setDetalleGastosMes('');setTab(t.id)}} title={t.label} style={{display:'flex',alignItems:'center',gap:11,padding:sidebarOpen?'10px 18px':'10px 0',justifyContent:sidebarOpen?'flex-start':'center',margin:'0 8px',borderRadius:10,fontSize:13,fontWeight:active?600:400,background:active?'rgba(255,255,255,0.13)':'transparent',color:active?'#fff':'rgba(255,255,255,0.55)',border:'none',cursor:'pointer',fontFamily:'var(--font)',whiteSpace:'nowrap',position:'relative',transition:'all 0.15s',borderLeft:active?'3px solid #f15a22':'3px solid transparent'}}>
+              <Icon size={16} style={{flexShrink:0,color:active?'#ff8a5c':'rgba(255,255,255,0.5)'}}/>
               {sidebarOpen&&<span style={{overflow:'hidden',textOverflow:'ellipsis'}}>{t.label}</span>}
-              {t.badge>0&&<span style={{background:'#a855f7',color:'#fff',borderRadius:10,fontSize:9,fontWeight:700,padding:'1px 6px',marginLeft:'auto',flexShrink:0}}>{t.badge}</span>}
+              {t.badge>0&&<span style={{background:'#f15a22',color:'#fff',borderRadius:10,fontSize:9,fontWeight:700,padding:'1px 6px',marginLeft:'auto',flexShrink:0}}>{t.badge}</span>}
             </button>
           )})}
         </aside>
@@ -6856,6 +7194,8 @@ export default function App() {
           {esLider && tab==='asignarTareas' && <AsignarTareasEquipo usuario={usuario}/>}
           {esLider && tab==='notificaciones' && <NotificacionesEquipo/>}
           {esLider && tab==='tareasProyectos' && <TareasYProyectos data={data} setData={setDataUser} usuario={usuario}/>}
+          {esLider && tab==='tableroEquipo' && <TableroEquipo/>}
+          {!esLider && !esMercadeoGeneral && tab==='miSemana' && <MiSemana data={data} usuario={usuario} onIr={setTab}/>}
           {esPresupuesto && tab==='dashboard' && <PresupuestoConsolidado/>}
           {esPresupuesto && tab==='tareasasignadas' && <TareasAsignadas data={data} setData={setDataUser} usuario={usuario}/>}
           {esPresupuesto && tab==='asignarTareas' && <AsignarTareasEquipo usuario={usuario}/>}
@@ -6886,9 +7226,9 @@ export default function App() {
                     p.estado!=='Listo' &&
                     p.estado!=='Cancelado'
                 )
-                if(tareasLider.length===0) return null
+                if(tareasLider.length===0||tab==='miSemana') return null
                 return (
-                  <div style={{background:'rgba(91,82,240,0.08)',border:'1px solid rgba(91,82,240,0.25)',borderRadius:12,padding:'12px 18px',marginBottom:8,display:'flex',alignItems:'center',gap:12,cursor:'pointer'}} onClick={()=>setTab('tareasasignadas')}>
+                  <div style={{background:'rgba(36,87,214,0.08)',border:'1px solid rgba(36,87,214,0.25)',borderRadius:12,padding:'12px 18px',marginBottom:8,display:'flex',alignItems:'center',gap:12,cursor:'pointer'}} onClick={()=>setTab('tareasasignadas')}>
                     <div style={{width:32,height:32,borderRadius:8,background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>📋</div>
                     <div style={{flex:1}}>
                       <div style={{fontWeight:600,fontSize:13,color:'var(--accent2)'}}>Tienes {tareasLider.length} actividad{tareasLider.length>1?'es':''} asignada{tareasLider.length>1?'s':''} pendiente{tareasLider.length>1?'s':''}</div>
