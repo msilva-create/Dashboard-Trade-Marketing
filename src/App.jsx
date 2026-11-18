@@ -3524,7 +3524,7 @@ function IndicadoresEquipo() {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(personas), 'Por persona '+nombreMes(mes))
     const detalle = finalizadas.map(t=>({Mes:nombreMes(t.__mes),Persona:t.responsable||'',Tipo:NOMBRE_TIPO[t.__tipo],Tarea:t.nombre||'',Proyecto:t.proyecto||'','Creada':t.fechaCreacion?String(t.fechaCreacion).slice(0,10):'','Fecha límite':fechaLimiteItem(t)?String(fechaLimiteItem(t)).slice(0,10):'','Finalizada':t.__fin.toLocaleDateString('es-CO'),'A tiempo':t.__lim?(t.__fin<=t.__lim?'Sí':'No'):'Sin fecha','Días de cierre':t.__dias??'','Horas':Math.round((Number(t.tiempoMinutos)||0)/6)/10}))
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detalle), 'Detalle')
-    XLSX.writeFile(wb, `Indicadores_TradeMarketing_${mes}.xlsx`)
+    XLSX.writeFile(wb, `Indicadores_Marketing_${mes}.xlsx`)
   }
 
   const fmtH = v => `${v} h`
@@ -3536,7 +3536,7 @@ function IndicadoresEquipo() {
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,flexWrap:'wrap'}}>
         <div>
           <h2 style={{fontSize:20,margin:0}}>Indicadores del equipo</h2>
-          <div style={{fontSize:12,color:'var(--text3)',marginTop:4}}>Productividad de Trade Marketing según las tareas finalizadas en el mes{mes===claveMes(new Date())?' · mes en curso (cuenta hasta hoy)':''}</div>
+          <div style={{fontSize:12,color:'var(--text3)',marginTop:4}}>Productividad del equipo de Marketing según las tareas finalizadas en el mes{mes===claveMes(new Date())?' · mes en curso (cuenta hasta hoy)':''}</div>
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center'}}>
           <select value={mes} onChange={e=>setMes(e.target.value)} style={{width:'auto',fontSize:12.5,padding:'7px 10px'}}>
