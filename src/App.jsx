@@ -4515,6 +4515,11 @@ function TareasYProyectos({ data, setData, usuario }) {
     })
     return [...new Set(porClave.values())]
   })()
+  // Cada subtarea pertenece a UN solo proyecto: el que dice su fila en SUBTAREAS_PROYECTOS.
+  // (Evita que una misma subtarea aparezca repetida en varios proyectos.)
+  const proyectoDeSubtarea = new Map(
+    subtareasPlanas.filter(x=>x.id&&x.proyecto).map(x=>[String(x.id),normalizarNombreResponsable(x.proyecto)])
+  )
   const proyectosBase = proyectosUnicos.map(p=>{
     const nombreProyecto = String(p.nombre||'').trim()
     const planasDelProyecto = subtareasPlanas.filter(s=>
@@ -4522,7 +4527,10 @@ function TareasYProyectos({ data, setData, usuario }) {
     )
 
     const mapa = new Map()
-    ;[...(p.subtareas||[]), ...planasDelProyecto].forEach(s=>{
+    ;[...(Array.isArray(p.subtareas)?p.subtareas:[]), ...planasDelProyecto].filter(s=>{
+      const dueño = proyectoDeSubtarea.get(String(s.id))
+      return !dueño || dueño===normalizarNombreResponsable(nombreProyecto)
+    }).forEach(s=>{
       const key = String(s.id || `${s.proyecto||nombreProyecto}_${s.nombre||''}_${s.responsable||''}`)
       if(!mapa.has(key)) mapa.set(key,s)
       else {
@@ -5199,7 +5207,9 @@ function TareasYProyectos({ data, setData, usuario }) {
         <button onClick={()=>setModalProyecto(true)} style={{...S.btn('var(--accent)','#fff'),marginLeft:'auto'}}><PlusCircle size={15}/> Nuevo proyecto</button>
       </div>
       {!esLiderProyecto&&tipoVista==='grupales'&&(()=>{
+        const vistasIds = new Set()
         const mias = proyectosGrupales.flatMap(p=>misSubtareasDe(p).map(s=>({...s,__pid:p.id,__proy:p.nombre})))
+          .filter(s=>{ const k=String(s.id||s.nombre); if(vistasIds.has(k)) return false; vistasIds.add(k); return true })
         return (
           <>
             {mias.length>0&&(
@@ -5264,7 +5274,10 @@ function TareasYProyectos({ data, setData, usuario }) {
                   const pct = subs.length>0?Math.round(fin/subs.length*100):(p.estado==='Finalizada'?100:0)
                   const cerrado = p.estado==='Finalizada'
                   const ORD={'En proceso':0,'Pendiente':1,'Finalizada':3,'Cancelada':4}
-                  const actividades = subs.slice().sort((a,b)=>((ORD[a.estado]??2)-(ORD[b.estado]??2))||String(a.fechaEntrega||'9999').localeCompare(String(b.fechaEntrega||'9999')))
+                  const esMiaAct = x => normalizarNombreResponsable(x.responsable)===normalizarNombreResponsable(personaActual)
+                  // Primero las mías, luego por estado y fecha.
+                  const actividades = subs.slice().sort((a,b)=>(esMiaAct(b)-esMiaAct(a))||((ORD[a.estado]??2)-(ORD[b.estado]??2))||String(a.fechaEntrega||'9999').localeCompare(String(b.fechaEntrega||'9999')))
+                  const nMias = subs.filter(esMiaAct).length
                   const verActividades = !esLiderProyecto&&tipoVista==='grupales'
                   return (
                     <div key={p.id||p.nombre} onClick={()=>{setProyectoActivo(p);setVista('detalle')}}
@@ -5301,6 +5314,7 @@ function TareasYProyectos({ data, setData, usuario }) {
                       {/* Proyectos grupales: actividades de todos */}
                       {verActividades&&actividades.length>0&&(
                         <div style={{borderTop:'1px dashed var(--border2)',paddingTop:8,display:'flex',flexDirection:'column',gap:3}}>
+                          <div style={{fontSize:10.5,fontWeight:800,color:'#0369a1',marginBottom:2}}>Tienes {nMias} de {actividades.length} actividades en este proyecto</div>
                           {actividades.slice(0,5).map(s=>{
                             const mia = normalizarNombreResponsable(s.responsable)===normalizarNombreResponsable(personaActual)
                             const c = s.estado==='Finalizada'?'var(--green)':s.estado==='En proceso'?'var(--accent2)':'var(--yellow)'
