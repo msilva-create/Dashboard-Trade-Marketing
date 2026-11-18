@@ -148,6 +148,20 @@ const CAMPOS_MAP = {
   subtareasProyectos: { id:'id', proyecto:'proyecto', nombre:'nombre', descripcion:'descripcion', responsable:'responsable', fechaEntrega:'fechaEntrega', estado:'estado', prioridad:'prioridad', areas:'areas', creadoPor:'creadoPor', fechaCreacion:'fechaCreacion', fechaFinalizacion:'fechaFinalizacion', tiempoValor:'tiempoValor', tiempoUnidad:'tiempoUnidad', tiempoMinutos:'tiempoMinutos' },
 }
 
+// ── FECHAS ── "2026-11-18T05:00:00.000Z" → "2026-11-18" (hora de Colombia)
+function limpiarFechaISO(val) {
+  if(typeof val !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(val)) return val
+  const d = new Date(val)
+  if(isNaN(d)) return val
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+function limpiarFechasObj(o) {
+  if(!o || typeof o !== 'object') return o
+  const r = {...o}
+  Object.keys(r).forEach(k=>{ if(k.startsWith('fecha')) r[k]=limpiarFechaISO(r[k]) })
+  return r
+}
+
 // ── NORMALIZAR MES ── "MAYO" / "mayo" → "Mayo"
 const normMes = m => {
   const s = String(m||'').trim()
@@ -210,6 +224,9 @@ function fromSheetRow(tipo, row) {
     if(['anio','inversion','galonesPlan','galones','ventaNeta','monto','metaGalones','metaVenta','valor','tiempoValor','tiempoMinutos','tiempoTotalMinutos','totalSubtareas'].includes(appKey)) {
       val = Number(val) || 0
     }
+    // Fechas límite/entrega: Google Sheets las devuelve como "2026-11-18T05:00:00.000Z".
+    // Se muestran como fecha simple "2026-11-18" (hora de Colombia).
+    if(appKey.startsWith('fecha')) val = limpiarFechaISO(val)
     if(appKey === 'tiposPlan' && typeof val === 'string') {
       val = val.split(',').map(s=>s.trim()).filter(Boolean)
     }
@@ -3383,6 +3400,12 @@ const OPCIONES_TIEMPO = [
   {label:'8 horas', minutos:480, valor:8, unidad:'horas'},
 ]
 
+// "Diseño · Camilo" / "Distribución" → "Camilo" / "María P"
+function nombreCreador(creadoPor) {
+  const u = (typeof USUARIOS!=='undefined'?USUARIOS:[]).find(x=>x.nombre===creadoPor)
+  return u ? nombrePersonaPorUsuario(u) : (creadoPor||'—')
+}
+
 function nombrePersonaPorUsuario(usuario) {
   const mapa = {
     industria:'Emma',
@@ -3940,7 +3963,7 @@ function TareasYProyectos({ data, setData, usuario }) {
       }
     })
 
-    return {...p, subtareas:[...mapa.values()]}
+    return {...p, subtareas:[...mapa.values()].map(limpiarFechasObj)}
   })
 
   // Si existe una subtarea cuyo proyecto padre todavía no fue copiado a
@@ -3967,16 +3990,16 @@ function TareasYProyectos({ data, setData, usuario }) {
     const primera = subs[0]
     proyectosReconstruidos.push({
       id:`reconstruido_${key}`,
-      nombre:primera.proyecto,
+      nombre:limpiarFechaISO(String(primera.proyecto)),
       descripcion:'Proyecto reconstruido desde subtareas asignadas',
       responsable:'',
       areas:[...new Set(subs.flatMap(s=>Array.isArray(s.areas)?s.areas:String(s.areas||'').split(',').map(x=>x.trim())).filter(Boolean))],
-      fechaEntrega:subs.map(s=>s.fechaEntrega).filter(Boolean).sort()[0]||'',
+      fechaEntrega:subs.map(s=>limpiarFechaISO(s.fechaEntrega)).filter(Boolean).sort()[0]||'',
       estado:subs.every(s=>s.estado==='Finalizada')?'Finalizada':'Pendiente',
       prioridad:primera.prioridad||'Media',
       creadoPor:primera.creadoPor||'',
       fechaCreacion:primera.fechaCreacion||'',
-      subtareas:subs,
+      subtareas:subs.map(limpiarFechasObj),
       _reconstruido:true,
     })
   })
@@ -4016,6 +4039,8 @@ function TareasYProyectos({ data, setData, usuario }) {
   const [eliminandoSubId, setEliminandoSubId] = useState(null)
   const [proyPadre, setProyPadre] = useState(null)
   const [filtroEstado, setFiltroEstado] = useState('')
+  const [tipoVista, setTipoVista] = useState('mios') // mios | grupales
+  const [verFinalizados, setVerFinalizados] = useState(false)
   const [formP, setFormP] = useState({ nombre:'', descripcion:'', responsable:'', areas:[], fechaEntrega:'', estado:'Pendiente', prioridad:'Media' })
   const [formS, setFormS] = useState({ nombre:'', descripcion:'', responsable:'', areas:[], fechaEntrega:'', estado:'Pendiente', prioridad:'Media' })
 
@@ -4426,14 +4451,38 @@ function TareasYProyectos({ data, setData, usuario }) {
     if(proyectoActivo?.id===pid) setProyectoActivo(nd.proyectos.find(p=>p.id===pid))
   }
 
-  const proyFiltrados = filtroEstado ? proyectos.filter(p=>p.estado===filtroEstado) : proyectos
+  // Mis proyectos: soy responsable o lo creé. Grupales: de otros, donde tengo subtareas.
+  const esMio = p =>
+    normalizarNombreResponsable(p.responsable) === normalizarNombreResponsable(personaActual) ||
+    normalizarNombreResponsable(p.creadoPor) === normalizarNombreResponsable(personaActual) ||
+    normalizarNombreResponsable(p.creadoPor) === normalizarNombreResponsable(usuario?.nombre)
+  const misProyectos = proyectos.filter(esMio)
+  const proyectosGrupales = proyectos.filter(p=>!esMio(p))
+  const baseVista = esLiderProyecto ? proyectos : (tipoVista==='grupales' ? proyectosGrupales : misProyectos)
+
+  // Orden: En proceso → Pendiente → Finalizada (al final); luego por fecha de entrega.
+  const ORDEN_ESTADO = {'En proceso':0,'Pendiente':1,'Finalizada':3,'Cancelada':4}
+  const ordenarProyectos = lista => lista.slice().sort((a,b)=>{
+    const ea = ORDEN_ESTADO[a.estado] ?? 2, eb = ORDEN_ESTADO[b.estado] ?? 2
+    if(ea!==eb) return ea-eb
+    const fa = String(a.fechaEntrega||'9999'), fb = String(b.fechaEntrega||'9999')
+    return fa.localeCompare(fb)
+  })
+  const proyFiltrados = ordenarProyectos(filtroEstado ? baseVista.filter(p=>p.estado===filtroEstado) : baseVista)
+  const misSubtareasDe = p => (p.subtareas||[]).filter(s=>normalizarNombreResponsable(s.responsable)===normalizarNombreResponsable(personaActual))
 
   // FormProyecto movido afuera como componente global
 
   // ── DETALLE DE PROYECTO ──
   if(vista==='detalle'&&proyectoActivo) {
     const proy = proyectos.find(p=>p.id===proyectoActivo.id)||proyectoActivo
-    const subtareas = proy.subtareas||[]
+    // Subtareas ordenadas: En proceso → Pendiente → Finalizada; luego por fecha de entrega.
+    const ORDEN_SUB = {'En proceso':0,'Pendiente':1,'Finalizada':3,'Cancelada':4}
+    const subtareas = (proy.subtareas||[]).slice().sort((a,b)=>{
+      const ea = ORDEN_SUB[a.estado] ?? 2, eb = ORDEN_SUB[b.estado] ?? 2
+      if(ea!==eb) return ea-eb
+      return String(a.fechaEntrega||'9999').localeCompare(String(b.fechaEntrega||'9999'))
+    })
     const total = subtareas.length
     const finalizadas = subtareas.filter(s=>s.estado==='Finalizada').length
     const pct = total>0?Math.round(finalizadas/total*100):0
@@ -4572,81 +4621,137 @@ function TareasYProyectos({ data, setData, usuario }) {
 
       {/* PROYECTOS */}
       {seccion==='proyectos'&&<>
+      {/* Barra de herramientas */}
       <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
-        <div style={{display:'flex',gap:6}}>
-          {['','Pendiente','En proceso','Finalizada'].map(e=>(
-            <button key={e} onClick={()=>setFiltroEstado(e)} style={{...S.btn(filtroEstado===e?'var(--accent)':'var(--bg3)',filtroEstado===e?'#fff':'var(--text2)'),fontSize:12,padding:'5px 12px'}}>{e||'Todos'}</button>
-          ))}
-        </div>
-        <button onClick={()=>setModalProyecto(true)} style={{...S.btn('var(--accent)','#fff'),marginLeft:'auto'}}><PlusCircle size={15}/> Nuevo proyecto</button>
-      </div>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(300px,1fr))',gap:14}}>
-        {proyFiltrados.length===0&&(
-          <div style={{...S.card,padding:48,textAlign:'center',color:'var(--text3)',gridColumn:'1/-1'}}>
-            <div style={{fontSize:32,marginBottom:10}}>🗂️</div>
-            <div style={{fontWeight:600,fontSize:15,marginBottom:6}}>Sin proyectos aún</div>
-            <div style={{fontSize:13}}>Crea tu primer proyecto con <strong>Nuevo proyecto</strong></div>
+        {!esLiderProyecto&&(
+          <div style={{display:'flex',background:'var(--bg3)',borderRadius:10,padding:3}}>
+            {[['mios','Mis proyectos',misProyectos.length],['grupales','Proyectos grupales',proyectosGrupales.length]].map(([id,label,n])=>(
+              <button key={id} onClick={()=>setTipoVista(id)} style={{border:'none',cursor:'pointer',fontFamily:'var(--font)',fontSize:12.5,fontWeight:tipoVista===id?700:500,padding:'7px 14px',borderRadius:8,background:tipoVista===id?'var(--bg2, #fff)':'transparent',color:tipoVista===id?'var(--accent2)':'var(--text2)',boxShadow:tipoVista===id?'0 1px 4px rgba(30,16,64,.12)':'none'}}>
+                {label} <span style={{opacity:.6,fontWeight:500}}>{n}</span>
+              </button>
+            ))}
           </div>
         )}
-        {proyFiltrados.map((p,i)=>{
-          const est = ESTADO_PROY[p.estado]||ESTADO_PROY['Pendiente']
-          const subs = p.subtareas||[]
-          const fin = subs.filter(s=>s.estado==='Finalizada').length
-          const pct = subs.length>0?Math.round(fin/subs.length*100):0
-          return (
-            <div key={i} style={{...S.card,padding:0,overflow:'hidden',cursor:'pointer',borderTop:'3px solid '+est.color}} onClick={()=>{setProyectoActivo(p);setVista('detalle')}}>
-              <div style={{padding:'16px 18px'}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
-                  <span style={{fontWeight:700,fontSize:14,color:'var(--text)',flex:1,marginRight:8}}>{p.nombre}</span>
-                  <button onClick={e=>{e.stopPropagation();setEditProyecto(p)}} style={{...S.btn('var(--accent-soft)','var(--accent2)'),padding:'3px 6px',marginRight:5}}><Edit2 size={11}/></button>
-                  <div style={{display:'flex',gap:5,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end'}}>
-                    <BadgePrioridad prioridad={p.prioridad}/>
-                    <BadgeVencimiento item={p}/>
-                    <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:5,background:est.bg,color:est.color,flexShrink:0,whiteSpace:'nowrap'}}>{p.estado}</span>
-                  </div>
-                </div>
-                {p.descripcion&&<p style={{margin:'0 0 8px',fontSize:12,color:'var(--text2)',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{p.descripcion}</p>}
-                <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:10}}>
-                  {p.responsable&&<span style={{fontSize:11,color:'var(--text2)'}}>👤 {p.responsable}</span>}
-                  {p.fechaEntrega&&<span style={{fontSize:11,color:'var(--text3)'}}>📅 {p.fechaEntrega}</span>}
-                </div>
-                {(p.areas||[]).length>0&&(
-                  <div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:10}}>
-                    {p.areas.map(a=><span key={a} style={{fontSize:10,background:'var(--accent-soft)',color:'var(--accent2)',padding:'1px 7px',borderRadius:4}}>{a}</span>)}
-                  </div>
-                )}
-                {subs.length>0&&(
-                  <div>
-                    <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'var(--text3)',marginBottom:3}}>
-                      <span>{fin}/{subs.length} subtareas</span><span>{pct}%</span>
-                    </div>
-                    <div style={{height:4,background:'var(--bg4)',borderRadius:2}}>
-                      <div style={{width:pct+'%',height:'100%',background:pct===100?'var(--green)':'var(--accent)',borderRadius:2}}/>
-                    </div>
-                  </div>
-                )}
-                {subs.length===0&&<span style={{fontSize:11,color:'var(--text3)'}}>Sin subtareas</span>}
-                {p.estado==='Finalizada'&&(()=>{
-                  const rp=resumenProyecto(p)
-                  return <div style={{marginTop:12,padding:10,borderRadius:9,background:'var(--green-soft)',border:'1px solid rgba(22,163,74,.18)'}}>
-                    <div style={{fontSize:10,fontWeight:800,color:'var(--green)',marginBottom:5}}>RESUMEN DE CIERRE</div>
-                    <div style={{display:'flex',gap:10,flexWrap:'wrap',fontSize:10,color:'var(--text2)'}}>
-                      <span>📆 {rp.dias} días</span>
-                      <span>⏱️ {formatoTiempoTarea({tiempoMinutos:rp.minutos})}</span>
-                      <span>✅ {rp.finalizadas}/{rp.total} subtareas</span>
-                      <span>👥 {rp.personas.length} persona{rp.personas.length===1?'':'s'}</span>
-                    </div>
-                    <div style={{fontSize:10,fontWeight:700,color:rp.cumplimiento.color,marginTop:5}}>{rp.cumplimiento.label}</div>
-                  </div>
-                })()}
-              </div>
-              <div style={{padding:'8px 18px',borderTop:'1px solid var(--border)',fontSize:11,color:'var(--text3)',display:'flex',justifyContent:'space-between'}}>
-                <span>Por {p.creadoPor}</span><span>{p.fechaCreacion}</span>
-              </div>
-            </div>
-          )
-        })}
+        <select value={filtroEstado} onChange={e=>setFiltroEstado(e.target.value)} style={{fontSize:12,padding:'7px 10px',borderRadius:8,width:'auto',flex:'0 0 auto'}}>
+          <option value="">Todos los estados</option>
+          <option>En proceso</option>
+          <option>Pendiente</option>
+          <option>Finalizada</option>
+        </select>
+        <button onClick={()=>setModalProyecto(true)} style={{...S.btn('var(--accent)','#fff'),marginLeft:'auto'}}><PlusCircle size={15}/> Nuevo proyecto</button>
       </div>
+      {!esLiderProyecto&&tipoVista==='grupales'&&(
+        <div style={{fontSize:12,color:'var(--text3)',marginTop:-6}}>Proyectos de otras personas donde tienes actividades. Las tuyas aparecen resaltadas.</div>
+      )}
+
+      {proyFiltrados.length===0&&(
+        <div style={{...S.card,padding:48,textAlign:'center',color:'var(--text3)'}}>
+          <div style={{fontSize:32,marginBottom:10}}>🗂️</div>
+          <div style={{fontWeight:600,fontSize:15,marginBottom:6}}>{tipoVista==='grupales'&&!esLiderProyecto?'No tienes actividades en proyectos de otros':'Sin proyectos aún'}</div>
+          {!(tipoVista==='grupales'&&!esLiderProyecto)&&<div style={{fontSize:13}}>Crea tu primer proyecto con <strong>Nuevo proyecto</strong></div>}
+        </div>
+      )}
+
+      {/* Secciones por estado: En proceso → Pendientes → Finalizados (plegados) */}
+      {[
+        ['En proceso','En proceso','var(--accent2)'],
+        ['Pendiente','Pendientes','var(--yellow)'],
+        ['_otros','Otros','var(--text3)'],
+        ['Finalizada','Finalizados','var(--green)'],
+      ].map(([clave,titulo,color])=>{
+        const lista = proyFiltrados.filter(p=>clave==='_otros'
+          ? !['En proceso','Pendiente','Finalizada'].includes(p.estado)
+          : p.estado===clave)
+        if(!lista.length) return null
+        const plegable = clave==='Finalizada' && !filtroEstado
+        const abierto = !plegable || verFinalizados
+        return (
+          <div key={clave} style={{display:'flex',flexDirection:'column',gap:10}}>
+            <div onClick={plegable?()=>setVerFinalizados(v=>!v):undefined} style={{display:'flex',alignItems:'center',gap:8,cursor:plegable?'pointer':'default',userSelect:'none',marginTop:4}}>
+              <span style={{width:8,height:8,borderRadius:'50%',background:color}}/>
+              <span style={{fontSize:13,fontWeight:700,color:'var(--text)'}}>{titulo}</span>
+              <span style={{fontSize:12,color:'var(--text3)'}}>{lista.length}</span>
+              {plegable&&<span style={{fontSize:12,color:'var(--accent2)',fontWeight:600}}>{abierto?'Ocultar':'Mostrar'}</span>}
+              <div style={{flex:1,height:1,background:'var(--border)'}}/>
+            </div>
+            {abierto&&(
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(290px,1fr))',gap:12}}>
+                {lista.map(p=>{
+                  const est = ESTADO_PROY[p.estado]||ESTADO_PROY['Pendiente']
+                  const subs = p.subtareas||[]
+                  const fin = subs.filter(s=>s.estado==='Finalizada').length
+                  const pct = subs.length>0?Math.round(fin/subs.length*100):(p.estado==='Finalizada'?100:0)
+                  const cerrado = p.estado==='Finalizada'
+                  const ORD={'En proceso':0,'Pendiente':1,'Finalizada':3,'Cancelada':4}
+                  const actividades = subs.slice().sort((a,b)=>((ORD[a.estado]??2)-(ORD[b.estado]??2))||String(a.fechaEntrega||'9999').localeCompare(String(b.fechaEntrega||'9999')))
+                  const verActividades = !esLiderProyecto&&tipoVista==='grupales'
+                  return (
+                    <div key={p.id||p.nombre} onClick={()=>{setProyectoActivo(p);setVista('detalle')}}
+                      style={{...S.card,padding:'14px 16px',cursor:'pointer',borderLeft:'3px solid '+est.color,display:'flex',flexDirection:'column',gap:9,opacity:cerrado?.85:1}}>
+                      {/* Título + editar */}
+                      <div style={{display:'flex',alignItems:'flex-start',gap:8}}>
+                        <span style={{fontWeight:700,fontSize:14,color:'var(--text)',flex:1,lineHeight:1.3,display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{p.nombre}</span>
+                        {!p._reconstruido&&<button title="Editar" onClick={e=>{e.stopPropagation();setEditProyecto(p)}} style={{border:'none',background:'transparent',cursor:'pointer',color:'var(--text3)',padding:2}}><Edit2 size={13}/></button>}
+                      </div>
+                      {/* Etiquetas: solo lo importante */}
+                      <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+                        {!cerrado&&<BadgeVencimiento item={p}/>}
+                        {cerrado&&<span style={{fontSize:10,fontWeight:700,padding:'3px 8px',borderRadius:999,background:'var(--green-soft)',color:'var(--green)'}}>✓ Finalizado</span>}
+                        {p.prioridad==='Alta'&&<BadgePrioridad prioridad={p.prioridad}/>}
+                      </div>
+                      {/* Descripción (se oculta la automática) */}
+                      {p.descripcion&&!p._reconstruido&&<p style={{margin:0,fontSize:12,color:'var(--text2)',lineHeight:1.45,display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{p.descripcion}</p>}
+                      {/* Datos */}
+                      <div style={{display:'flex',gap:12,flexWrap:'wrap',fontSize:11.5,color:'var(--text2)'}}>
+                        {p.responsable&&<span>👤 {p.responsable}</span>}
+                        {p.fechaEntrega&&<span>📅 {p.fechaEntrega}</span>}
+                      </div>
+                      {/* Progreso */}
+                      {subs.length>0&&(
+                        <div>
+                          <div style={{display:'flex',justifyContent:'space-between',fontSize:10.5,color:'var(--text3)',marginBottom:4}}>
+                            <span>{fin} de {subs.length} actividades</span><span style={{fontWeight:700}}>{pct}%</span>
+                          </div>
+                          <div style={{height:5,background:'var(--bg4)',borderRadius:3}}>
+                            <div style={{width:pct+'%',height:'100%',background:pct===100?'var(--green)':'var(--accent)',borderRadius:3}}/>
+                          </div>
+                        </div>
+                      )}
+                      {/* Proyectos grupales: actividades de todos */}
+                      {verActividades&&actividades.length>0&&(
+                        <div style={{borderTop:'1px dashed var(--border2)',paddingTop:8,display:'flex',flexDirection:'column',gap:3}}>
+                          {actividades.slice(0,5).map(s=>{
+                            const mia = normalizarNombreResponsable(s.responsable)===normalizarNombreResponsable(personaActual)
+                            const c = s.estado==='Finalizada'?'var(--green)':s.estado==='En proceso'?'var(--accent2)':'var(--yellow)'
+                            return (
+                              <div key={s.id||s.nombre} style={{display:'flex',alignItems:'center',gap:7,fontSize:11.5,padding:'3px 6px',margin:'0 -6px',borderRadius:6,background:mia?'var(--accent-soft)':'transparent'}}>
+                                <span style={{width:6,height:6,borderRadius:'50%',background:c,flexShrink:0}}/>
+                                <span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:mia?700:400,color:'var(--text)',textDecoration:s.estado==='Finalizada'?'line-through':'none'}}>{s.nombre}</span>
+                                <span style={{color:mia?'var(--accent2)':'var(--text3)',fontWeight:mia?700:400,whiteSpace:'nowrap'}}>{mia?'Yo':(s.responsable||'—')}</span>
+                              </div>
+                            )
+                          })}
+                          {actividades.length>5&&<span style={{fontSize:11,color:'var(--text3)'}}>+{actividades.length-5} más · abre el proyecto para ver todas</span>}
+                        </div>
+                      )}
+                      {/* Cierre en una línea */}
+                      {cerrado&&(()=>{
+                        const rp=resumenProyecto(p)
+                        const partes=[rp.dias?`${rp.dias} día${rp.dias===1?'':'s'}`:'',rp.minutos?formatoTiempoTarea({tiempoMinutos:rp.minutos}):'',`${rp.personas.length} persona${rp.personas.length===1?'':'s'}`].filter(Boolean)
+                        return <div style={{fontSize:11,color:'var(--green)'}}>Cierre: {partes.join(' · ')}</div>
+                      })()}
+                      {/* Pie */}
+                      <div style={{marginTop:'auto',paddingTop:8,borderTop:'1px solid var(--border)',fontSize:10.5,color:'var(--text3)',display:'flex',justifyContent:'space-between',gap:8}}>
+                        <span>{p.creadoPor?`Creado por ${nombreCreador(p.creadoPor)}`:'Proyecto de otra área'}</span><span>{p.fechaCreacion}</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )
+      })}
       {editProyecto&&<FormProyecto
         form={editProyecto}
         setForm={setEditProyecto}
