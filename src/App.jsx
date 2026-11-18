@@ -32,6 +32,20 @@ const SHEETS_CONFIG = {
     spreadsheetId: '1jVKNc8krqeClgfzaXr-i7YIHwuYRmjkoU35NEjz4oDk',
     enabled: true,
   },
+  // El perfil "Presupuesto (Juan)" inicia sesión con id 'presupuesto':
+  // debe leer el mismo archivo de Juan.
+  presupuesto: {
+    url: 'https://script.google.com/macros/s/AKfycbxpXwPP9P6Ik_WTXvoUKCscTZz2lbAARt_NV-2UUY-4bzajnIpEUcigT0VUrLklbKWI/exec',
+    spreadsheetId: '1s6fkyyCihzOki9Fan9EKIIvxwlra-QizwI7fy210GUI',
+    enabled: true,
+  },
+  // El perfil "Diseño · Camilo" inicia sesión con id 'diseno':
+  // debe leer el mismo archivo de Camilo.
+  diseno: {
+    url: 'https://script.google.com/macros/s/AKfycbxpXwPP9P6Ik_WTXvoUKCscTZz2lbAARt_NV-2UUY-4bzajnIpEUcigT0VUrLklbKWI/exec',
+    spreadsheetId: '1jVKNc8krqeClgfzaXr-i7YIHwuYRmjkoU35NEjz4oDk',
+    enabled: true,
+  },
   julian: {
     url: 'https://script.google.com/macros/s/AKfycbxpXwPP9P6Ik_WTXvoUKCscTZz2lbAARt_NV-2UUY-4bzajnIpEUcigT0VUrLklbKWI/exec',
     spreadsheetId: '1nEdGAcy45hMckYxOC_SRfrYEqW6ifgRv9fFoJA75YlY',
@@ -6597,7 +6611,13 @@ export default function App() {
     {id:'notificaciones',label:'Notificaciones',icon:Bell},
     {id:'controlPresupuestal',label:'Gastos de presupuesto',icon:DollarSign}
   ]
-  const TABS_PRES = [{id:'dashboard',label:'Presupuesto Consolidado',icon:DollarSign},{id:'controlPresupuestal',label:'Gastos de presupuesto',icon:DollarSign}]
+  const TABS_PRES = [
+    {id:'dashboard',label:'Presupuesto Consolidado',icon:DollarSign},
+    {id:'controlPresupuestal',label:'Gastos de presupuesto',icon:DollarSign},
+    {id:'tareasasignadas',label:'Tareas Asignadas',icon:ListTodo},
+    {id:'asignarTareas',label:'Asignar tarea',icon:Send},
+    {id:'tareasProyectos',label:'Proyectos y Subtareas',icon:BookOpen},
+  ]
   const TABS_COLAB = [
     {id:'tareasasignadas',label:'Tareas Asignadas',icon:ListTodo},
     {id:'asignarTareas',label:'Asignar tarea',icon:Send},
@@ -6732,6 +6752,9 @@ export default function App() {
           {esLider && tab==='notificaciones' && <NotificacionesEquipo/>}
           {esLider && tab==='tareasProyectos' && <TareasYProyectos data={data} setData={setDataUser} usuario={usuario}/>}
           {esPresupuesto && tab==='dashboard' && <PresupuestoConsolidado/>}
+          {esPresupuesto && tab==='tareasasignadas' && <TareasAsignadas data={data} setData={setDataUser} usuario={usuario}/>}
+          {esPresupuesto && tab==='asignarTareas' && <AsignarTareasEquipo usuario={usuario}/>}
+          {esPresupuesto && tab==='tareasProyectos' && <TareasYProyectos data={data} setData={setDataUser} usuario={usuario}/>}
           {esColaborador && (
             <>
               {tab==='tareasasignadas' && <TareasAsignadas data={data} setData={setDataUser} usuario={usuario}/>}
